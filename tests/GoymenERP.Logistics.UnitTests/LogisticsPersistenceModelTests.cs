@@ -906,11 +906,11 @@ public sealed class LogisticsPersistenceModelTests
         var provider = new LogisticsShellCapabilityProvider();
         var declarations = provider.GetDeclarations().Where(item =>
             !item.CapabilityId.StartsWith("logistics.subcontract-deliveries.", StringComparison.Ordinal)).ToList();
-        Assert.Equal("1.11", provider.ContractVersion);
+        Assert.Equal("1.12", provider.ContractVersion);
         Assert.Equal(17, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(
             declaration.CapabilityId is not (LogisticsShellCapabilityProvider.PlanExcessPrepareCapabilityId
-                or LogisticsShellCapabilityProvider.PlanExcessApproveCapabilityId or LogisticsShellCapabilityProvider.DispatchNoteWorkDecisionCapabilityId), declaration.ImplementationAvailable));
+                or LogisticsShellCapabilityProvider.PlanExcessApproveCapabilityId), declaration.ImplementationAvailable));
         var excessPrepare = Assert.Single(declarations, item => item.CapabilityId == LogisticsShellCapabilityProvider.PlanExcessPrepareCapabilityId);
         Assert.Equal(LogisticsShellCapabilityProvider.DetailCapabilityId, excessPrepare.ParentCapabilityId);
         Assert.Equal([LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.LoadsRecord], excessPrepare.RequiredPermissions);
@@ -935,7 +935,7 @@ public sealed class LogisticsPersistenceModelTests
         Assert.Equal("logistics.shipments.record", LogisticsPermissionManifestV1.ShipmentsRecord);
         Assert.Equal("logistics.deliveries.record", LogisticsPermissionManifestV1.DeliveriesRecord);
         Assert.Equal(22, LogisticsPermissionManifestV1.Names.Distinct(StringComparer.Ordinal).Count());
-        // The native detail commands remain unchanged. Only approve has an additional, staged purpose route.
+        // The native detail commands remain unchanged. Only approve has an additional, published purpose route.
         Assert.Equal("logistics.dispatch-notes.create", LogisticsPermissionManifestV1.DispatchNotesCreate);
         Assert.Equal("logistics.dispatch-notes.approve", LogisticsPermissionManifestV1.DispatchNotesApprove);
         Assert.Equal("logistics.dispatch-notes.cancel", LogisticsPermissionManifestV1.DispatchNotesCancel);
@@ -947,7 +947,7 @@ public sealed class LogisticsPersistenceModelTests
             {
                 var purpose = Assert.Single(declarations, declaration => declaration.RequiredPermissions.Contains(name));
                 Assert.Equal(LogisticsShellCapabilityProvider.DispatchNoteWorkDecisionCapabilityId, purpose.CapabilityId);
-                Assert.False(purpose.ImplementationAvailable); Assert.Null(purpose.ParentCapabilityId);
+                Assert.True(purpose.ImplementationAvailable); Assert.Null(purpose.ParentCapabilityId);
             }
             else Assert.DoesNotContain(declarations, declaration => declaration.RequiredPermissions.Contains(name));
         }

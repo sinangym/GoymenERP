@@ -52,12 +52,13 @@ public sealed class LogisticsDispatchNoteWorkInboxSourceTests
         F.AssertContractShape(result, "logistics", "logistics.dispatch-note.v1");
         Assert.Equal([F.Id(12), F.Id(11)], result.Items!.Select(item => item.ItemId));
         var first = result.Items![0];
-        Assert.Equal((F.Id(12).ToString("D"), F.T0.AddMinutes(10).ToUniversalTime(), "/lojistik/yukleme-talimatlari/" + issued.ToString("D")),
+        Assert.Equal((F.Id(12).ToString("D"), F.T0.AddMinutes(10).ToUniversalTime(), "/onaylarim/logistics.dispatch-note.v1/" + F.Id(12).ToString("D")),
             (first.DocumentLabel, first.WaitingSinceUtc, first.Link));
         var rule = Assert.Single(first.Rules);
         Assert.Equal(new WorkApprovalRuleResultV1("logistics.dispatch-note-draft", null, null, null, null), rule);
         var reference = Assert.Single(first.References);
         Assert.Equal(("loading-instruction", issued), (reference.Role, reference.RecordId));
+        Assert.Equal("/lojistik/yukleme-talimatlari/" + issued.ToString("D"), reference.Link);
         Assert.Equal((F.CompanyA, false), (result.CompanyId, result.HasMore));
     }
 

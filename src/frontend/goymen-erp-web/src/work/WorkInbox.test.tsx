@@ -66,7 +66,7 @@ const paymentItem = {
   explanation: { rules: [{ ruleCode: 'finance.manual-bank-payment-approval-required', threshold: null, actual: null, deviation: null, unit: null }], references: [] },
 }
 const dispatchItem = {
-  module: 'logistics', kind: DISPATCH_KIND, itemId: DISPATCH_ID, documentLabel: 'IRS-TASLAK-1', link: `/lojistik/talimatlar/${DISPATCH_ID}`,
+  module: 'logistics', kind: DISPATCH_KIND, itemId: DISPATCH_ID, documentLabel: 'IRS-TASLAK-1', link: `/onaylarim/${DISPATCH_KIND}/${DISPATCH_ID}`,
   waitingSinceUtc: '2026-11-03T07:00:00+00:00', awaitingPermission: 'logistics.dispatch-notes.approve', duration: none('Hours', 'Undefined'),
   ruleVersion: RV(DISPATCH_KIND),
   explanation: { rules: [{ ruleCode: 'logistics.dispatch-note-draft', threshold: null, actual: null, deviation: null, unit: null }], references: [] },
@@ -572,4 +572,16 @@ it.each([
  expect(within(cardOf(kind)).getByRole('link').getAttribute('href')).toBe(link)
  expect(api.inboxReads()).toHaveLength(1);expect(api.inboxReads()[0].companyId).toBe(COMPANY)
  expect(api.queueReads()).toHaveLength(0)
+})
+
+it('opens dispatch inbox through the exact purpose capability and follows its owner-produced Work link',async()=>{
+ const api=installFetch({granted:[CAPABILITY.logisticsDispatchNoteWorkDecision],inbox:()=>json(inbox({items:[dispatchItem],sources:[SOURCES[2]]}))})
+ await renderAt('/onaylarim/kuyruk');await screen.findByTestId('work-inbox-list')
+ expect(within(cardOf(DISPATCH_KIND)).getByRole('link').getAttribute('href')).toBe(`/onaylarim/${DISPATCH_KIND}/${DISPATCH_ID}`)
+ expect(api.inboxReads()).toHaveLength(1);expect(api.inboxReads()[0].companyId).toBe(COMPANY);expect(api.queueReads()).toHaveLength(0)
+})
+it.each([['logistics.dispatch-notes.approve'],[LOGISTICS_CAPABILITY.instructionsDetail]])('does not open dispatch Work inbox through native-only capability %s',async native=>{
+ const api=installFetch({granted:[native],inbox:()=>json(inbox({items:[dispatchItem],sources:[SOURCES[2]]}))})
+ await renderAt('/onaylarim/kuyruk');await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+ expect(api.inboxReads()).toHaveLength(0);expect(screen.queryByTestId('work-inbox-list')).toBeNull()
 })

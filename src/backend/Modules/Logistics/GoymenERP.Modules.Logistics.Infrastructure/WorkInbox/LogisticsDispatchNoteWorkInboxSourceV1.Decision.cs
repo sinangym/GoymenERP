@@ -58,7 +58,7 @@ internal sealed partial class LogisticsDispatchNoteWorkInboxSourceV1
                 line.ShipmentId, line.InstructionLineId, line.SourceOrderId, line.SourceOrderLineId, line.ProductId, line.UnitId,
                 line.Quantity.ToString(CultureInfo.InvariantCulture), line.QuantityKg?.ToString(CultureInfo.InvariantCulture))).ToArray());
         var item = new WorkInboxItemV1(Module, Kind, itemId, LogisticsWorkInboxFence.Id(itemId), human.CreatedAtUtc,
-            LogisticsWorkInboxFence.InstructionLink(instruction.Id), note.CreatedBy,
+            "/onaylarim/logistics.dispatch-note.v1/" + itemId.ToString("D"), note.CreatedBy,
             [new(DraftRule, null, null, null, null)], [LogisticsWorkInboxFence.InstructionReference(instruction.Id)]);
         var sourceVersion = version.ToString(CultureInfo.InvariantCulture);
         return new(companyId, item, sourceVersion, pending, LogisticsDispatchNoteProof: new(companyId, sourceVersion, human));

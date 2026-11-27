@@ -19,7 +19,8 @@ public sealed class LogisticsDispatchNoteWorkInboxDecisionSourceTests
         Assert.Equal(count, proof.Note.Lines.Count); Assert.Single(snapshot.Item.References); Assert.Single(snapshot.Item.Rules);
         Assert.Equal(F.Id(10000 + count), proof.Note.Lines[^1].ShipmentId);
         Assert.Equal(("1.250", "0.750"), (proof.Note.Lines[0].Quantity, proof.Note.Lines[0].QuantityKg));
-        Assert.Equal("/lojistik/yukleme-talimatlari/" + F.Id(1), snapshot.Item.Link); // Staged: native routing is unchanged.
+        Assert.Equal("/onaylarim/logistics.dispatch-note.v1/" + F.Id(11), snapshot.Item.Link);
+        Assert.Equal("/lojistik/yukleme-talimatlari/" + F.Id(1), Assert.Single(snapshot.Item.References).Link);
         var wire = JsonSerializer.Serialize(snapshot, new JsonSerializerOptions(JsonSerializerDefaults.Web));
         Assert.DoesNotContain("logisticsDispatchNote", wire); Assert.DoesNotContain("quantity", wire);
         Assert.DoesNotContain("price", wire, StringComparison.OrdinalIgnoreCase);

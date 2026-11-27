@@ -189,7 +189,7 @@ internal sealed partial class LogisticsDispatchNoteWorkInboxSourceV1 : IWorkInbo
             }
 
             items.Add(new WorkInboxItemV1(ModuleName, KindName, note.DispatchNoteId, LogisticsWorkInboxFence.Id(note.DispatchNoteId),
-                note.CreatedAtUtc.ToUniversalTime(), LogisticsWorkInboxFence.InstructionLink(note.InstructionId), note.CreatedBy,
+                note.CreatedAtUtc.ToUniversalTime(), "/onaylarim/logistics.dispatch-note.v1/" + note.DispatchNoteId.ToString("D"), note.CreatedBy,
                 [new WorkApprovalRuleResultV1(DraftRule, null, null, null, null)],
                 [LogisticsWorkInboxFence.InstructionReference(note.InstructionId)]));
         }

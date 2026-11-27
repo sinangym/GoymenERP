@@ -1,4 +1,3 @@
-import { CapabilityRoute } from '../shell/CapabilityRoute'
 import { DISPATCH_NOTE_WORK_DECISION_CAPABILITY } from './workDecisionApi'
 import { CAPABILITY, CAPABILITY_ROUTE, CAPABILITY_NAV_LABEL } from '../shell/capabilities'
 import { COUNTERPARTY_WORK_DECISION_CAPABILITY } from './workDecisionApi'
@@ -1491,15 +1490,11 @@ const dispatchPath=`/work/decisions/${dispatchKind}/${id}`
 const dispatchLine={lineNo:1,shipmentId:'bbbbbbbb-0000-4000-8000-000000000001',instructionLineId:id,sourceOrderId:id,sourceOrderLineId:id,productId:id,unitId:id,quantity:'10.000'}
 const dispatchProof={instructionId:COMPANY_A,dispatchNoteId:id,customerPartyId:COMPANY_A,companyAccountId:id,effectiveOn:'2026-11-27',status:'Draft',number:null,eDispatchNumber:null,createdBy:'SENTETIK irsaliye hazırlayan',createdAtUtc:'2026-11-27T08:00:00Z',lines:[dispatchLine]}
 const dispatchPreview={...preview,kind:dispatchKind,rejectionSupported:false,logisticsDispatchNote:dispatchProof,references:[{role:'loading-instruction',label:'Talimat',recordId:COMPANY_A,link:'/lojistik/talimatlar/'+COMPANY_A}]}
-// Candidate-only mount: production registry stays at 24 kinds while its backend capability is staged false.
-function mountDispatchCandidate(){
- const router=createMemoryRouter([{path:'/',element:<AppShell/>,children:[{path:`onaylarim/${dispatchKind}/:approvalId`,element:<CapabilityRoute capability={[dispatchCap]}><WorkDecisionPage kind={dispatchKind}/></CapabilityRoute>}]}],{initialEntries:[`/onaylarim/${dispatchKind}/${id}`]})
- render(<ShellProvider queryClient={new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})}><RouterProvider router={router}/></ShellProvider>)
- return router
-}
+// Published production route: use the actual shared route/capability guard rather than a test-only mount.
+function mountDispatchPurpose(){ return mount(`/onaylarim/${dispatchKind}/${id}`,true) }
 it('renders all dispatch header/line evidence and sends only native approve without reason or a copied proof',async()=>{
  const calls=installFetch({capabilities:[dispatchCap],respond:(url,init)=>url.includes(dispatchPath)?init?.method==='POST'?json({companyId:COMPANY_A,kind:dispatchKind,itemId:id,state:'Approved',replayed:false,originalCorrelationId:'SENTETIK'}):json(dispatchPreview):undefined})
- mountDispatchCandidate();const region=await screen.findByRole('region',{name:T.dispatchProposal})
+ mountDispatchPurpose();const region=await screen.findByRole('region',{name:T.dispatchProposal})
  expect(within(region).getByText('SENTETIK irsaliye hazırlayan')).toBeTruthy();expect(within(region).getByText('10.000')).toBeTruthy();expect(within(region).getByText(T.dispatchNoKg)).toBeTruthy()
  expect(screen.queryByRole('textbox',{name:T.reason})).toBeNull();expect(screen.queryByRole('button',{name:T.reject})).toBeNull()
  await userEvent.setup().click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.done)
@@ -1509,7 +1504,7 @@ it('renders all dispatch header/line evidence and sends only native approve with
 it('preserves all 501 dispatch lines and source-native optional kg without truncation or calculation',async()=>{
  const lines=Array.from({length:501},(_,i)=>({...dispatchLine,lineNo:i+1,shipmentId:`bbbbbbbb-0000-4000-8000-${(i+1).toString().padStart(12,'0')}`,...(i===500?{quantity:'999.125',quantityKg:'0.001'}:{})}))
  installFetch({capabilities:[dispatchCap],respond:url=>url.includes(dispatchPath)?json({...dispatchPreview,logisticsDispatchNote:{...dispatchProof,lines}}):undefined})
- mountDispatchCandidate();const region=await screen.findByRole('region',{name:T.dispatchProposal})
+ mountDispatchPurpose();const region=await screen.findByRole('region',{name:T.dispatchProposal})
  expect(within(region).getAllByRole('row')).toHaveLength(502);expect(within(region).getByText('999.125')).toBeTruthy();expect(within(region).getByText('0.001')).toBeTruthy()
 })
 it('retries the original dispatch key/version/body after remount and a later cancelled preview without persisting human proof',async()=>{
@@ -1520,38 +1515,38 @@ it('retries the original dispatch key/version/body after remount and a later can
   if(init?.method==='POST'){posts++;return posts===1?problem(503):json({companyId:COMPANY_A,kind:dispatchKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'})}
   return json(posts===0?dispatchPreview:{...dispatchPreview,sourceVersion:'10',pending:false,logisticsDispatchNote:{...dispatchProof,status:'Cancelled',number:'IRS-1'}})
  }})
- mountDispatchCandidate();await screen.findByRole('region',{name:T.dispatchProposal});await userEvent.setup().click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ mountDispatchPurpose();await screen.findByRole('region',{name:T.dispatchProposal});await userEvent.setup().click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
  expect(JSON.stringify(sessionStorage)).not.toContain('SENTETIK irsaliye hazırlayan');expect(JSON.stringify(sessionStorage)).not.toContain('10.000')
- cleanup();mountDispatchCandidate();await screen.findByText(T.unknown);await screen.findByText(T.closed);expect(screen.getByText(`${T.version}: 7`)).toBeTruthy()
+ cleanup();mountDispatchPurpose();await screen.findByText(T.unknown);await screen.findByText(T.closed);expect(screen.getByText(`${T.version}: 7`)).toBeTruthy()
  await userEvent.setup().click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
  const sent=calls.filter(call=>call.url.includes(dispatchPath)&&call.method==='POST');expect(sent).toHaveLength(2);expect(sent[0]!.body).toEqual(sent[1]!.body);expect(sent[0]!.headers['Idempotency-Key']).toBe(sent[1]!.headers['Idempotency-Key'])
 })
-it.each([{capabilities:[]},{capabilities:['logistics.dispatch-notes.approve']},{capabilities:['logistics.instructions.detail']}])('keeps dispatch candidate reads closed without its exact capability %j',async({capabilities})=>{
- const calls=installFetch({capabilities,respond:url=>url.includes(dispatchPath)?json(dispatchPreview):undefined});mountDispatchCandidate()
+it.each([{capabilities:[]},{capabilities:['logistics.dispatch-notes.approve']},{capabilities:['logistics.instructions.detail']}])('keeps dispatch purpose reads closed without its exact capability %j',async({capabilities})=>{
+ const calls=installFetch({capabilities,respond:url=>url.includes(dispatchPath)?json(dispatchPreview):undefined});mountDispatchPurpose()
  await waitFor(()=>expect(calls.some(call=>call.url.endsWith('/shell/capabilities'))).toBe(true));expect(calls.some(call=>call.url.includes(dispatchPath))).toBe(false)
 })
-it('keeps the dispatch candidate out of the 24 live purposes and preserves the native legacy detail fallthrough',()=>{
+it('mounts dispatch as the 25th native purpose under its exact standalone capability',()=>{
  const route=matchRoutes(workRoutes,`/onaylarim/${dispatchKind}/${id}`)?.at(-1)?.route
- expect(route?.path).toBe('onaylarim/:kind/:approvalId')
- const element=route?.element as ReactElement<{children:ReactElement}>
- expect(element.props.children.type).not.toBe(WorkDecisionPage)
- expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(24)
+ expect(route?.path).toBe(`onaylarim/${dispatchKind}/:approvalId`)
+ const element=route?.element as ReactElement<{capability:readonly string[];children:ReactElement<{kind:string}>}>
+ expect(element.props.capability).toEqual([dispatchCap]);expect(element.props.children.type).toBe(WorkDecisionPage);expect(element.props.children.props.kind).toBe(dispatchKind)
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(25)
 })
 it.each([{companyId:COMPANY_B},{logisticsDispatchNote:{...dispatchProof,dispatchNoteId:COMPANY_A}},{rejectionSupported:true}])('does not expose malformed/foreign dispatch proof %j',async(delta)=>{
- installFetch({capabilities:[dispatchCap],respond:url=>url.includes(dispatchPath)?json({...dispatchPreview,...delta}):undefined});mountDispatchCandidate()
+ installFetch({capabilities:[dispatchCap],respond:url=>url.includes(dispatchPath)?json({...dispatchPreview,...delta}):undefined});mountDispatchPurpose()
  await screen.findByText(T.title,{selector:'h1'});await waitFor(()=>expect(screen.queryByRole('region',{name:T.dispatchProposal})).toBeNull());expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
 })
 
 it('does not revive a dispatch unknown command across a new authentication session',async()=>{
  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-dispatch-old'})
  const calls=installFetch({capabilities:[dispatchCap],respond:(url,init)=>url.includes(dispatchPath)?init?.method==='POST'?problem(503):json(dispatchPreview):undefined})
- mountDispatchCandidate();await screen.findByRole('region',{name:T.dispatchProposal});await userEvent.setup().click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
- cleanup();Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-dispatch-new'});mountDispatchCandidate();await screen.findByRole('region',{name:T.dispatchProposal})
+ mountDispatchPurpose();await screen.findByRole('region',{name:T.dispatchProposal});await userEvent.setup().click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ cleanup();Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-dispatch-new'});mountDispatchPurpose();await screen.findByRole('region',{name:T.dispatchProposal})
  expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(call=>call.url.includes(dispatchPath)&&call.method==='POST')).toHaveLength(1)
 })
 it('keeps a native dispatch 403 refusal separate from success without retrying a mutation',async()=>{
  const calls=installFetch({capabilities:[dispatchCap],respond:(url,init)=>url.includes(dispatchPath)?init?.method==='POST'?problem(403):json(dispatchPreview):undefined})
- mountDispatchCandidate();await screen.findByRole('region',{name:T.dispatchProposal});await userEvent.setup().click(screen.getByRole('button',{name:T.approve}))
+ mountDispatchPurpose();await screen.findByRole('region',{name:T.dispatchProposal});await userEvent.setup().click(screen.getByRole('button',{name:T.approve}))
  // Fresh 403 invalidates the current authority and the guarded route becomes not-found.
  await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(screen.queryByText(T.done)).toBeNull();expect(calls.filter(call=>call.url.includes(dispatchPath)&&call.method==='POST')).toHaveLength(1)
 })
