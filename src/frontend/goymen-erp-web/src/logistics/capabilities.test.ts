@@ -59,7 +59,7 @@ describe('Logistics lane ↔ backend shell provider', () => {
 
   it('preserves accepted route availability and stages the two new plan-excess purposes', () => {
     // The declaration form ends with `)`; the provider's doc comment mentions the same words inside `<c>…</c>`.
-    expect(constant('OwnerContractVersion')).toBe('1.16')
+    expect(constant('OwnerContractVersion')).toBe('1.17')
     // Published native screens/child controls and paired Work purposes; the two legacy plan-excess purposes remain staged.
     expect((providerText.match(/ImplementationAvailable: true[),]/g) ?? []).length).toBe(17)
     expect((providerText.match(/ImplementationAvailable: false/g) ?? []).length).toBe(2)
