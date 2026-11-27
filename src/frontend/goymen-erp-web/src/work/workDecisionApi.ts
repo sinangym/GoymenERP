@@ -1,3 +1,5 @@
+import { checkTaxIdentity, type TaxIdentityKind } from '../cari/taxIdentity'
+import { LEGAL_NAME_MAX, LEGAL_NAME_REASON_MAX } from '../cari/legalName'
 import { transferDispatchUtc } from '../inventory/transferDispatchApi'
 import { API_BASE, devHeaders } from '../finance/http'
 import { isBoundUuid, isPositiveInt64Text } from '../finance/contract'
@@ -20,7 +22,17 @@ export const isSalesWorkDecisionKind = (kind: WorkDecisionKind) => kind === 'sal
 export const workDecisionReasonLimit = (kind: WorkDecisionKind) => isCounterpartyWorkDecisionKind(kind) ? 1000 : kind === 'manufacturing.plan.v1' ? 256 : kind === 'purchasing.incoming-invoice-variance.v1' ? 2000 : kind === 'purchasing.service-order.v1' ? 1000 : isSalesWorkDecisionKind(kind) || kind === 'purchasing.request.v1' ? 4000 : 500
 export const isWorkDecisionKind = (value: string): value is WorkDecisionKind => isCounterpartyWorkDecisionKind(value) || WORK_DECISION_KINDS.some(kind => kind === value)
 export interface WorkDecisionRequest { readonly expectedVersion: string; readonly approve: boolean; readonly reason: string | null; readonly delegationId: string | null; readonly inventoryTransferLoss?: { readonly requestNumber: number; readonly decidedAtUtc: string }; readonly manufacturingPlanReapproval?: { readonly selectedLabelIds?: readonly string[] | null } | null }
+export interface CounterpartyTaxIdentityProof {
+  readonly partyId: string; readonly changeRequestId: string; readonly currentTaxIdentityNumber: string
+  readonly proposedTaxIdentityNumber: string; readonly proposedKind: TaxIdentityKind; readonly reason: string
+}
+export interface CounterpartyLegalNameProof {
+  readonly partyId: string; readonly changeRequestId: string; readonly currentLegalName: string
+  readonly proposedLegalName: string; readonly reason: string
+}
 export interface WorkDecisionPreview {
+  readonly counterpartyTaxIdentityChange?: CounterpartyTaxIdentityProof
+  readonly counterpartyLegalNameChange?: CounterpartyLegalNameProof
   readonly companyId: string; readonly kind: WorkDecisionKind; readonly itemId: string; readonly documentLabel: string
   readonly sourceVersion: string; readonly pending: boolean; readonly approvalReasonRequired: boolean
   readonly inventoryTransferLoss?: { readonly requestNumber: number; readonly requestedAtUtc: string }
@@ -60,7 +72,7 @@ export const isWorkDecisionRequest = (value: unknown, kind?: WorkDecisionKind): 
     && (selection.selectedLabelIds === undefined || selection.selectedLabelIds === null || labelIds(selection.selectedLabelIds))
 }
 export function decodeWorkDecisionPreview(value: unknown, company: string, kind: WorkDecisionKind, id: string): WorkDecisionPreview | null {
-  if (!record(value) || !hasExactKeys(value, ['companyId', 'kind', 'itemId', 'documentLabel', 'sourceVersion', 'pending', 'approvalReasonRequired', 'references', 'rules'], kind === 'inventory.transfer-loss.v1' ? ['rejectionSupported', 'inventoryTransferLoss'] : kind === 'manufacturing.plan.v1' ? ['rejectionSupported', 'manufacturingPlanReapproval'] : ['rejectionSupported'])
+  if (!record(value) || !hasExactKeys(value, ['companyId', 'kind', 'itemId', 'documentLabel', 'sourceVersion', 'pending', 'approvalReasonRequired', 'references', 'rules'], kind === 'inventory.transfer-loss.v1' ? ['rejectionSupported', 'inventoryTransferLoss'] : kind === 'manufacturing.plan.v1' ? ['rejectionSupported', 'manufacturingPlanReapproval'] : kind === 'counterparty.tax-identity-change.v1' ? ['rejectionSupported', 'counterpartyTaxIdentityChange'] : kind === 'counterparty.legal-name-change.v1' ? ['rejectionSupported', 'counterpartyLegalNameChange'] : ['rejectionSupported'])
     || !same(value.companyId, company) || value.kind !== kind || !same(value.itemId, id) || !text(value.documentLabel)
     || (kind === 'inventory.opening-cost.v1' ? value.sourceVersion !== `submission/${id}` : !isPositiveInt64Text(value.sourceVersion))
     || typeof value.pending !== 'boolean' || value.approvalReasonRequired !== (kind === 'inventory.transfer-loss.v1' || kind === 'inventory.opening-cost.v1' || kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1')
@@ -71,6 +83,25 @@ export function decodeWorkDecisionPreview(value: unknown, company: string, kind:
     || !Array.isArray(value.rules) || value.rules.length > 8 || !value.rules.every(rule => record(rule)
       && hasExactKeys(rule, ['ruleCode', 'threshold', 'actual', 'deviation', 'unit']) && text(rule.ruleCode)
       && [rule.threshold, rule.actual, rule.deviation, rule.unit].every(nullableText))) return null
+  if (isCounterpartyWorkDecisionKind(kind)) {
+    const tax = kind === 'counterparty.tax-identity-change.v1'
+    const proof = tax ? value.counterpartyTaxIdentityChange : value.counterpartyLegalNameChange
+    const parties = value.references.filter(ref => record(ref) && ref.role === 'party')
+    if (!record(proof) || !hasExactKeys(proof, tax
+      ? ['partyId', 'changeRequestId', 'currentTaxIdentityNumber', 'proposedTaxIdentityNumber', 'proposedKind', 'reason']
+      : ['partyId', 'changeRequestId', 'currentLegalName', 'proposedLegalName', 'reason'])
+      || !isBoundUuid(proof.partyId) || !isBoundUuid(proof.changeRequestId) || !same(proof.changeRequestId, id) || parties.length !== 1
+      || !record(parties[0]) || !same(parties[0].recordId, proof.partyId)
+      || !text(proof.reason) || proof.reason.length > LEGAL_NAME_REASON_MAX) return null
+    if (tax) {
+      // The correction's historical current value follows the native SQL stored-format constraint,
+      // not a new checksum gate. Only the proposed replacement is a validated native number.
+      if (typeof proof.currentTaxIdentityNumber !== 'string' || !/^[0-9]{10,11}$/.test(proof.currentTaxIdentityNumber)
+        || typeof proof.proposedTaxIdentityNumber !== 'string' || proof.proposedTaxIdentityNumber.trim() !== proof.proposedTaxIdentityNumber || !checkTaxIdentity(proof.proposedTaxIdentityNumber).ok
+        || proof.proposedKind !== (proof.proposedTaxIdentityNumber.length === 10 ? 'vkn' : 'tckn')) return null
+    } else if (!text(proof.currentLegalName) || proof.currentLegalName.length > LEGAL_NAME_MAX
+      || !text(proof.proposedLegalName) || proof.proposedLegalName.length > LEGAL_NAME_MAX) return null
+  }
   if (kind === 'inventory.transfer-loss.v1') {
     const loss = value.inventoryTransferLoss
     if (!record(loss) || !hasExactKeys(loss, ['requestNumber', 'requestedAtUtc']) || !requestNumber(loss.requestNumber)

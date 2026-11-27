@@ -376,6 +376,12 @@ it.each([true,false])('accepts only the matching immutable native loss state, ac
 
 
 const cpKinds=['counterparty.tax-identity-change.v1','counterparty.legal-name-change.v1'] as const
+const cpProofPreview = (cp: typeof cpKinds[number]) => ({
+ ...preview,kind:cp,rejectionSupported:true,references:[{role:'party',label:'CAR-000001',recordId:id,link:null}],
+ ...(cp==='counterparty.tax-identity-change.v1'
+  ? {counterpartyTaxIdentityChange:{partyId:id,changeRequestId:id,currentTaxIdentityNumber:'1234567890',proposedTaxIdentityNumber:'10000000146',proposedKind:'tckn',reason:'SENTETIK vergi düzeltme gerekçesi'}}
+  : {counterpartyLegalNameChange:{partyId:id,changeRequestId:id,currentLegalName:'E'.repeat(250),proposedLegalName:'Y'.repeat(250),reason:'SENTETIK unvan değişikliği gerekçesi'}}),
+})
 it('keeps both staged Counterparty purposes out of the mounted fifteen and pins their actual cari capability ids', () => {
  expect(COUNTERPARTY_WORK_DECISION_CAPABILITY).toEqual({
   'counterparty.tax-identity-change.v1':'cari.tax-identity-change.work-decision',
@@ -388,8 +394,8 @@ it('keeps both staged Counterparty purposes out of the mounted fifteen and pins 
   expect(workDecisionReasonLimit(cp)).toBe(1000)
  }
 })
-it.each(cpKinds)('strictly decodes scoped %s without tax-number fields or another owner typed payload', cp => {
- const value={...preview,kind:cp,rejectionSupported:true,references:[{role:'party',label:'SENTETIK cari',recordId:id,link:null}]}
+it.each(cpKinds)('strictly decodes scoped %s with exactly its owner identity proof', cp => {
+ const value=cpProofPreview(cp)
  expect(decodeWorkDecisionPreview(value,company,cp,id)).not.toBeNull()
  expect(decodeWorkDecisionPreview({...value,pending:false},company,cp,id)).not.toBeNull()
  for(const delta of [{companyId:id},{itemId:company},{kind:cpKinds.find(kind=>kind!==cp)},{sourceVersion:'0'},
@@ -415,4 +421,34 @@ it.each(cpKinds.flatMap(cp=>[true,false].map(approve=>({cp,approve}))))('keeps n
   fetch.mockImplementation(async()=>new Response(JSON.stringify({...result,...delta}),{status:200,headers}))
   expect((await sendWorkDecision(company,cp,id,command,'same-cp-key')).type).toBe('unknown')
  }
+})
+
+it.each(cpKinds)('requires one exact request-bound and party-bound human proof for %s', cp => {
+ const value=cpProofPreview(cp)
+ const field=cp==='counterparty.tax-identity-change.v1'?'counterpartyTaxIdentityChange':'counterpartyLegalNameChange'
+ const other=cp==='counterparty.tax-identity-change.v1'?'counterpartyLegalNameChange':'counterpartyTaxIdentityChange'
+ const proof=value[field]!
+ for(const broken of [null,undefined,{}, {...proof,partyId:company}, {...proof,changeRequestId:company},
+  {...proof,reason:''},{...proof,reason:'R'.repeat(1001)},{...proof,unexpected:'not permitted'}])
+  expect(decodeWorkDecisionPreview({...value,[field]:broken},company,cp,id)).toBeNull()
+ for(const references of [[],[...value.references,...value.references],[{...value.references[0],recordId:company}],
+  [{...value.references[0],role:'other'}]])
+  expect(decodeWorkDecisionPreview({...value,references},company,cp,id)).toBeNull()
+ expect(decodeWorkDecisionPreview({...value,[other]:null},company,cp,id)).toBeNull()
+ expect(decodeWorkDecisionPreview({...value,[other]:proof},company,cp,id)).toBeNull()
+ expect(isWorkDecisionRequest({...request,[field]:proof},cp)).toBe(false)
+ expect(decodeWorkDecisionPreview({...preview,[field]:proof},company,kind,id)).toBeNull()
+})
+it('validates native tax kind and number shape, and preserves both full 250-character legal names',()=>{
+ const cp=cpKinds[0],value=cpProofPreview(cp),proof=value.counterpartyTaxIdentityChange!
+ for(const delta of [{proposedKind:'VKN'},{proposedKind:1},{proposedKind:'vkn'},
+  {proposedTaxIdentityNumber:'bad'},{proposedTaxIdentityNumber:'10000000147'},
+  {proposedTaxIdentityNumber:' 10000000146'},{currentTaxIdentityNumber:null},{currentTaxIdentityNumber:'bad'},{currentTaxIdentityNumber:'1'.repeat(12)}])
+  expect(decodeWorkDecisionPreview({...value,counterpartyTaxIdentityChange:{...proof,...delta}},company,cp,id)).toBeNull()
+ const vkn={...proof,proposedTaxIdentityNumber:'9876543217',proposedKind:'vkn'}
+ expect(decodeWorkDecisionPreview({...value,counterpartyTaxIdentityChange:vkn},company,cp,id)).not.toBeNull()
+ const legal=cpProofPreview(cpKinds[1]),names=legal.counterpartyLegalNameChange!
+ expect(decodeWorkDecisionPreview(legal,company,cpKinds[1],id)?.counterpartyLegalNameChange).toEqual(names)
+ for(const delta of [{currentLegalName:'E'.repeat(251)},{proposedLegalName:'Y'.repeat(251)},{currentLegalName:''}])
+  expect(decodeWorkDecisionPreview({...legal,counterpartyLegalNameChange:{...names,...delta}},company,cpKinds[1],id)).toBeNull()
 })

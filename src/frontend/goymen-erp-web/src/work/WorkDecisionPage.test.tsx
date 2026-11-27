@@ -702,6 +702,12 @@ it.each([{capabilities:[]},{capabilities:['inventory.stock-transfer.loss-approve
 
 // Component-only candidate harness: the two owner capabilities remain staged, with no production purpose mount.
 const cpKinds=['counterparty.tax-identity-change.v1','counterparty.legal-name-change.v1'] as const
+const cpProofPreview = (cp: typeof cpKinds[number]) => ({
+ ...preview,kind:cp,rejectionSupported:true,references:[{role:'party',label:'CAR-000001',recordId:id,link:null}],
+ ...(cp==='counterparty.tax-identity-change.v1'
+  ? {counterpartyTaxIdentityChange:{partyId:id,changeRequestId:id,currentTaxIdentityNumber:'1234567890',proposedTaxIdentityNumber:'10000000146',proposedKind:'tckn',reason:'SENTETIK vergi düzeltme gerekçesi'}}
+  : {counterpartyLegalNameChange:{partyId:id,changeRequestId:id,currentLegalName:'E'.repeat(250),proposedLegalName:'Y'.repeat(250),reason:'SENTETIK unvan değişikliği gerekçesi'}}),
+})
 function mountCounterpartyCandidate(cp:CounterpartyWorkDecisionKind){
  const router=createMemoryRouter([{path:'/',element:<AppShell/>,children:[{path:'cp-candidate/:approvalId',element:<WorkDecisionPage kind={cp}/>}]}],{initialEntries:[`/cp-candidate/${id}`]})
  render(<ShellProvider queryClient={new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})}><RouterProvider router={router}/></ShellProvider>)
@@ -710,7 +716,7 @@ function mountCounterpartyCandidate(cp:CounterpartyWorkDecisionKind){
 const cpCases=cpKinds.flatMap(cp=>[true,false].map(approve=>({cp,approve})))
 it.each(cpCases)('allows empty native optional note for $cp approve=$approve and retains four-field wire', async ({cp,approve}) => {
  const calls=installFetch({capabilities:[cap],respond:(url,init)=>url.includes(`/work/decisions/${cp}/${id}`)
-  ?init?.method==='POST'?json({companyId:COMPANY_A,kind:cp,itemId:id,state:approve?'Approved':'Rejected',replayed:false,originalCorrelationId:'original'}):json({...preview,kind:cp,rejectionSupported:true}):undefined})
+  ?init?.method==='POST'?json({companyId:COMPANY_A,kind:cp,itemId:id,state:approve?'Approved':'Rejected',replayed:false,originalCorrelationId:'original'}):json(cpProofPreview(cp)):undefined})
  mountCounterpartyCandidate(cp)
  const note=await screen.findByLabelText(T.optionalNote)
  expect((note as HTMLTextAreaElement).maxLength).toBe(1000)
@@ -724,7 +730,7 @@ it.each(cpCases)('allows empty native optional note for $cp approve=$approve and
 })
 it.each(cpCases)('sends the full native optional note, trimming only edges for $cp approve=$approve', async ({cp,approve}) => {
  const calls=installFetch({capabilities:[cap],respond:(url,init)=>url.includes(`/work/decisions/${cp}/${id}`)
-  ?init?.method==='POST'?json({companyId:COMPANY_A,kind:cp,itemId:id,state:approve?'Approved':'Rejected',replayed:false,originalCorrelationId:'original'}):json({...preview,kind:cp,rejectionSupported:true}):undefined})
+  ?init?.method==='POST'?json({companyId:COMPANY_A,kind:cp,itemId:id,state:approve?'Approved':'Rejected',replayed:false,originalCorrelationId:'original'}):json(cpProofPreview(cp)):undefined})
  mountCounterpartyCandidate(cp)
  const input=await screen.findByLabelText(T.optionalNote)
  const button=screen.getByRole('button',{name:approve?T.approve:T.reject}) as HTMLButtonElement
@@ -741,7 +747,7 @@ it.each(cpCases)('freezes the original native optional note/version/key across u
  const calls=installFetch({capabilities:[cap],respond:(url,init)=>{
   if(!url.includes(`/work/decisions/${cp}/${id}`))return undefined
   if(init?.method==='POST')return ++posts===1?problem(503):json({companyId:COMPANY_A,kind:cp,itemId:id,state:approve?'Approved':'Rejected',replayed:true,originalCorrelationId:'original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'})
-  return json({...preview,kind:cp,rejectionSupported:true,sourceVersion:++reads===1?'7':'9',pending:reads===1})
+  return json({...cpProofPreview(cp),sourceVersion:++reads===1?'7':'9',pending:reads===1})
  }})
  const baseFetch=globalThis.fetch
  vi.stubGlobal('fetch',vi.fn((input:RequestInfo|URL,init?:RequestInit)=>String(input).endsWith('/identity/me')
@@ -749,9 +755,20 @@ it.each(cpCases)('freezes the original native optional note/version/key across u
   : baseFetch(input,init)))
  mountCounterpartyCandidate(cp)
  const input=await screen.findByLabelText(T.optionalNote)
+ const proof=cpProofPreview(cp)
+ const values=cp==='counterparty.tax-identity-change.v1'
+  ? [proof.counterpartyTaxIdentityChange!.currentTaxIdentityNumber,proof.counterpartyTaxIdentityChange!.proposedTaxIdentityNumber,proof.counterpartyTaxIdentityChange!.reason]
+  : [proof.counterpartyLegalNameChange!.currentLegalName,proof.counterpartyLegalNameChange!.proposedLegalName,proof.counterpartyLegalNameChange!.reason]
+ for(const value of values)expect(screen.getByText(value,{exact:false})).toBeTruthy()
  if(approve)fireEvent.change(input,{target:{value:'İnsan tarafından yazılan isteğe bağlı not'}})
  fireEvent.click(screen.getByRole('button',{name:approve?T.approve:T.reject}));await screen.findByText(T.unknown)
+ const stored=[...Array(sessionStorage.length)].map((_,i)=>sessionStorage.getItem(sessionStorage.key(i)!)).join('')
+ for(const value of values)expect(stored).not.toContain(value)
+ const local=[...Array(localStorage.length)].map((_,i)=>localStorage.getItem(localStorage.key(i)!)).join('')
+ for(const value of values)expect(local).not.toContain(value)
  cleanup();mountCounterpartyCandidate(cp);await screen.findByText(T.unknown)
+ await screen.findByText(values[2]!)
+ for(const value of values)expect(screen.getByText(value,{exact:false})).toBeTruthy()
  fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
  const sent=calls.filter(call=>call.method==='POST'&&call.url.includes(`/work/decisions/${cp}/`))
  expect(sent).toHaveLength(2);expect(sent[0]!.body).toEqual(sent[1]!.body)
@@ -764,9 +781,27 @@ it.each(cpKinds)('keeps staged %s on the existing legacy route without mounting 
  expect((route?.element as ReactElement<{children:ReactElement}>).props.children.type).toBe(ApprovalInboxDetailPage)
 })
 it.each(cpKinds.flatMap(cp=>[{companyId:COMPANY_B},{kind:'finance.cash-account.v1'},{approvalReasonRequired:true},{sourceVersion:'0'}].map(delta=>({cp,delta}))))('refuses foreign or malformed $cp preview $delta without a decision', async ({cp,delta}) => {
- const calls=installFetch({capabilities:[cap],respond:url=>url.includes(`/work/decisions/${cp}/${id}`)?json({...preview,kind:cp,rejectionSupported:true,...delta}):undefined})
+ const calls=installFetch({capabilities:[cap],respond:url=>url.includes(`/work/decisions/${cp}/${id}`)?json({...cpProofPreview(cp),...delta}):undefined})
  mountCounterpartyCandidate(cp)
  await waitFor(()=>expect(calls.some(call=>call.url.includes(`/work/decisions/${cp}/`))).toBe(true))
  expect(screen.queryByLabelText(T.optionalNote)).toBeNull()
  expect(calls.some(call=>call.method==='POST')).toBe(false)
+})
+
+it.each(cpKinds)('renders the complete owner proof for %s and refuses missing or cross-bound proof before decisions', async cp => {
+ const value=cpProofPreview(cp)
+ const field=cp==='counterparty.tax-identity-change.v1'?'counterpartyTaxIdentityChange':'counterpartyLegalNameChange'
+ const other=cp==='counterparty.tax-identity-change.v1'?'counterpartyLegalNameChange':'counterpartyTaxIdentityChange'
+ const proof=value[field]!
+ for(const delta of [{[field]:null},{[field]:{...proof,changeRequestId:COMPANY_B}},
+  {[field]:{...proof,partyId:COMPANY_B}},{[other]:proof}]){
+  const calls=installFetch({capabilities:[cap],respond:url=>url.includes(`/work/decisions/${cp}/${id}`)?json({...value,...delta}):undefined})
+  mountCounterpartyCandidate(cp)
+  await waitFor(()=>expect(calls.some(call=>call.url.includes(`/work/decisions/${cp}/`))).toBe(true))
+  expect(screen.queryByRole('region',{name:T.identityProof})).toBeNull()
+  expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
+  expect(screen.queryByRole('button',{name:T.reject})).toBeNull()
+  expect(calls.some(call=>call.method==='POST')).toBe(false)
+  cleanup()
+ }
 })

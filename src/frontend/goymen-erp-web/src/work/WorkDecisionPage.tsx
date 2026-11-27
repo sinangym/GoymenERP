@@ -1,3 +1,5 @@
+import { KIND_LABEL, TAX_IDENTITY_TEXT } from '../cari/taxIdentity'
+import { LEGAL_NAME_TEXT } from '../cari/legalName'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { useInfiniteQuery, useQuery, type InfiniteData } from '@tanstack/react-query'
@@ -92,6 +94,16 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       subject={T.title} onRetry={() => void query.refetch()} /> : <>
       <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {preview.sourceVersion}</p>
       {kind === 'inventory.opening-cost.v1' ? <p>{cost == null ? T.hiddenCost : `${T.cost}: ${cost}`}</p> : null}
+      {preview.counterpartyTaxIdentityChange ? <section aria-label={T.identityProof}><h3>{T.identityProof}</h3><dl>
+        <dt>{TAX_IDENTITY_TEXT.pendingCurrent}</dt><dd>{preview.counterpartyTaxIdentityChange.currentTaxIdentityNumber}</dd>
+        <dt>{TAX_IDENTITY_TEXT.pendingProposed}</dt><dd>{preview.counterpartyTaxIdentityChange.proposedTaxIdentityNumber} ({KIND_LABEL[preview.counterpartyTaxIdentityChange.proposedKind]})</dd>
+        <dt>{TAX_IDENTITY_TEXT.reasonLabel}</dt><dd>{preview.counterpartyTaxIdentityChange.reason}</dd>
+      </dl></section> : null}
+      {preview.counterpartyLegalNameChange ? <section aria-label={T.identityProof}><h3>{T.identityProof}</h3><dl>
+        <dt>{LEGAL_NAME_TEXT.pendingCurrent}</dt><dd>{preview.counterpartyLegalNameChange.currentLegalName}</dd>
+        <dt>{LEGAL_NAME_TEXT.proposedLabel}</dt><dd>{preview.counterpartyLegalNameChange.proposedLegalName}</dd>
+        <dt>{LEGAL_NAME_TEXT.reasonLabel}</dt><dd>{preview.counterpartyLegalNameChange.reason}</dd>
+      </dl></section> : null}
       <h3>{T.reference}</h3><ul>{preview.references.map((ref, i) => <li key={i}>{inboxRoleText(ref.role) ?? T.reference}: {ref.label}</li>)}</ul>
       {(options !== undefined || frozen && selected.length > 0) ? <fieldset disabled={frozen}><legend>{T.reapprovalLabels}</legend><p>{T.reapprovalHelp}</p>
         {(frozen ? selected : options ?? []).map(labelId => <label key={labelId}><input type="checkbox" disabled={frozen} checked={selected.includes(labelId)}

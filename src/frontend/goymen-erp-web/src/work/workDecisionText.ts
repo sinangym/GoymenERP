@@ -1,4 +1,5 @@
 export const WORK_DECISION_TEXT = {
+  identityProof: 'Karar verilecek değişiklik',
   optionalNote: 'Karar notu (isteğe bağlı)',
   optionalNoteHelp: 'Onay ve ret için not isteğe bağlıdır; en fazla 1000 karakter yazabilirsiniz.',
   lossRequestNumber: 'Karar verilecek kayıp talebi numarası',
