@@ -540,6 +540,7 @@ builder.Services.AddWorkModule(
 builder.Services.AddWorkOutboxDispatcher(builder.Configuration);
 // W1-C: notes, mentions, tasks and the collaboration inbox; the scheduler stays off unless Work:CollaborationScheduler:Enabled.
 builder.Services.AddWorkCollaborationHostV1(builder.Configuration);
+builder.Services.AddWorkMorningSummaryV1();
 // WP-C6 (AI-D30): personal assistant memory; writing stays closed until Work:AssistantMemory is opened by a human decision.
 builder.Services.AddWorkAssistantMemoryV1(builder.Configuration);
 // WP14 (DALGA_PLANI_v2 1.15, YOL-D13, ROL-D13/D15): the report centre. Its numbers come from owner read ports through host
@@ -674,6 +675,7 @@ app.MapWorkDecisionEndpoints();
 app.MapWorkDeadlineEndpoints();
 app.MapWorkNotificationEndpoints();
 app.MapWorkCollaborationEndpoints();
+app.MapWorkMorningSummaryEndpoints();
 app.MapWorkApprovalFollowUpEndpoints();
 app.MapWorkAssistantMemoryEndpoints();
 app.MapReportingEndpoints();
