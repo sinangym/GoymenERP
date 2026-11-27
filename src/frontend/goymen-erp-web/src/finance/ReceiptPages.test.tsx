@@ -135,6 +135,43 @@ describe('independent receipt entry shared quick Cari', () => {
     await act(async () => { release(page()) })
     expect(screen.queryByRole('button', { name: SAVE_DRAFT })).toBeNull()
   })
+  it('recovers an in-flight create after leaving and returning without another Cari; explicit retry keeps the original key/body', async () => {
+    const { commands, remount } = mount(); await selectCreated(); await fill()
+    fireEvent.click(screen.getByRole('button', { name: SAVE_DRAFT })); expect(commands).toHaveLength(1)
+    const original = commands[0]
+    remount(<MemoryRouter><p>SENTETIK other screen</p></MemoryRouter>)
+    remount(<MemoryRouter initialEntries={['/finans/tahsilatlar/yeni']}><ReceiptDraftPage /></MemoryRouter>)
+    const retry = await screen.findByRole('button', { name: RESEND_SAME })
+    expect(fetchCounterparties).toHaveBeenCalledTimes(1)
+    expect(commands).toHaveLength(1)
+    fireEvent.click(retry)
+    expect(commands).toHaveLength(2); expect(commands[1].key).toBe(original.key)
+    expect(commands[1].request).toEqual(original.request)
+  })
+  it('recovers the same original draft on a same-session route-entry generation change without a new create', async () => {
+    const { commands } = mount(); await selectCreated(); await fill()
+    fireEvent.click(screen.getByRole('button', { name: SAVE_DRAFT })); await commands[0].reject()
+    await screen.findByRole('button', { name: RESEND_SAME })
+    await commitContext({ ...shellFor(COMPANY_A, 2), routeEntryGeneration: 2 })
+    fireEvent.click(await screen.findByRole('button', { name: RESEND_SAME }))
+    expect(commands).toHaveLength(2); expect(commands[1].key).toBe(commands[0].key)
+    expect(commands[1].request).toEqual(commands[0].request)
+    expect(fetchCounterparties).toHaveBeenCalledTimes(1)
+  })
+  it.each(['company', 'session', 'actor'] as const)('does not recover an unresolved draft into another %s', async transition => {
+    const { commands, remount } = mount(); await selectCreated(); await fill()
+    fireEvent.click(screen.getByRole('button', { name: SAVE_DRAFT })); await commands[0].reject()
+    remount(<MemoryRouter><p>SENTETIK other screen</p></MemoryRouter>)
+    const shell = shellFor(transition === 'company' ? COMPANY_B : COMPANY_A, 2)
+    await commitContext({ ...shell, sessionEpoch: transition === 'session' ? 2 : 1,
+      bootstrappedSessionEpoch: transition === 'session' ? 2 : 1,
+      activeContext: shell.activeContext === null ? null : { ...shell.activeContext,
+        userId: transition === 'actor' ? 'aaaaaaaa-0000-4000-8000-000000000010' : shell.activeContext.userId } })
+    remount(<MemoryRouter initialEntries={['/finans/tahsilatlar/yeni']}><ReceiptDraftPage /></MemoryRouter>)
+    expect(screen.queryByRole('button', { name: RESEND_SAME })).toBeNull()
+    expect(screen.queryByRole('button', { name: SAVE_DRAFT })).toBeNull()
+    expect(commands).toHaveLength(1)
+  })
   it('retains the original URL account entry and does not offer independent quick create there', async () => {
     mount(`?partyId=${EXAMPLE_PARTY}&companyAccountId=${EXAMPLE_ACCOUNT}`)
     expect(screen.queryByRole('button', { name: 'SENTETIK quick create' })).toBeNull()

@@ -26,7 +26,8 @@ import {
   partyLedgerPath,
   receiptDetailPath,
 } from './capabilities'
-import { useFinanceRead } from './financePort'
+import { useFinanceBinding, useFinanceRead } from './financePort'
+import { attemptStoreKey, recallSlot } from './receiptCommand'
 import { PartyLedger, type PartyLedgerRange } from './PartyLedger'
 import { LEDGER_BACK, LEDGER_NEEDS_ACCOUNT, LEDGER_OPEN, LEDGER_OPEN_HINT } from './partyLedgerText'
 import { FinanceSourceDetail } from './FinanceSourceDetail'
@@ -140,10 +141,18 @@ export function ReceiptDraftPage() {
 }
 
 function ReceiptDraftEntry({ search, companyId }: { readonly search: URLSearchParams; readonly companyId: string | null }) {
-  const boundary = useAuthBoundary()
-  const [createdParty, setCreatedParty] = useState<{ partyId: string; companyAccountId: string } | null>(null)
-  const [quickUnresolved, setQuickUnresolved] = useState(false)
+  const boundary = useAuthBoundary(), bound = useFinanceBinding()
   const independent = !search.has('partyId') && !search.has('companyAccountId')
+  const retained = independent && bound !== null
+    ? recallSlot(attemptStoreKey(bound.binding, 'draft-save', 'new')).outstanding : null
+  const [createdParty, setCreatedParty] = useState<{ partyId: string; companyAccountId: string } | null>(() => {
+    const request = retained?.snapshot.request
+    if (request?.operation !== 'draft-save' || request.body.draftId !== null) return null
+    const { partyId, companyAccountId } = request.body.preparation
+    // Recover only the original current actor/session/company slot. The native form owns retry/body/key.
+    return isBoundUuid(partyId) && isBoundUuid(companyAccountId) ? { partyId, companyAccountId } : null
+  })
+  const [quickUnresolved, setQuickUnresolved] = useState(false)
   const partyId = search.get('partyId')
   const companyAccountId = search.get('companyAccountId')
   const [saved, setSaved] = useState<SourceDetail | null>(null)
@@ -154,7 +163,7 @@ function ReceiptDraftEntry({ search, companyId }: { readonly search: URLSearchPa
   return (
     <section aria-labelledby="finance-receipt-draft-title">
       <h1 id="finance-receipt-draft-title">{RECEIPT_DRAFT_TITLE}</h1>
-      {independent && companyId !== null ? <CariQuickCreate initialRoles={PARTY_ROLE_FLAG.Customer}
+      {independent && companyId !== null ? <CariQuickCreate initialRoles={PARTY_ROLE_FLAG.Customer} disabled={retained !== null}
         onUnresolvedChange={setQuickUnresolved} onCreated={async (record, signal) => {
           if (signal.aborted || record.account.companyId !== companyId
             || createdParty !== null && (createdParty.partyId !== record.id || createdParty.companyAccountId !== record.account.id)) return false
