@@ -4,8 +4,7 @@ import type { WorkInboxKind } from './types'
 export const PURCHASING_INBOX_KINDS: readonly WorkInboxKind[] = [
   { kind: 'purchasing.order.v1', module: 'purchasing', capability: 'purchasing.order.work-decision' },
   { kind: 'purchasing.incoming-invoice-variance.v1', module: 'purchasing', capability: 'purchasing.invoice-variance.work-decision' },
-  // No frontend capability for `purchasing.goods-receipts.approve-variance` yet.
-  { kind: 'purchasing.goods-receipt-batch.v1', module: 'purchasing', capability: null },
+  { kind: 'purchasing.goods-receipt-batch.v1', module: 'purchasing', capability: 'purchasing.goods-receipt-batch.work-decision' },
   // WP7
   { kind: 'purchasing.request.v1', module: 'purchasing', capability: 'purchasing.request.work-decision' },
   // SAT-D396: the supplier return cost exception is decided under the order approval permission.

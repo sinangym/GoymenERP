@@ -56,12 +56,13 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const preview = query.data?.type === 'ok-single' ? query.data.data : null
   const frozen = attempt.status.kind === 'busy' || attempt.hasPendingRetry
   const reasonLimit = workDecisionReasonLimit(kind)
+  const batch = kind === 'purchasing.goods-receipt-batch.v1'
   const reasonRequired = (approve: boolean) => preview?.approvalReasonRequired || !approve && !isSalesWorkDecisionKind(kind)
-  const invalidReason = (approve: boolean) => reasonRequired(approve) && reason.trim() === '' || (preview?.approvalReasonRequired || !approve) && reason.trim().length > reasonLimit
+  const invalidReason = (approve: boolean) => reasonRequired(approve) && reason.trim() === '' || (preview?.approvalReasonRequired || !approve || batch) && (batch ? reason.length : reason.trim().length) > reasonLimit
   const submit = async (approve: boolean) => {
     if (preview === null || !approve && preview.rejectionSupported === false || frozen || invalidReason(approve) || useDelegation && !delegationId) return
     const answer = await attempt.run({ expectedVersion: preview.sourceVersion, approve,
-      reason: preview.approvalReasonRequired || !approve ? reason.trim() || null : null, delegationId: useDelegation ? delegationId : null })
+      reason: batch ? reason === '' ? null : reason : preview.approvalReasonRequired || !approve ? reason.trim() || null : null, delegationId: useDelegation ? delegationId : null })
     if (answer.type === 'applied') void query.refetch()
   }
   const retry = async () => {
@@ -80,6 +81,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
         {preview.rejectionSupported !== false || preview.approvalReasonRequired ? <label>{T.reason}<textarea value={reason} maxLength={reasonLimit} onChange={event => setReason(event.target.value)} /></label> : null}
         {kind === 'purchasing.service-order.v1' || kind === 'purchasing.incoming-invoice-variance.v1' ? <p>{T.approvalReasonRequired(reasonLimit)}</p> : null}
         {kind === 'purchasing.request.v1' ? <p>{T.rejectionReasonRequired(reasonLimit)}</p> : null}
+        {batch ? <p>{T.batchReason(reasonLimit)}</p> : null}
         <label><input type="checkbox" checked={useDelegation} onChange={event => { setUseDelegation(event.target.checked); setDelegationId('') }} />{T.delegation}</label>
         {useDelegation ? <><label>{T.delegationChoice}<select value={delegationId} onChange={event => setDelegationId(event.target.value)}><option value="">{T.choose}</option>
           {candidates.map(row => <option key={row.id} value={row.id}>{delegationPersonLabel(people,row.delegatorUserId)} · {new Date(row.startsAtUtc).toLocaleString('tr-TR')} – {new Date(row.endsAtUtc).toLocaleString('tr-TR')} · {row.reason}</option>)}</select></label>

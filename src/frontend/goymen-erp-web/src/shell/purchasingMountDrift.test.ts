@@ -18,6 +18,7 @@ describe('shell ↔ Purchasing lane route catalogue', () => {
   it.each([
     [CAPABILITY.purchasingRequestWorkDecision, 'purchasing.request.v1'],
     [CAPABILITY.purchasingOrderWorkDecision, 'purchasing.order.v1'],
+    [CAPABILITY.purchasingGoodsReceiptBatchWorkDecision, 'purchasing.goods-receipt-batch.v1'],
     [CAPABILITY.purchasingInvoiceVarianceWorkDecision, 'purchasing.incoming-invoice-variance.v1'],
     [CAPABILITY.purchasingServiceOrderWorkDecision, 'purchasing.service-order.v1'],
   ] as const)('mounts %s once ahead of legacy generic detail without a menu entry', (capability, kind) => {
@@ -46,6 +47,7 @@ describe('shell ↔ Purchasing lane route catalogue', () => {
     expect([...shellIds].sort()).toEqual([
       CAPABILITY.purchasingRequestWorkDecision,
       CAPABILITY.purchasingOrderWorkDecision,
+      CAPABILITY.purchasingGoodsReceiptBatchWorkDecision,
       CAPABILITY.purchasingInvoiceVarianceWorkDecision,
       CAPABILITY.purchasingServiceOrderWorkDecision,
       PURCHASING_CAPABILITY.requestCreate,

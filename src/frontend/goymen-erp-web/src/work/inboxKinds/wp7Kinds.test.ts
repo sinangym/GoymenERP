@@ -6,6 +6,7 @@ import { inboxKindText, inboxModuleText, inboxPermissionText, inboxRoleText, inb
 const KINDS = [
   ['purchasing.request.v1', 'purchasing'],
   ['purchasing.order.v1', 'purchasing'],
+  ['purchasing.goods-receipt-batch.v1', 'purchasing'],
   ['purchasing.incoming-invoice-variance.v1', 'purchasing'],
   ['purchasing.supplier-return-cost-exception.v1', 'purchasing'],
   ['purchasing.service-order.v1', 'purchasing'],
@@ -51,6 +52,8 @@ describe('WP7 inbox kinds', () => {
   it('opens request decisions for their approve-only purpose route; other existing approve controls and Ayarlar publication has no capability yet', () => {
     expect(WORK_INBOX_CAPABILITIES).toContain('purchasing.invoice-variance.work-decision')
     expect(WORK_INBOX_KINDS.find(entry => entry.kind === 'purchasing.incoming-invoice-variance.v1')?.capability).toBe('purchasing.invoice-variance.work-decision')
+    expect(WORK_INBOX_CAPABILITIES).toContain('purchasing.goods-receipt-batch.work-decision')
+    expect(WORK_INBOX_KINDS.find(entry => entry.kind === 'purchasing.goods-receipt-batch.v1')?.capability).toBe('purchasing.goods-receipt-batch.work-decision')
     expect(WORK_INBOX_CAPABILITIES).toContain('purchasing.order.work-decision')
     expect(WORK_INBOX_KINDS.find(entry => entry.kind === 'purchasing.order.v1')?.capability).toBe('purchasing.order.work-decision')
     expect(WORK_INBOX_CAPABILITIES).toContain('purchasing.request.work-decision')

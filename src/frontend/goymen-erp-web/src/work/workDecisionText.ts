@@ -6,6 +6,7 @@ export const WORK_DECISION_TEXT = {
   reload: 'Kaydı yenile', back: 'İş kutusuna dön', reference: 'Dayanak kayıtlar',
   cost: 'Beyan edilen birim maliyet (şirket para birimi / kg)', hiddenCost: 'Birim maliyet, ayrı maliyet görme yetkisine tabidir.',
   rejectionReasonRequired: (limit: number) => `Reddetmek için gerekçe zorunludur. En fazla ${limit} karakter yazabilirsiniz.`,
+  batchReason: (limit: number) => `Reddetmek için gerekçe zorunludur. Onayda gerekçe isteğe bağlıdır; en fazla ${limit} karakter yazabilirsiniz.`,
   approvalReasonRequired: (limit: number) => `Onaylamak için gerekçe zorunludur. En fazla ${limit} karakter yazabilirsiniz.`,
   varianceApprovalOnly: 'Bu kayıt için yalnız fatura farkı onayı verilebilir.',
   approvalOnly: 'Bu kayıt için yalnız onay verilebilir. Sipariş iptali, ilgili modülün ayrı işlemidir.',

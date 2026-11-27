@@ -433,6 +433,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'logistics.transfer-departures.record': 'Transfer çıkışları',
   'purchasing.request.work-decision': '',
   'purchasing.order.work-decision': '',
+  'purchasing.goods-receipt-batch.work-decision': '',
   'purchasing.invoice-variance.work-decision': '',
   'purchasing.service-order.work-decision': '',
   'purchasing.requests.list': 'Satın alma talepleri',

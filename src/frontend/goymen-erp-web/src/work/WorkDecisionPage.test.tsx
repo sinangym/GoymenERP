@@ -396,3 +396,104 @@ it('freezes a foreign variance success response as unknown without automatically
  await userEvent.setup().click(screen.getByRole('button',{name:T.approve}))
  expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
 })
+
+
+const batchKind='purchasing.goods-receipt-batch.v1',batchCap='purchasing.goods-receipt-batch.work-decision'
+const batchPath=`/work/decisions/${batchKind}/${id}`,batchRoute=`/onaylarim/${batchKind}/${id}`
+const batchPreview={...preview,kind:batchKind,documentLabel:'SENTETIK parti',rejectionSupported:true,
+ references:[{role:'purchase-order',label:'SENTETIK owner order',recordId:COMPANY_B,link:null}]}
+
+describe('WP8 native goods receipt batch purpose',()=>{
+ it('opens with its purpose capability, allows reasonless approval, requires human rejection reason and opens no browse workspace',async()=>{
+  let decided=false
+  const calls=installFetch({capabilities:[batchCap],respond:(url,init)=>{
+   if(!url.includes(batchPath))return undefined
+   if(init?.method==='POST'){decided=true;return json({companyId:COMPANY_A,kind:batchKind,itemId:id,state:'Posted',replayed:false,originalCorrelationId:'SENTETIK'})}
+   return json(decided?{...batchPreview,pending:false,sourceVersion:'8'}:batchPreview)
+  }})
+  const router=mount(batchRoute,true);await screen.findByText('SENTETIK parti',{exact:false})
+  expect((screen.getByRole('textbox',{name:T.reason}) as HTMLTextAreaElement).maxLength).toBe(500)
+  expect(screen.getByText(T.batchReason(500))).toBeTruthy()
+  expect((screen.getByRole('button',{name:T.reject}) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.change(screen.getByRole('textbox',{name:T.reason}),{target:{value:'   '}})
+  expect((screen.getByRole('button',{name:T.reject}) as HTMLButtonElement).disabled).toBe(true)
+  fireEvent.change(screen.getByRole('textbox',{name:T.reason}),{target:{value:''}})
+  expect((screen.getByRole('button',{name:T.approve}) as HTMLButtonElement).disabled).toBe(false)
+  await userEvent.setup().click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.done);await screen.findByText(T.closed)
+  expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
+  expect(calls.find(call=>call.method==='POST')?.body).toEqual({expectedVersion:'7',approve:true,reason:null,delegationId:null})
+  for(const route of ['/satinalma/siparisler',`/satinalma/siparisler/${id}`]) {
+   await act(async()=>{await router.navigate(route)})
+   await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+  }
+  expect(calls.some(call=>call.url.includes('/purchasing/'))).toBe(false)
+ })
+ it.each([true,false])('forwards the exact native 500-character input for approve=%s without adding the owner order argument',async approve=>{
+  const calls=installFetch({capabilities:[batchCap],respond:(url,init)=>url.includes(batchPath)?init?.method==='POST'
+   ?json({companyId:COMPANY_A,kind:batchKind,itemId:id,state:approve?'Posted':'Rejected',replayed:false,originalCorrelationId:'SENTETIK'}):json(batchPreview):undefined})
+  mount(batchRoute);await screen.findByText('SENTETIK parti',{exact:false})
+  const reason='  R'+String.fromCharCode(10)+'R'.repeat(494)+'  '
+  expect(reason).toHaveLength(500)
+  fireEvent.change(screen.getByRole('textbox',{name:T.reason}),{target:{value:reason}})
+  await userEvent.setup().click(screen.getByRole('button',{name:approve?T.approve:T.reject}));await screen.findByText(T.done)
+  const sent=calls.filter(call=>call.method==='POST');expect(sent).toHaveLength(1)
+  expect(sent[0].body).toEqual({expectedVersion:'7',approve,reason,delegationId:null})
+  expect(sent[0].headers['X-Company-Id']).toBe(COMPANY_A);expect(sent[0].headers['Idempotency-Key']).toBeTruthy()
+ })
+ it.each([true,false])('does not trim a raw 501-character input into the native bound for approve=%s',async approve=>{
+  const calls=installFetch({capabilities:[batchCap],respond:url=>url.includes(batchPath)?json(batchPreview):undefined})
+  mount(batchRoute);await screen.findByText('SENTETIK parti',{exact:false})
+  const reason=' '+'R'.repeat(499)+' '
+  fireEvent.change(screen.getByRole('textbox',{name:T.reason}),{target:{value:reason}})
+  expect((screen.getByRole('textbox',{name:T.reason}) as HTMLTextAreaElement).value).toHaveLength(501)
+  const button=screen.getByRole('button',{name:approve?T.approve:T.reject}) as HTMLButtonElement
+  expect(button.disabled).toBe(true);await userEvent.setup().click(button)
+  expect(calls.some(call=>call.method==='POST')).toBe(false)
+ })
+ it.each([true,false])('leaves forbidden edge-control validation to the native owner without silently removing it for approve=%s',async approve=>{
+  const calls=installFetch({capabilities:[batchCap],respond:(url,init)=>url.includes(batchPath)?init?.method==='POST'?problem(400):json(batchPreview):undefined})
+  mount(batchRoute);await screen.findByText('SENTETIK parti',{exact:false})
+  const reason=String.fromCharCode(11)+'Actual reason'+String.fromCharCode(11)
+  fireEvent.change(screen.getByRole('textbox',{name:T.reason}),{target:{value:reason}})
+  await userEvent.setup().click(screen.getByRole('button',{name:approve?T.approve:T.reject}));await screen.findByText(`${T.refused} (400)`)
+  expect(calls.find(call=>call.method==='POST')?.body).toEqual({expectedVersion:'7',approve,reason,delegationId:null})
+  expect(screen.queryByText(T.done)).toBeNull()
+ })
+ it.each([true,false])('replays an unknown approve=%s attempt with its original body/key after a newer closed preview',async approve=>{
+  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-batch-decision'})
+  let posts=0
+  const state=approve?'Posted':'Rejected',reason='Actual batch reason'
+  const calls=installFetch({capabilities:[batchCap],respond:(url,init)=>{
+   if(!url.includes(batchPath))return undefined
+   if(init?.method==='POST')return ++posts===1?problem(503):new Response(JSON.stringify({companyId:COMPANY_A,kind:batchKind,itemId:id,state,replayed:true,originalCorrelationId:'original'}),{status:200,headers:{'Content-Type':'application/json','Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'}})
+   return json(posts?{...batchPreview,pending:false,sourceVersion:'8'}:batchPreview)
+  }})
+  mount(batchRoute);await screen.findByText('SENTETIK parti',{exact:false})
+  fireEvent.change(screen.getByRole('textbox',{name:T.reason}),{target:{value:reason}})
+  await userEvent.setup().click(screen.getByRole('button',{name:approve?T.approve:T.reject}));await screen.findByText(T.unknown)
+  expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
+  cleanup();mount(batchRoute);await screen.findByText(T.unknown);await screen.findByText(T.closed)
+  await userEvent.setup().click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+  const sent=calls.filter(call=>call.method==='POST');expect(sent).toHaveLength(2)
+  expect(sent[1].body).toEqual(sent[0].body);expect(sent[1].body).toEqual({expectedVersion:'7',approve,reason,delegationId:null})
+  expect(sent[1].headers['Idempotency-Key']).toBe(sent[0].headers['Idempotency-Key'])
+  expect(calls.filter(call=>call.url.includes(batchPath)&&call.method==='GET').length).toBeGreaterThanOrEqual(3)
+ })
+ it.each([{companyId:COMPANY_B},{rejectionSupported:false},{rejectionSupported:undefined},{approvalReasonRequired:true}])('rejects a malformed or foreign batch preview %j',async delta=>{
+  const calls=installFetch({capabilities:[batchCap],respond:url=>url.includes(batchPath)?json({...batchPreview,...delta}):undefined})
+  mount(batchRoute);await waitFor(()=>expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull())
+  expect(screen.queryByText('SENTETIK parti',{exact:false})).toBeNull();expect(calls.some(call=>call.method==='POST')).toBe(false)
+ })
+ it('does not read the batch owner for an old control without the exact purpose capability',async()=>{
+  const calls=installFetch({capabilities:['purchasing.goods-receipts.approve-variance'],respond:url=>url.includes(batchPath)?json(batchPreview):undefined})
+  mount(batchRoute,true);await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+  expect(calls.some(call=>call.url.includes(batchPath))).toBe(false)
+ })
+ it('keeps a fresh native 403 authoritative without showing batch success',async()=>{
+  const calls=installFetch({capabilities:[batchCap],respond:(url,init)=>url.includes(batchPath)?init?.method==='POST'?problem(403):json(batchPreview):undefined})
+  mount(batchRoute);await screen.findByText('SENTETIK parti',{exact:false})
+  await userEvent.setup().click(screen.getByRole('button',{name:T.approve}))
+  await waitFor(()=>expect(screen.queryByRole('button',{name:T.approve})).toBeNull())
+  expect(screen.queryByText(T.done)).toBeNull();expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
+ })
+})

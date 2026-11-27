@@ -258,3 +258,38 @@ it('accepts only the host-proved immutable Matched variance receipt for approval
  expect((await sendWorkDecision(company,kind,id,command,'original-key')).type).toBe('applied')
  expect((await sendWorkDecision(company,'purchasing.service-order.v1',id,command,'original-key')).type).toBe('unknown')
 })
+
+
+it('requires the exact batch preview flags and preserves the native five-hundred-character reason bound',()=>{
+ const kind='purchasing.goods-receipt-batch.v1',value={...preview,kind,rejectionSupported:true}
+ expect(workDecisionReasonLimit(kind)).toBe(500)
+ expect(decodeWorkDecisionPreview(value,company,kind,id)).not.toBeNull()
+ for(const delta of [{approvalReasonRequired:true},{rejectionSupported:false},{rejectionSupported:undefined},{companyId:id},{itemId:company},{sourceVersion:'0'},{orderId:id}])
+  expect(decodeWorkDecisionPreview({...value,...delta},company,kind,id)).toBeNull()
+})
+
+it.each([true,false])('accepts only the immutable batch receipt for approve=%s with exact scope and original replay correlation',async approve=>{
+ const kind='purchasing.goods-receipt-batch.v1',command={...request,approve,reason:approve?null:'Actual rejection reason'}
+ const state=approve?'Posted':'Rejected'
+ const body={companyId:company,kind,itemId:id,state,replayed:true,originalCorrelationId:'original'}
+ const headers={'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'}
+ const fetch=vi.fn(async()=>new Response(JSON.stringify(body),{status:200,headers}))
+ vi.stubGlobal('fetch',fetch)
+ expect((await sendWorkDecision(company,kind,id,command,'original-key')).type).toBe('applied')
+ for(const replayed of [true,false]) {
+  for(const delta of [{companyId:id},{itemId:company},{kind:'purchasing.request.v1'},{orderId:id},
+   ...['Approved','PendingApproval','Draft','Matched','FutureState',approve?'Rejected':'Posted'].map(state=>({state}))]) {
+   fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,replayed,...delta}),{status:200,headers:replayed?headers:{}}))
+   expect((await sendWorkDecision(company,kind,id,command,'original-key')).type).toBe('unknown')
+  }
+ }
+ const invalidHeaders: Record<string,string>[]=[{}, {'Idempotency-Replayed':'true'}, {...headers,'Idempotency-Original-Correlation-Id':'other'}]
+ for(const bad of invalidHeaders) {
+  fetch.mockImplementation(async()=>new Response(JSON.stringify(body),{status:200,headers:bad}))
+  expect((await sendWorkDecision(company,kind,id,command,'original-key')).type).toBe('unknown')
+ }
+ fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,originalCorrelationId:'other'}),{status:200,headers}))
+ expect((await sendWorkDecision(company,kind,id,command,'original-key')).type).toBe('unknown')
+ fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,replayed:false}),{status:200}))
+ expect((await sendWorkDecision(company,kind,id,command,'original-key')).type).toBe('applied')
+})
