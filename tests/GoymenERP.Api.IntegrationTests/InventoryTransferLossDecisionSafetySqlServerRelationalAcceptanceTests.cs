@@ -141,8 +141,11 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             using var ambient = boundary == "ambient" ? new TransactionScope(TransactionScopeAsyncFlowOption.Enabled) : null;
             var callerAmbient = Transaction.Current; var called = false;
             Task Fence(CancellationToken _) { called = true; return Task.CompletedTask; }
-            Task Invoke() => replay ? owner.ReplayDecideLossAsync(plan.TransferId, line, LossSafetyBody(true), LossChecker(run), Fence)
-                : owner.DecideLossAsync(plan.TransferId, line, LossSafetyBody(true), LossChecker(run), Fence);
+            async Task Invoke()
+            {
+                if (replay) await owner.ReplayDecideLossAsync(plan.TransferId, line, LossSafetyBody(true), LossChecker(run), Fence);
+                else await owner.DecideLossAsync(plan.TransferId, line, LossSafetyBody(true), LossChecker(run), Fence);
+            }
             if (boundary == "missing-writer") Assert.Equal(503, (await Assert.ThrowsAsync<InventoryTransferException>(Invoke)).Status);
             else await Assert.ThrowsAsync<InvalidOperationException>(Invoke);
             Assert.False(called);
