@@ -906,16 +906,17 @@ public sealed class LogisticsPersistenceModelTests
         var provider = new LogisticsShellCapabilityProvider();
         var declarations = provider.GetDeclarations().Where(item =>
             !item.CapabilityId.StartsWith("logistics.subcontract-deliveries.", StringComparison.Ordinal)).ToList();
-        Assert.Equal("1.12", provider.ContractVersion);
-        Assert.Equal(17, declarations.Count);
+        Assert.Equal("1.13", provider.ContractVersion);
+        Assert.Equal(18, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(
             declaration.CapabilityId is not (LogisticsShellCapabilityProvider.PlanExcessPrepareCapabilityId
-                or LogisticsShellCapabilityProvider.PlanExcessApproveCapabilityId), declaration.ImplementationAvailable));
+                or LogisticsShellCapabilityProvider.PlanExcessApproveCapabilityId or LogisticsShellCapabilityProvider.CustomerReturnWorkDecisionCapabilityId), declaration.ImplementationAvailable));
         var excessPrepare = Assert.Single(declarations, item => item.CapabilityId == LogisticsShellCapabilityProvider.PlanExcessPrepareCapabilityId);
         Assert.Equal(LogisticsShellCapabilityProvider.DetailCapabilityId, excessPrepare.ParentCapabilityId);
         Assert.Equal([LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.LoadsRecord], excessPrepare.RequiredPermissions);
         Assert.Equal(
             [
+                ("logistics.customer-return.work-decision", "/onaylarim/logistics.customer-return.v1/:approvalId", LogisticsPermissionManifestV1.CustomerReturnsDecision),
                 ("logistics.dispatch-note.work-decision", "/onaylarim/logistics.dispatch-note.v1/:approvalId", LogisticsPermissionManifestV1.DispatchNotesApprove),
                 ("logistics.instructions.create", "/lojistik/yukleme-talimatlari/yeni", LogisticsPermissionManifestV1.InstructionsCreate),
                 ("logistics.instructions.detail", "/lojistik/yukleme-talimatlari/:instructionId", LogisticsPermissionManifestV1.InstructionsRead),
@@ -957,6 +958,7 @@ public sealed class LogisticsPersistenceModelTests
         // Master v3 §27.8: L-02 is the instruction list, L-03 the new/edit workspace; the detail is a view of one L-02 row.
         Assert.Equal(
             [
+                ("logistics.customer-return.work-decision", "L-CUSTOMER-RETURN-WORK-DECISION"),
                 ("logistics.customer-returns.approve", "L-02-DETAIL"),
                 ("logistics.customer-returns.read", "L-02-DETAIL"),
                 ("logistics.customer-returns.reject", "L-02-DETAIL"),

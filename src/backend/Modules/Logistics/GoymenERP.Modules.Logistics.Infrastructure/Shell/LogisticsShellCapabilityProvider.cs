@@ -34,7 +34,7 @@ public sealed partial class LogisticsShellCapabilityProvider : IShellCapabilityP
     public const string OwnerId = "LOGISTICS";
     // WP8: the paired Work decision implementation; native screen availability and grants are unchanged.
     // Source availability is not SQL/browser/CI acceptance or environment activation.
-    public const string OwnerContractVersion = "1.12";
+    public const string OwnerContractVersion = "1.13";
     public const string TransferDeparturesCapabilityId = LogisticsPermissionManifestV1.TransferDeparturesRecord;
     public const string PlanExcessPrepareCapabilityId = "logistics.shipments.plan-excess.prepare";
     public const string PlanExcessApproveCapabilityId = "logistics.shipments.plan-excess.approve";
@@ -56,6 +56,8 @@ public sealed partial class LogisticsShellCapabilityProvider : IShellCapabilityP
     public const string CustomerReturnsRequestCapabilityId = "logistics.customer-returns.request";
     public const string CustomerReturnsApproveCapabilityId = "logistics.customer-returns.approve";
     public const string CustomerReturnsRejectCapabilityId = "logistics.customer-returns.reject";
+    public const string CustomerReturnWorkDecisionCapabilityId = "logistics.customer-return.work-decision";
+    public const string CustomerReturnWorkDecisionRoutePath = "/onaylarim/logistics.customer-return.v1/:approvalId";
     public const string SalesWorkCapabilityId = "logistics.operations-work.sales";
     public const string SalesWorkRoutePath = "/lojistik/operasyon-isleri/satis";
     public const string SalesWorkScreenId = "L-01";
@@ -76,6 +78,10 @@ public sealed partial class LogisticsShellCapabilityProvider : IShellCapabilityP
     public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
     [
         .. SubcontractDeliveryDeclarations(),
+        new ShellCapabilityDeclaration(CustomerReturnWorkDecisionCapabilityId, CustomerReturnWorkDecisionCapabilityId,
+            CustomerReturnWorkDecisionRoutePath, "L-CUSTOMER-RETURN-WORK-DECISION",
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide, [LogisticsPermissionManifestV1.CustomerReturnsDecision], ImplementationAvailable: false),
         new ShellCapabilityDeclaration(DispatchNoteWorkDecisionCapabilityId, DispatchNoteWorkDecisionCapabilityId,
             DispatchNoteWorkDecisionRoutePath, "L-DISPATCH-NOTE-WORK-DECISION",
             ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
