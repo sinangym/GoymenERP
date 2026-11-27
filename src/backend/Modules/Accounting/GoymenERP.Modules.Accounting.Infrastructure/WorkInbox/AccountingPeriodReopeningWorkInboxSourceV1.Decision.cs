@@ -17,7 +17,8 @@ internal sealed partial class AccountingPeriodReopeningWorkInboxSourceV1 : IWork
         if (answer.Status == AccountingApiStatus.NotFound && answer.Resource is null) return null;
         if (answer.Status != AccountingApiStatus.Ok || answer.Resource is not { } detail || detail.Reopening is not { } proposal
             || proposal.CompanyId != context.CompanyId || proposal.Id != itemId || !ValidDetail(detail)
-            || detail.Period.IsOwnProposal != WorkInboxRulesV1.SameUser(AccountingWorkInboxFence.Actor(detail.Period.PreparedByUserId), context.UserId)
+            || detail.Period.IsOwnProposal != (detail.Period.Status == "Proposed"
+                && WorkInboxRulesV1.SameUser(AccountingWorkInboxFence.Actor(detail.Period.PreparedByUserId), context.UserId))
             || DecisionItem(proposal, detail.Period.StartsOn, detail.Period.EndsOn, detail.LaterPeriodClosed!.Value) is not { } item)
             throw new InvalidOperationException("Period reopening facts unavailable.");
         if (item.Excludes(context.UserId)) throw new UnauthorizedAccessException();

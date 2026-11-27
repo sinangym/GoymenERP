@@ -49,7 +49,7 @@ public sealed class AccountingPeriodDecisionWorkSourceTests
     public async Task Reopening_keeps_its_actual_maker_rule_without_excluding_the_original_opening_maker()
     {
         await using var kit = new Kit(); var detail = Reopening(false, false);
-        detail = Rehash(detail with { Period = detail.Period with { PreparedByUserId = Kit.Caller, ApprovedByUserId = Kit.Maker, IsOwnProposal = true } });
+        detail = Rehash(detail with { Period = detail.Period with { PreparedByUserId = Kit.Caller, ApprovedByUserId = Kit.Maker, IsOwnProposal = false } });
         var owner = new Owner { Reopening = detail }; var fence = kit.Fence();
         var source = new AccountingPeriodReopeningWorkInboxSourceV1(kit.Db, fence, owner);
         var snapshot = Assert.IsType<WorkApprovalDecisionSnapshotV1>(await source.ReadDecisionAsync(Kit.Context(), detail.Reopening.Id, default));

@@ -19,7 +19,8 @@ internal sealed partial class AccountingPeriodOpeningWorkInboxSourceV1 : IWorkAp
         if (answer.Status == AccountingApiStatus.NotFound && answer.Resource is null) return null;
         if (answer.Status != AccountingApiStatus.Ok || answer.Resource is not { } detail || detail.Period is not { } view
             || view.CompanyId != context.CompanyId || view.PeriodId != itemId
-            || view.IsOwnProposal != WorkInboxRulesV1.SameUser(AccountingWorkInboxFence.Actor(view.PreparedByUserId), context.UserId)
+            || view.IsOwnProposal != (view.Status == "Proposed"
+                && WorkInboxRulesV1.SameUser(AccountingWorkInboxFence.Actor(view.PreparedByUserId), context.UserId))
             || !ValidDetail(detail)
             || DecisionItem(view) is not { } item) throw new InvalidOperationException("Period opening facts unavailable.");
         if (item.Excludes(context.UserId)) throw new UnauthorizedAccessException();
