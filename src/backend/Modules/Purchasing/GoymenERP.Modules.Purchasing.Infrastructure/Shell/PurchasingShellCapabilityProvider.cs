@@ -47,7 +47,7 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "PURCHASING";
     // WP8 1.19: standalone purpose declarations preserve each native decision permission; invoice variance also requires its existing price read.
-    public const string OwnerContractVersion = "1.19";
+    public const string OwnerContractVersion = "1.20";
     public const string AdditionalCostReadCapabilityId = "purchasing.additional-costs.read";
     public const string AdditionalCostRecordCapabilityId = "purchasing.additional-costs.record";
 
@@ -68,6 +68,7 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 
     public const string RequestWorkDecisionCapabilityId = "purchasing.request.work-decision";
     public const string ServiceOrderWorkDecisionCapabilityId = "purchasing.service-order.work-decision";
+    public const string GoodsReceiptBatchWorkDecisionCapabilityId = "purchasing.goods-receipt-batch.work-decision";
     public const string OrderWorkDecisionCapabilityId = "purchasing.order.work-decision";
     public const string RequestListCapabilityId = "purchasing.requests.list";
     public const string RequestListRoutePath = "/satinalma/talepler";
@@ -120,6 +121,10 @@ public sealed class PurchasingShellCapabilityProvider : IShellCapabilityProvider
 
         return
         [
+            new ShellCapabilityDeclaration(GoodsReceiptBatchWorkDecisionCapabilityId, "purchasing-goods-receipt-batch-work-decision",
+                "/onaylarim/purchasing.goods-receipt-batch.v1/:approvalId", "W-PURCHASING-GOODS-RECEIPT-BATCH-01",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
+                ShellCapabilityScopeRequirement.CompanyWide, [PurchasingPermissionManifestV1.GoodsReceiptsApproveVariance], ImplementationAvailable: true),
             new ShellCapabilityDeclaration(InvoiceVarianceWorkDecisionCapabilityId, "purchasing-invoice-variance-work-decision",
                 "/onaylarim/purchasing.incoming-invoice-variance.v1/:approvalId", "W-PURCHASING-INVOICE-VARIANCE-01",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,

@@ -147,8 +147,8 @@ public sealed class PurchasingPersistenceModelTests
     public void The_request_and_order_screens_and_their_controls_are_published()
     {
         var declarations = new PurchasingShellCapabilityProvider().GetDeclarations();
-        Assert.Equal("1.19", PurchasingShellCapabilityProvider.OwnerContractVersion);
-        Assert.Equal(33, declarations.Count);
+        Assert.Equal("1.20", PurchasingShellCapabilityProvider.OwnerContractVersion);
+        Assert.Equal(34, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(!declaration.CapabilityId.StartsWith("purchasing.invoices.", StringComparison.Ordinal), declaration.ImplementationAvailable));
         var byId = declarations.ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
         var variancePurpose = byId[PurchasingShellCapabilityProvider.InvoiceVarianceWorkDecisionCapabilityId];
@@ -256,10 +256,18 @@ public sealed class PurchasingPersistenceModelTests
         Assert.Contains("purchasing.supplier-returns.record", PurchasingPermissionManifestV1.Names);
         Assert.Equal([PurchasingPermissionManifestV1.OrdersRead, PurchasingPermissionManifestV1.SupplierReturnsRecord],
             byId[PurchasingShellCapabilityProvider.SupplierReturnCapabilityId].RequiredPermissions);
-        // ALC-S16 (KLN-D45): the variance approval name measures the bulk receipt approval and rejection only; no shell control yet.
+        // WP8: a standalone approval-purpose screen does not grant order browsing or prices.
         Assert.Contains("purchasing.goods-receipts.approve-variance", PurchasingPermissionManifestV1.Names);
-        Assert.DoesNotContain(declarations, declaration =>
-            declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.GoodsReceiptsApproveVariance));
+        var receiptPurpose = Assert.Single(declarations.Where(declaration =>
+            declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.GoodsReceiptsApproveVariance)));
+        Assert.Equal(PurchasingShellCapabilityProvider.GoodsReceiptBatchWorkDecisionCapabilityId, receiptPurpose.CapabilityId);
+        Assert.Equal("/onaylarim/purchasing.goods-receipt-batch.v1/:approvalId", receiptPurpose.RoutePath);
+        Assert.Equal("purchasing-goods-receipt-batch-work-decision", receiptPurpose.RouteId);
+        Assert.Equal("W-PURCHASING-GOODS-RECEIPT-BATCH-01", receiptPurpose.ScreenId);
+        Assert.Null(receiptPurpose.ParentCapabilityId);
+        Assert.Equal(ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, receiptPurpose.RoutePrecedence);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, receiptPurpose.ScopeRequirement);
+        Assert.Equal([PurchasingPermissionManifestV1.GoodsReceiptsApproveVariance], receiptPurpose.RequiredPermissions);
         // API-11 (ALS-D10/D12): the close name measures the line closure and reopening commands only; no shell control yet (frontend lane).
         Assert.Contains("purchasing.orders.close", PurchasingPermissionManifestV1.Names);
         Assert.DoesNotContain(declarations, declaration => declaration.RequiredPermissions.Contains(PurchasingPermissionManifestV1.OrdersClose));

@@ -13,7 +13,7 @@ namespace GoymenERP.Purchasing.UnitTests;
 /// (not per order), oldest first, the preparer's own included, measured with the variance approval permission the decision
 /// command uses; the rule numbers are the stored submission snapshot. SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class PurchaseGoodsReceiptBatchWorkInboxSourceV1Tests
+public sealed partial class PurchaseGoodsReceiptBatchWorkInboxSourceV1Tests
 {
     private static readonly DateTimeOffset Start = new(2026, 11, 3, 7, 30, 0, TimeSpan.Zero);
 
@@ -48,7 +48,8 @@ public sealed class PurchaseGoodsReceiptBatchWorkInboxSourceV1Tests
         AssertContractShape("purchasing", first);
         Assert.Equal("purchasing.goods-receipt-batch.v1", first.Kind);
         Assert.Equal("SENTETIK-PO-2", first.DocumentLabel);
-        Assert.Equal("/satinalma/siparisler/" + secondOrder.Id.ToString("D"), first.Link);
+        Assert.Equal("/onaylarim/purchasing.goods-receipt-batch.v1/" + older.BatchId.ToString("D"), first.Link);
+        Assert.Equal("/satinalma/siparisler/" + secondOrder.Id.ToString("D"), first.References[0].Link);
         Assert.Equal(Start, first.WaitingSinceUtc);
         var order = first.References[0];
         Assert.Equal(("purchase-order", secondOrder.Id), (order.Role, order.RecordId));

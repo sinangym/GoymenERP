@@ -81,19 +81,20 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
     IErpAuthorityRevalidationService authority, IEnumerable<IWorkInboxSourceV1> sources,
     IWorkDelegationReaderV1 delegations, WorkDecisionExecutionFenceV1 executionFence,
     IFinanceCashAccountMaster cash, IInventoryOpeningCostCommandV1 openingCost,
-    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null, IFinanceCreditAccountService? credits = null, IPurchaseServiceOrderServiceV1? purchasingServiceOrders = null, IPurchaseIncomingInvoiceWorkflowV1? purchaseInvoiceWorkflow = null)
+    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null, IFinanceCreditAccountService? credits = null, IPurchaseServiceOrderServiceV1? purchasingServiceOrders = null, IPurchaseIncomingInvoiceWorkflowV1? purchaseInvoiceWorkflow = null, IPurchaseGoodsReceiptBatchServiceV1? goodsReceiptBatches = null)
 {
     public const string OpeningCost = "inventory.opening-cost.v1";
     public const string SalesOrder = "sales.order-draft.v1";
     public const string SalesInvoice = "sales.invoice.v1";
     public const string SalesSubcontractInvoice = "sales.subcontract-invoice.v1";
     public const string CreditAccount = "finance.credit-account.v1";
+    public const string PurchaseGoodsReceiptBatch = "purchasing.goods-receipt-batch.v1";
     public const string PurchaseRequest = "purchasing.request.v1";
     public const string PurchaseInvoiceVariance = "purchasing.incoming-invoice-variance.v1";
     public const string PurchaseServiceOrder = "purchasing.service-order.v1";
     public const string PurchaseOrder = "purchasing.order.v1";
     public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([OpeningCost, "finance.cash-account.v1",
-        "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1", SalesOrder, SalesInvoice, SalesSubcontractInvoice, PurchaseRequest, PurchaseOrder, PurchaseServiceOrder, PurchaseInvoiceVariance, CreditAccount], StringComparer.Ordinal);
+        "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1", SalesOrder, SalesInvoice, SalesSubcontractInvoice, PurchaseRequest, PurchaseOrder, PurchaseServiceOrder, PurchaseInvoiceVariance, PurchaseGoodsReceiptBatch, CreditAccount], StringComparer.Ordinal);
 
     private async Task RequireDecisionAuthorityAsync(string kind,string permission,Guid companyId,string actor,CancellationToken token)
     {
@@ -166,12 +167,46 @@ public sealed class WorkDecisionHostV1(ICompanyContext company, ICurrentUser use
         if (kind is (PurchaseOrder or PurchaseServiceOrder or PurchaseInvoiceVariance) && !request.Approve
             || string.IsNullOrWhiteSpace(request.ExpectedVersion) || request.ExpectedVersion.Length > 128
             || (kind == OpeningCost && request.ExpectedVersion != snapshot.SourceVersion)
-            || ((kind == OpeningCost || !request.Approve && kind is not (SalesOrder or SalesInvoice or SalesSubcontractInvoice or PurchaseRequest)) && (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > 500))
-            || (kind is not (OpeningCost or PurchaseServiceOrder or PurchaseInvoiceVariance) && request.Approve && request.Reason is not null)) throw new WorkDecisionException(400, "work_decision_invalid");
+            || ((kind == OpeningCost || !request.Approve && kind is not (SalesOrder or SalesInvoice or SalesSubcontractInvoice or PurchaseRequest or PurchaseGoodsReceiptBatch)) && (string.IsNullOrWhiteSpace(request.Reason) || request.Reason.Length > 500))
+            || (kind is not (OpeningCost or PurchaseServiceOrder or PurchaseInvoiceVariance or PurchaseGoodsReceiptBatch) && request.Approve && request.Reason is not null)) throw new WorkDecisionException(400, "work_decision_invalid");
         async Task<bool> Verify(CancellationToken ct) => request.DelegationId is not { } delegation
             || await delegations.FindForActorAsync(delegation, snapshot.Item, ct) is not null;
         if (!await Verify(token)) throw new WorkDecisionException(403);
         using var lease = executionFence.Enter(Verify);
+        if (kind == PurchaseGoodsReceiptBatch)
+        {
+            if (goodsReceiptBatches is null) throw new WorkDecisionException(503);
+            // The native batch command owns both identities. Never accept an order supplied by the caller
+            // or infer it from a URL: only the company-bound owner's snapshot supplies this reference.
+            var orders = snapshot.Item.References.Where(reference => reference.Role == "purchase-order").ToArray();
+            if (orders.Length != 1 || orders[0].RecordId is not { } orderId || orderId == Guid.Empty)
+                throw new WorkDecisionException(503);
+            try
+            {
+                var body = new DecidePurchaseGoodsReceiptBatchV1(request.ExpectedVersion, request.Reason);
+                var batchMetadata = new PurchasingCommandMetadata(key, correlation.CorrelationId, correlation.CausationId, DateTimeOffset.UtcNow);
+                var answer = request.Approve
+                    ? await goodsReceiptBatches.ApproveGoodsReceiptBatchAsync(orderId, id, body, batchMetadata, token)
+                    : await goodsReceiptBatches.RejectGoodsReceiptBatchAsync(orderId, id, body, batchMetadata, token);
+                // Posted/Rejected decisions are immutable native outcomes, including a success replay.
+                // A pending, foreign, contradictory or malformed owner answer is never Work success.
+                if (answer?.Batch is not { } batch || batch.CompanyId != snapshot.CompanyId || batch.BatchId != id
+                    || batch.PurchaseOrderId != orderId || batch.Status != (request.Approve ? "Posted" : "Rejected")
+                    || !long.TryParse(batch.Version, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var version)
+                    || version < 2 || version.ToString(System.Globalization.CultureInfo.InvariantCulture) != batch.Version
+                    || !long.TryParse(request.ExpectedVersion, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var expected)
+                    || expected < 1 || expected == long.MaxValue || version != expected + 1
+                    || batch.DecidedBy != actor || batch.DecidedAtUtc is null || batch.DecidedAtUtc == default(DateTimeOffset)
+                    || batch.DecidedAtUtc.Value.Offset != TimeSpan.Zero || batch.PreparedBy == actor
+                    || string.IsNullOrWhiteSpace(batch.PreparedBy) || string.IsNullOrWhiteSpace(answer.OriginalCorrelationId)
+                    || (request.Approve ? batch.DecisionReason is not null : string.IsNullOrWhiteSpace(batch.DecisionReason)
+                        || !string.Equals(batch.DecisionReason, request.Reason?.Trim(), StringComparison.Ordinal)))
+                    throw new WorkDecisionException(503);
+                return new(snapshot.CompanyId, kind, id, batch.Status, answer.IsReplay, answer.OriginalCorrelationId);
+            }
+            catch (PurchasingServiceException error)
+            { throw new WorkDecisionException(error.Status, error.Code, error.IsReplay, error.OriginalCorrelationId); }
+        }
         if (kind == PurchaseInvoiceVariance)
         {
             if (purchaseInvoiceWorkflow is null) throw new WorkDecisionException(503);

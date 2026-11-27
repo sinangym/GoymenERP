@@ -409,7 +409,7 @@ public sealed class PurchaseGoodsReceiptBatchStore(PurchasingDbContext dbContext
         return rows.Select(row => Restore(row, companyId, labels.Where(label => label.BatchId == row.BatchId))).ToArray();
     }
 
-    private static StoredPurchaseGoodsReceiptBatch Restore(PurchaseGoodsReceiptBatchRow row, Guid companyId, IEnumerable<PurchaseGoodsReceiptBatchLabelRow> labelRows)
+    internal static StoredPurchaseGoodsReceiptBatch Restore(PurchaseGoodsReceiptBatchRow row, Guid companyId, IEnumerable<PurchaseGoodsReceiptBatchLabelRow> labelRows)
     {
         if (row.CompanyId != companyId)
         {

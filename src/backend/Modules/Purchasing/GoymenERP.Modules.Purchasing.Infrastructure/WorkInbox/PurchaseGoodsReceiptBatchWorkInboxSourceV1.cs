@@ -9,7 +9,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.WorkInbox;
 /// <summary>
 /// W1-A (AI-D31, AI-D32, YOL-D18): the bulk goods receipts waiting for a kg variance decision (ALC-S16, KLN-D45), company-wide,
 /// as Purchasing lists them for the Work inbox. A batch waits while its status is PendingApproval — exactly what
-/// <c>ApprovePurchaseGoodsReceiptBatchV1</c> accepts. It is decided on its order's screen by a holder of
+/// <c>ApprovePurchaseGoodsReceiptBatchV1</c> accepts. Its purpose screen invokes the native decision command for a holder of
 /// <c>purchasing.goods-receipts.approve-variance</c> (the permission the decision command measures, KLN-D45; the separate
 /// overdelivery name is not this decision's) other than its preparer. Every pending batch of the company is returned, the
 /// caller's own included: Work hides a maker's own item.
@@ -22,7 +22,7 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.WorkInbox;
 /// </summary>
 internal sealed class PurchaseGoodsReceiptBatchWorkInboxSourceV1(
     PurchasingDbContext dbContext,
-    PurchasingWorkInboxFence fence) : IWorkInboxSourceV1
+    PurchasingWorkInboxFence fence) : IWorkApprovalDecisionSourceV1
 {
     public const string ModuleName = "purchasing";
     public const string KindName = "purchasing.goods-receipt-batch.v1";
@@ -51,6 +51,39 @@ internal sealed class PurchaseGoodsReceiptBatchWorkInboxSourceV1(
 
     public string ApproverPermission => PurchasingPermissionManifestV1.GoodsReceiptsApproveVariance;
 
+
+    /// <summary>Approval-purpose read only: no order browsing or price permission is granted.
+    /// Terminal batches remain available so their native immutable receipt can be replayed.</summary>
+    public async Task<WorkApprovalDecisionSnapshotV1?> ReadDecisionAsync(WorkInboxSourceContextV1 context, Guid itemId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (itemId == Guid.Empty || await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
+        var row = await dbContext.GoodsReceiptBatches.AsNoTracking().SingleOrDefaultAsync(
+            candidate => candidate.CompanyId == context.CompanyId && candidate.BatchId == itemId, cancellationToken);
+        if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null || row is null) return null;
+        var orders = await dbContext.Orders.AsNoTracking().Where(candidate => candidate.CompanyId == context.CompanyId && candidate.Id == row.OrderId)
+            .ToDictionaryAsync(candidate => candidate.Id, candidate => candidate.DocumentNumber, cancellationToken);
+        if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
+        var labels = await dbContext.GoodsReceiptBatchLabels.AsNoTracking()
+            .Where(candidate => candidate.CompanyId == context.CompanyId && candidate.BatchId == itemId)
+            .OrderBy(candidate => candidate.LineNo).ToListAsync(cancellationToken);
+        if (await fence.CheckAsync(context, ApproverPermission, cancellationToken) is not null) return null;
+        // Reuse the native read projection for label order, stored kg and piece facts; no second calculator.
+        _ = PurchaseGoodsReceiptBatchStore.Restore(row, context.CompanyId, labels);
+        var pending = row.Status == (int)PurchaseGoodsReceiptBatchStatus.PendingApproval;
+        // Native submission may already post an inside-tolerance/piece batch at version 1
+        // without a separate decision. Its terminal refusal still belongs to the owner.
+        var postedAtSubmission = row.Status == (int)PurchaseGoodsReceiptBatchStatus.Posted && row.Version == 1;
+        if (row.Version < 1 || !Enum.IsDefined((PurchaseGoodsReceiptBatchStatus)row.Status)
+            || (pending || postedAtSubmission ? row.DecidedBy is not null || row.DecidedAtUtc is not null || row.DecisionReason is not null
+                : row.Version < 2 || string.IsNullOrWhiteSpace(row.DecidedBy) || row.DecidedAtUtc is null || row.DecidedBy == row.PreparedBy
+                  || (row.Status == (int)PurchaseGoodsReceiptBatchStatus.Rejected ? string.IsNullOrWhiteSpace(row.DecisionReason) : row.DecisionReason is not null))
+            || !TryItem(context, row, orders, labels, out var item))
+            throw new InvalidOperationException("Mal kabul partisi karar kaynağı geçersiz.");
+        return new(context.CompanyId, item, row.Version.ToString(System.Globalization.CultureInfo.InvariantCulture), pending);
+    }
 
     public async Task<WorkInboxSourceResultV1> ListPendingAsync(
         WorkInboxSourceContextV1 context,
@@ -164,7 +197,7 @@ internal sealed class PurchaseGoodsReceiptBatchWorkInboxSourceV1(
         }
 
         item = new WorkInboxItemV1(ModuleName, KindName, row.BatchId, label, row.PreparedAtUtc.ToUniversalTime(),
-            orderLink, row.PreparedBy,
+            "/onaylarim/" + KindName + "/" + row.BatchId.ToString("D"), row.PreparedBy,
             [
                 reason,
                 new(KgDifferenceRule, null, WorkInboxRulesV1.Decimal(row.ReceivedQuantityKg),
