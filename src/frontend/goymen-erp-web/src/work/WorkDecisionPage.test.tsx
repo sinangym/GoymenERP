@@ -1,3 +1,5 @@
+import type { ReactElement } from 'react'
+import { ApprovalInboxDetailPage } from './ApprovalInboxPages'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -673,8 +675,11 @@ it.each(['renewed','closed'] as const)('replays the frozen loss number/time/reas
 })
 
 
-it('keeps the loss candidate unmounted in production Work routes', () => {
- expect(matchRoutes(workRoutes,`/onaylarim/${lossKind}/${id}`)).toBeNull()
+it('keeps the staged loss candidate out of production and preserves the existing legacy detail fallback', () => {
+ const route=matchRoutes(workRoutes,`/onaylarim/${lossKind}/${id}`)?.at(-1)?.route
+ expect(route?.path).toBe('onaylarim/:kind/:approvalId')
+ const element=route?.element as ReactElement<{children:ReactElement}>
+ expect(element.props.children.type).toBe(ApprovalInboxDetailPage)
 })
 it.each([{companyId:COMPANY_B},{inventoryTransferLoss:null},{inventoryTransferLoss:{requestNumber:1,requestedAtUtc:'bad'}}])('fails closed on malformed or foreign loss preview %j', async delta => {
  const calls=installFetch({capabilities:[cap],respond:url=>url.includes(`/work/decisions/${lossKind}/${id}`)?json({...lossPreview,...delta}):undefined})
