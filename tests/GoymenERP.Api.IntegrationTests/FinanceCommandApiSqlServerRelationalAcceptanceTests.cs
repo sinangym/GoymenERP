@@ -35,6 +35,57 @@ namespace GoymenERP.Api.IntegrationTests;
 /// </summary>
 public sealed class FinanceCommandApiSqlServerRelationalAcceptanceTests
 {
+    [SqlServerFact]
+    public async Task Work_manual_bank_approval_reuses_native_receipt_without_recording_money()
+    {
+        await using var run = await Run.StartAsync(services =>
+        {
+            services.RemoveAll<IFinancePartyAccountPort>();
+            services.AddSingleton<SyntheticGate>();
+            services.AddScoped<IFinancePartyAccountPort, SyntheticParties>();
+            services.RemoveAll<IFinanceRecordPeriodRule>();
+            services.AddScoped<IFinanceRecordPeriodRule, SyntheticOpenPeriodRule>();
+        });
+        var bank = await run.ApprovedBankAccountAsync(CompanyA);
+        await run.GrantAsync(Proposer, CompanyA, [.. ManualPaymentPreparerGrants, FinancePermissionNames.ManualBankPaymentApprove]);
+        // Work's purpose read and approve need no extra native draft-read or money-record grant.
+        await run.GrantAsync(Approver, CompanyA, FinancePermissionNames.ManualBankPaymentApprove);
+        using var maker = run.Client(Proposer, CompanyA);
+        using var checker = run.Client(Approver, CompanyA);
+        using var foreign = run.Client(TestUsers.CompanyB, CompanyB);
+        using var saved = await maker.SendAsync(Post(FinanceEndpoints.ManualBankPaymentsPath,
+            "SENTETIK-work-payment-save", Guid.NewGuid().ToString("N"), PaymentSave(bank, null)));
+        Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+        var id = (await Json(saved)).GetProperty("resource").GetProperty("id").GetGuid();
+        var path = $"/api/v1/work/decisions/finance.manual-bank-payment.v1/{id:D}";
+        using var preview = await checker.GetAsync(path);
+        Assert.Equal(HttpStatusCode.OK, preview.StatusCode);
+        var proof = await Json(preview);
+        Assert.Equal("1", proof.GetProperty("sourceVersion").GetString());
+        Assert.False(proof.GetProperty("rejectionSupported").GetBoolean());
+        Assert.False(proof.GetProperty("approvalReasonRequired").GetBoolean());
+        Assert.Equal(HttpStatusCode.Forbidden, (await maker.GetAsync(path)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await foreign.GetAsync(path)).StatusCode);
+        using var rejected = await checker.SendAsync(Post(path, "SENTETIK-work-payment-reject", Guid.NewGuid().ToString("N"),
+            new GoymenERP.Api.WorkRuntime.WorkDecisionRequestV1("1", false, "SENTETIK unsupported")));
+        Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+        var original = Guid.NewGuid().ToString("N");
+        using var approved = await checker.SendAsync(Post(path, "SENTETIK-work-payment-approve", original,
+            new GoymenERP.Api.WorkRuntime.WorkDecisionRequestV1("1", true, null)));
+        Assert.Equal(HttpStatusCode.OK, approved.StatusCode);
+        Assert.Equal("Approved", (await Json(approved)).GetProperty("state").GetString());
+        using var replay = await checker.SendAsync(Post(path, "SENTETIK-work-payment-approve", Guid.NewGuid().ToString("N"),
+            new GoymenERP.Api.WorkRuntime.WorkDecisionRequestV1("1", true, null)));
+        Assert.Equal(HttpStatusCode.OK, replay.StatusCode); AssertReplayOf(replay, original);
+        // The exact same key/body can reach the existing Finance endpoint's receipt; Work stores no second command.
+        using var nativeReplay = await checker.SendAsync(Post($"{FinanceEndpoints.ManualBankPaymentsPath}/{id:D}/approval",
+            "SENTETIK-work-payment-approve", Guid.NewGuid().ToString("N"), new ApproveManualBankPaymentRequest(id, "1")));
+        Assert.Equal(HttpStatusCode.OK, nativeReplay.StatusCode); AssertReplayOf(nativeReplay, original);
+        Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.OutgoingMoneyEvents WHERE PaymentId=@id", ("@id", id)));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.Commands WHERE ManualBankPaymentId=@id AND CommandName=N'finance.manual-bank-payment.approve'", ("@id", id)));
+        Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM finance.ManualBankPayments WHERE Id=@id AND Status=1 AND Version=2 AND BankResultConfirmed=0", ("@id", id)));
+    }
+
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
     private static readonly Guid Lira = SettingsCurrencyIdentitiesV1.TurkishLira;

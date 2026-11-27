@@ -15,7 +15,7 @@ namespace GoymenERP.Finance.UnitTests;
 /// (Work hides a maker's own item). The one rule carries the stored amount as the actual value; no threshold exists. The
 /// source refuses without the company-wide approve permission and writes nothing.
 /// </summary>
-public sealed class FinanceManualBankPaymentWorkInboxSourceV1Tests
+public sealed partial class FinanceManualBankPaymentWorkInboxSourceV1Tests
 {
     private static readonly Guid Company = Guid.Parse("11111111-1111-4111-8111-111111111111");
     private static readonly Guid OtherCompany = Guid.Parse("22222222-2222-4222-8222-222222222222");
@@ -50,7 +50,7 @@ public sealed class FinanceManualBankPaymentWorkInboxSourceV1Tests
         Assert.Equal(older.Id.ToString("D")[..8], first.DocumentLabel);
         Assert.Equal(Start.ToUniversalTime(), first.WaitingSinceUtc);
         Assert.Equal(TimeSpan.Zero, first.WaitingSinceUtc.Offset);
-        Assert.Equal("/finans/odemeler/" + older.Id.ToString("D"), first.Link);
+        Assert.Equal("/onaylarim/finance.manual-bank-payment.v1/" + older.Id.ToString("D"), first.Link);
         Assert.True(NativeApprovalQueueRulesV1.IsValidLink(first.Link));
         Assert.Contains(first.References, reference => reference.Role == "bank-account"
             && reference.Label == "SENTETIK Banka Vadesiz" && reference.RecordId == Bank);

@@ -17,13 +17,13 @@ namespace GoymenERP.Modules.Finance.Infrastructure.WorkInbox;
 /// code, so the unit is left empty and the currency is carried as a reference.
 /// </para>
 /// </summary>
-internal sealed class FinanceManualBankPaymentWorkInboxSourceV1(
+internal sealed partial class FinanceManualBankPaymentWorkInboxSourceV1(
     FinanceDbContext dbContext,
-    FinanceWorkInboxFence fence) : IWorkInboxSourceV1
+    FinanceWorkInboxFence fence) : IWorkApprovalDecisionSourceV1
 {
     public const string ModuleName = "finance";
     public const string KindName = "finance.manual-bank-payment.v1";
-    public const string ScreenPath = "/finans/odemeler";
+    public const string ScreenPath = "/onaylarim/finance.manual-bank-payment.v1";
 
     /// <summary>Every manual outgoing bank payment needs one approval by someone other than its preparer (R47).</summary>
     public const string ApprovalRequiredRule = "finance.manual-bank-payment-approval-required";

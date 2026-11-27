@@ -17,7 +17,7 @@ public sealed class FinanceShellCapabilityProviderTests
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(56, declarations.Count);
+        Assert.Equal(57, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(
             !declaration.CapabilityId.StartsWith("finance.credits.", StringComparison.Ordinal)
             && !declaration.CapabilityId.StartsWith("finance.official-sales-invoices.", StringComparison.Ordinal)
@@ -44,9 +44,11 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.22", provider.ContractVersion);
+        Assert.Equal("1.23", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
+            ("finance.manual-bank-payment.work-decision", "finance-manual-bank-payment-work-decision", "/onaylarim/finance.manual-bank-payment.v1/:approvalId", "F-MANUAL-BANK-PAYMENT-WORK-DECISION",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinancePermissionNames.ManualBankPaymentApprove]),
             ("finance.bank-account.work-decision", "finance-bank-account-work-decision", "/onaylarim/finance.bank-account.v1/:approvalId", "F-BANK-ACCOUNT-WORK-DECISION",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceBankAccountApprove]),
             ("finance.credit-account.work-decision", "finance.credit-account-work-decision", "/onaylarim/finance.credit-account.v1/:approvalId", "W-FIN-CREDIT-ACCOUNT-01",

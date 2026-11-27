@@ -131,8 +131,9 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
     IErpAuthorityRevalidationService authority, IEnumerable<IWorkInboxSourceV1> sources,
     IWorkDelegationReaderV1 delegations, WorkDecisionExecutionFenceV1 executionFence,
     IFinanceCashAccountMaster cash, IInventoryOpeningCostCommandV1 openingCost,
-    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null, IFinanceCreditAccountService? credits = null, IPurchaseServiceOrderServiceV1? purchasingServiceOrders = null, IPurchaseIncomingInvoiceWorkflowV1? purchaseInvoiceWorkflow = null, IPurchaseGoodsReceiptBatchServiceV1? goodsReceiptBatches = null, ManufacturingCommandService? manufacturingPlans = null, IInventoryTransferReceiptCommandV1? inventoryTransferReceipts = null, ICounterpartyTaxIdentityService? counterpartyTaxIdentity = null, ICounterpartyLegalNameService? counterpartyLegalName = null, ILogisticsPlanExcessServiceV1? logisticsPlanExcess = null, ILogisticsWeighingDifferenceServiceV1? logisticsWeighingDifferences = null, IPurchaseSupplierReturnServiceV1? supplierReturns = null, IInventoryStockCountCommandV1? stockCounts = null, IFinanceBankAccountMaster? bankAccounts = null, IInventoryStockScrapCommandV1? stockScraps = null, ILogisticsInstructionService? logisticsInstructions = null, ILogisticsCustomerReturnServiceV1? logisticsCustomerReturns = null)
+    ISalesDraftService? salesOrders = null, ISalesInvoiceService? salesInvoices = null, IPurchasingService? purchasing = null, ISalesSubcontractInvoiceLifecycleServiceV1? subcontractInvoices = null, IFinanceCreditAccountService? credits = null, IPurchaseServiceOrderServiceV1? purchasingServiceOrders = null, IPurchaseIncomingInvoiceWorkflowV1? purchaseInvoiceWorkflow = null, IPurchaseGoodsReceiptBatchServiceV1? goodsReceiptBatches = null, ManufacturingCommandService? manufacturingPlans = null, IInventoryTransferReceiptCommandV1? inventoryTransferReceipts = null, ICounterpartyTaxIdentityService? counterpartyTaxIdentity = null, ICounterpartyLegalNameService? counterpartyLegalName = null, ILogisticsPlanExcessServiceV1? logisticsPlanExcess = null, ILogisticsWeighingDifferenceServiceV1? logisticsWeighingDifferences = null, IPurchaseSupplierReturnServiceV1? supplierReturns = null, IInventoryStockCountCommandV1? stockCounts = null, IFinanceBankAccountMaster? bankAccounts = null, IInventoryStockScrapCommandV1? stockScraps = null, ILogisticsInstructionService? logisticsInstructions = null, ILogisticsCustomerReturnServiceV1? logisticsCustomerReturns = null, IManualBankPaymentService? manualBankPayments = null)
 {
+    public const string ManualBankPayment = "finance.manual-bank-payment.v1";
     public const string LogisticsCustomerReturn = "logistics.customer-return.v1";
     public const string LogisticsDispatchNote = "logistics.dispatch-note.v1";
     public const string InventoryStockScrap = "inventory.stock-scrap.v1";
@@ -156,7 +157,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
     public const string PurchaseInvoiceVariance = "purchasing.incoming-invoice-variance.v1";
     public const string PurchaseServiceOrder = "purchasing.service-order.v1";
     public const string PurchaseOrder = "purchasing.order.v1";
-    public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([LogisticsCustomerReturn, LogisticsDispatchNote, InventoryStockScrap, InventoryStockCount, BankAccount, SupplierReturnCostException, LogisticsWeighingDifference, InventoryTransferOverage, LogisticsPlanExcess, CounterpartyTaxIdentity, CounterpartyLegalName, InventoryTransferLoss, OpeningCost, "finance.cash-account.v1",
+    public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([ManualBankPayment, LogisticsCustomerReturn, LogisticsDispatchNote, InventoryStockScrap, InventoryStockCount, BankAccount, SupplierReturnCostException, LogisticsWeighingDifference, InventoryTransferOverage, LogisticsPlanExcess, CounterpartyTaxIdentity, CounterpartyLegalName, InventoryTransferLoss, OpeningCost, "finance.cash-account.v1",
         "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1", SalesOrder, SalesInvoice, SalesSubcontractInvoice, PurchaseRequest, PurchaseOrder, PurchaseServiceOrder, PurchaseInvoiceVariance, PurchaseGoodsReceiptBatch, ManufacturingPlan, CreditAccount], StringComparer.Ordinal);
 
     private async Task RequireDecisionAuthorityAsync(string kind,string permission,Guid companyId,string actor,CancellationToken token)
@@ -193,7 +194,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         catch { await Fence(); throw new WorkDecisionException(503); }
         await Fence();
         if (snapshot is null) throw new WorkDecisionException(404);
-        if (kind == LogisticsCustomerReturn && (source.Module != "logistics" || source.ApproverPermission != LogisticsPermissionManifestV1.CustomerReturnsDecision)
+        if (kind == ManualBankPayment && (source.Module != "finance" || source.ApproverPermission != FinancePermissionNames.ManualBankPaymentApprove)
+            || kind == LogisticsCustomerReturn && (source.Module != "logistics" || source.ApproverPermission != LogisticsPermissionManifestV1.CustomerReturnsDecision)
             || kind == LogisticsDispatchNote && (source.Module != "logistics" || source.ApproverPermission != LogisticsPermissionManifestV1.DispatchNotesApprove)
             || kind == InventoryStockScrap && (source.Module != "inventory" || source.ApproverPermission != InventoryPermissionManifestV1.StockScrapApprove)
             || kind == InventoryStockCount && (source.Module != "inventory" || source.ApproverPermission != InventoryPermissionManifestV1.StockCountApprove)
@@ -219,6 +221,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             || !ValidInventoryStockScrapProof(kind, snapshot)
             || !ValidInventoryStockCountProof(kind, snapshot)
             || !ValidBankAccountProof(kind, snapshot)
+            || kind == ManualBankPayment && !ValidManualBankPaymentSnapshot(snapshot)
             || !ValidSupplierReturnProof(kind, snapshot)
             || !ValidCounterpartyIdentityProof(kind, snapshot)
             || !ValidLogisticsPlanExcessProof(kind, snapshot)
@@ -276,7 +279,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
                 proposal.Quantity, proposal.Reason, proposal.ProposedBy, proposal.ProposedAtUtc)
             : null;
         return new(snapshot.CompanyId, kind, id, snapshot.Item.DocumentLabel, snapshot.SourceVersion, snapshot.Pending,
-            kind is InventoryStockScrap or InventoryStockCount or OpeningCost or PurchaseServiceOrder or PurchaseInvoiceVariance or InventoryTransferLoss or InventoryTransferOverage, snapshot.Item.References, rules, kind is not (PurchaseOrder or PurchaseServiceOrder or PurchaseInvoiceVariance or LogisticsPlanExcess or LogisticsWeighingDifference or LogisticsDispatchNote or BankAccount)
+            kind is InventoryStockScrap or InventoryStockCount or OpeningCost or PurchaseServiceOrder or PurchaseInvoiceVariance or InventoryTransferLoss or InventoryTransferOverage, snapshot.Item.References, rules, kind is not (PurchaseOrder or PurchaseServiceOrder or PurchaseInvoiceVariance or LogisticsPlanExcess or LogisticsWeighingDifference or LogisticsDispatchNote or BankAccount or ManualBankPayment)
                 && !(kind == ManufacturingPlan && rules.Any(rule => rule.RuleCode == "manufacturing.plan-reapproval-after-order-cancel")),
             snapshot.ManufacturingPlanReapproval, snapshot.InventoryTransferLoss,
             snapshot.CounterpartyTaxIdentityChange, snapshot.CounterpartyLegalNameChange, logisticsPreview,
@@ -300,6 +303,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         if (request.LogisticsCustomerReturn is not null && kind != LogisticsCustomerReturn
             || kind == LogisticsCustomerReturn && !ValidLogisticsCustomerReturnRequest(request)
             || kind == LogisticsDispatchNote && (!request.Approve || request.Reason is not null || !DispatchVersion(request.ExpectedVersion, increment: true))
+            || kind == ManualBankPayment && (!request.Approve || request.Reason is not null || !BankAccountVersion(request.ExpectedVersion))
             || kind == BankAccount && (!request.Approve || request.Reason is not null || !BankAccountVersion(request.ExpectedVersion))
             || request.SupplierReturnCostException is not null && kind != SupplierReturnCostException
             || kind == SupplierReturnCostException && !ValidSupplierReturnRequest(snapshot, request)
@@ -343,6 +347,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             return await DecideInventoryStockScrapAsync(id, request, key, snapshot, actor!, token);
         if (kind == InventoryStockCount)
             return await DecideInventoryStockCountAsync(id, request, key, snapshot, actor!, token);
+        if (kind == ManualBankPayment)
+            return await DecideManualBankPaymentAsync(id, request, key, snapshot, actor!, token);
         if (kind == BankAccount)
             return await DecideBankAccountAsync(id, request, key, snapshot, actor!, token);
         if (kind == SupplierReturnCostException)
