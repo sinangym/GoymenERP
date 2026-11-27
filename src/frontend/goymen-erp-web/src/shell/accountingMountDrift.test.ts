@@ -48,6 +48,7 @@ const ROUTED = [
   [CAPABILITY.accountingPeriodOpeningWorkDecision, ACCOUNTING_CAPABILITY.periodOpeningWorkDecision, ACCOUNTING_ROUTE.periodOpeningWorkDecision],
   [CAPABILITY.accountingPeriodReopeningWorkDecision, ACCOUNTING_CAPABILITY.periodReopeningWorkDecision, ACCOUNTING_ROUTE.periodReopeningWorkDecision],
   [CAPABILITY.accountingNormalDraftWorkDecision, ACCOUNTING_CAPABILITY.normalDraftWorkDecision, ACCOUNTING_ROUTE.normalDraftWorkDecision],
+  [CAPABILITY.accountingApprovedSourceCatalogWorkDecision, ACCOUNTING_CAPABILITY.approvedSourceCatalogWorkDecision, ACCOUNTING_ROUTE.approvedSourceCatalogWorkDecision],
   [CAPABILITY.accountingPostingQueues, ACCOUNTING_CAPABILITY.postingQueues, ACCOUNTING_ROUTE.postingQueues],
   [CAPABILITY.accountingTrialBalance, ACCOUNTING_CAPABILITY.trialBalance, ACCOUNTING_ROUTE.trialBalance],
 ] as const
