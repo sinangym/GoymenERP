@@ -117,7 +117,9 @@ public sealed partial class AccountingPostingAccountMappingServiceV1(
 
         if (string.IsNullOrWhiteSpace(idempotencyKey)) return Task.FromResult(Invalid("idempotencyKey"));
         if (!TryContext(out var capturedCompany, out var capturedActor)) return Task.FromResult(Denied());
-        return mappings.RunActivationAsync(replayOnly => RunAsync(
+        return mappings.RunActivationAsync(async replayOnly =>
+        {
+            var answer = await RunAsync(
             AccountingPostingAccountMappingPermissionNamesV1.Activate,
             AccountingPostingAccountMappingCommandNamesV1.Activate,
             idempotencyKey,
@@ -136,7 +138,9 @@ public sealed partial class AccountingPostingAccountMappingServiceV1(
                     token);
                 return Success(AccountingApiStatus.Ok, record);
             },
-            cancellationToken, capturedCompany, capturedActor, replayOnly),
+            cancellationToken, capturedCompany, capturedActor, replayOnly);
+            return await AttachMappingActivationReceiptAsync(answer, mappingVersion, request, idempotencyKey, capturedCompany, capturedActor, cancellationToken);
+        },
             token => ActivationFenceAsync(capturedCompany, capturedActor, token), cancellationToken);
     }
 
@@ -383,7 +387,7 @@ public sealed partial class AccountingPostingAccountMappingServiceV1(
         if (!ContextMatches(company, actor)) throw new NormalJournalAuthorityDeniedException();
         var scope = await authority.RevalidatePermissionScopeAsync(AccountingPostingAccountMappingPermissionNamesV1.Activate, company, token);
         token.ThrowIfCancellationRequested();
-        if (!Granted(scope) || !ContextMatches(company, actor)) throw new NormalJournalAuthorityDeniedException();
+        if (scope is null || !Granted(scope) || !ContextMatches(company, actor)) throw new NormalJournalAuthorityDeniedException();
     }
 
     private async Task FenceAsync(string permission, Guid company, Guid actor, CancellationToken cancellationToken)

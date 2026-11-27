@@ -207,7 +207,10 @@ public sealed record AccountingPostingAccountMappingViewV1(
     DateTimeOffset PreparedAtUtc,
     Guid? ActivatedByUserId,
     DateTimeOffset? ActivatedAtUtc,
-    IReadOnlyList<AccountingPostingAccountMappingRowViewV1> Rows);
+    IReadOnlyList<AccountingPostingAccountMappingRowViewV1> Rows)
+{
+    [System.Text.Json.Serialization.JsonIgnore] public AccountingPostingAccountMappingActivationReceiptV1? ActivationReceipt { get; init; }
+}
 
 /// <summary>A store refusal with the field it is about (a row index for an account, for example).</summary>
 public sealed class AccountingPostingAccountMappingRefusalException(string code, string? field = null)
