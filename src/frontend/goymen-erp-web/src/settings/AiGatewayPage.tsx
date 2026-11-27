@@ -326,14 +326,15 @@ function UsageSection({ usage, ceiling }: { readonly usage: AiGatewayUsage; read
       </tr>)}</tbody>
     </table>}
     <h3>{T.acceptanceHeading}</h3>
+    <p>{T.acceptanceScope}</p>
     {!usage.acceptanceMeasured ? <p data-testid="ai-acceptance-not-measured">{T.acceptanceNotMeasured}</p>
       : usage.acceptance.length === 0 ? <p>{T.acceptanceEmpty}</p>
         : <table className={styles.table}>
           <caption>{T.acceptanceHeading}</caption>
-          <thead><tr><th scope="col">{T.feature}</th><th scope="col">{T.accepted}</th><th scope="col">{T.corrected}</th><th scope="col">{T.rejected}</th><th scope="col">{T.reverted}</th></tr></thead>
+          <thead><tr><th scope="col">{T.feature}</th><th scope="col">{T.accepted}</th><th scope="col">{T.corrected}</th><th scope="col">{T.rejected}</th><th scope="col">{T.reverted}</th><th scope="col">{T.unreviewed}</th></tr></thead>
           <tbody>{AI_FEATURES.filter((feature) => acceptanceByFeature.has(feature)).map((feature) => {
             const line = acceptanceByFeature.get(feature)!
-            return <tr key={feature}><th scope="row">{AI_FEATURE_LABEL[feature]}</th><td>{line.accepted}</td><td>{line.corrected}</td><td>{line.rejected}</td><td>{line.reverted}</td></tr>
+            return <tr key={feature}><th scope="row">{AI_FEATURE_LABEL[feature]}</th><td>{line.accepted}</td><td>{line.corrected}</td><td>{line.rejected}</td><td>{line.reverted}</td><td>{line.unreviewed ?? T.unreviewedNotMeasured}</td></tr>
           })}</tbody>
         </table>}
   </section>

@@ -95,6 +95,18 @@ describe('decodeAiGatewayUsage', () => {
     expect(decodeAiGatewayUsage(usage({ acceptanceMeasured: true, acceptance: [{ feature: 'Panel', accepted: 3, corrected: 1, rejected: 0, reverted: 0 }] }), COMPANY_A)?.acceptance).toHaveLength(1)
   })
 
+  it.each([undefined, null, 0, 7])('preserves optional unreviewed evidence without inventing a zero: %s', (unreviewed) => {
+    const row = { feature: 'Panel', accepted: 1, corrected: 0, rejected: 0, reverted: 0,
+      ...(unreviewed === undefined ? {} : { unreviewed }) }
+    const result = decodeAiGatewayUsage(usage({ acceptanceMeasured: true, acceptance: [row] }), COMPANY_A)
+    expect(result?.acceptance[0]?.unreviewed).toBe(unreviewed ?? null)
+  })
+
+  it.each([-1, 0.5, '0', false, Number.MAX_SAFE_INTEGER + 1])('refuses malformed unreviewed counts: %s', (unreviewed) => {
+    expect(decodeAiGatewayUsage(usage({ acceptanceMeasured: true,
+      acceptance: [{ feature: 'Panel', accepted: 1, corrected: 0, rejected: 0, reverted: 0, unreviewed }] }), COMPANY_A)).toBeNull()
+  })
+
   it.each([
     ['lines that do not add up to the month', usage({ committedUnits: 141 })],
     ['acceptance lines while not measured', usage({ acceptance: [{ feature: 'Panel', accepted: 1, corrected: 0, rejected: 0, reverted: 0 }] })],
@@ -142,6 +154,18 @@ describe('/ayarlar/yapay-zeka-ag-gecidi', () => {
     const used = await screen.findByTestId('ai-usage')
     expect(within(used).getByText(AI_FEATURE_LABEL.Panel)).toBeTruthy()
     expect(within(used).getByTestId('ai-acceptance-not-measured').textContent).toBe(T.acceptanceNotMeasured)
+  })
+
+  it.each([undefined, null, 0, 7])('shows separate unreviewed evidence and its month cohort: %s', async (unreviewed) => {
+    installFetch({ capabilities: MANAGE, respond: respond(recorded, url => url.endsWith(USAGE)
+      ? json(usage({ acceptanceMeasured: true, acceptance: [{ feature: 'Panel', accepted: 3, corrected: 1,
+        rejected: 0, reverted: 0, ...(unreviewed === undefined ? {} : { unreviewed }) }] })) : undefined) })
+    renderAt(PATH)
+    const table = await screen.findByRole('table', { name: T.acceptanceHeading })
+    expect(within(table).getByRole('columnheader', { name: T.unreviewed })).toBeTruthy()
+    const row = within(table).getByRole('rowheader', { name: AI_FEATURE_LABEL.Panel }).closest('tr')!
+    expect(within(row).getAllByRole('cell').at(-1)?.textContent).toBe(unreviewed == null ? T.unreviewedNotMeasured : String(unreviewed))
+    expect(screen.getByText(T.acceptanceScope)).toBeTruthy()
   })
 
   it('without a budget the feature switches are locked and the sent snapshot keeps every feature closed', async () => {

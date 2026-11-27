@@ -101,6 +101,8 @@ export interface AiFeatureAcceptance {
   readonly corrected: number
   readonly rejected: number
   readonly reverted: number
+  /** Missing/null is legacy unmeasured coverage, never an inferred zero. */
+  readonly unreviewed?: number | null
 }
 
 export interface AiGatewayUsage {
@@ -261,10 +263,13 @@ export function decodeAiGatewayUsage(raw: unknown, company: string): AiGatewayUs
   if (!raw.acceptanceMeasured && raw.acceptance.length !== 0) return null
   const acceptance: AiFeatureAcceptance[] = []
   for (const item of raw.acceptance) {
-    if (!object(item) || !exact(item, ACCEPTANCE_KEYS) || !member(AI_FEATURES, item.feature) || !count(item.accepted)
+    if (!object(item) || !(exact(item, ACCEPTANCE_KEYS) || exact(item, [...ACCEPTANCE_KEYS, 'unreviewed'])) || !member(AI_FEATURES, item.feature) || !count(item.accepted)
       || !count(item.corrected) || !count(item.rejected) || !count(item.reverted)
       || acceptance.some((existing) => existing.feature === item.feature)) return null
-    acceptance.push({ feature: item.feature, accepted: item.accepted, corrected: item.corrected, rejected: item.rejected, reverted: item.reverted })
+    const unreviewed = Object.hasOwn(item, 'unreviewed') ? item.unreviewed : null
+    if (unreviewed !== null && !count(unreviewed)) return null
+    acceptance.push({ feature: item.feature, accepted: item.accepted, corrected: item.corrected, rejected: item.rejected, reverted: item.reverted,
+      unreviewed })
   }
   return {
     companyId: company, budgetMonth: raw.budgetMonth, committedUnits: raw.committedUnits, entryCount: raw.entryCount, features,
