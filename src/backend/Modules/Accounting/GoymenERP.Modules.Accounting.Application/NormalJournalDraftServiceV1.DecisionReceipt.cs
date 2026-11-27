@@ -5,6 +5,13 @@ namespace GoymenERP.Modules.Accounting.Application;
 
 public sealed partial class NormalJournalDraftServiceV1
 {
+    public static string ApprovalKeyHash(string key) => AccountingApiService.Sha256(key.Trim());
+    public static string ApprovalPayloadHash(Guid draftId, long expectedVersion, Guid periodId) =>
+        AccountingApiService.Sha256(NormalJournalCommandNamesV1.ApproveDraft + "|"
+            + JsonSerializer.Serialize(new { draftId, expectedVersion, periodId }, Json));
+    public static string ApprovalOriginalResultDigest(AccountingApiResult<NormalJournalDraftViewV1> answer) =>
+        AccountingApiService.Sha256(JsonSerializer.Serialize(answer with { IsReplay = false, OriginalCorrelationId = null }, Json));
+
     private async Task<AccountingApiResult<NormalJournalDraftViewV1>> AttachNormalApprovalReceiptAsync(
         AccountingApiResult<NormalJournalDraftViewV1> answer, Guid id, long expectedVersion, Guid periodId,
         string key, Guid company, Guid actor, CancellationToken token)
@@ -13,7 +20,7 @@ public sealed partial class NormalJournalDraftServiceV1
             || drafts is not IAccountingNormalJournalDraftDecisionStoreV1 reader) return answer;
         await ReceiptFence(token);
         var command = await commands.FindCommandAsync(NormalJournalCommandNamesV1.ApproveDraft,
-            AccountingApiService.Sha256(key.Trim()), token);
+            ApprovalKeyHash(key), token);
         await ReceiptFence(token);
         var source = await reader.ReadNormalDraftDecisionAsync(id, ReceiptFence, token);
         await ReceiptFence(token);
@@ -31,10 +38,9 @@ public sealed partial class NormalJournalDraftServiceV1
         if (isCreditSource is null || command is null || !ValidNormalDecisionRecord(source) || expectedVersion <= 0 || expectedVersion == long.MaxValue || periodId == Guid.Empty
             || actor == Guid.Empty || string.IsNullOrWhiteSpace(key) || source.PreparedByUserId == actor
             || command.CommandName != NormalJournalCommandNamesV1.ApproveDraft
-            || command.IdempotencyKeyHash != AccountingApiService.Sha256(key.Trim())
+            || command.IdempotencyKeyHash != ApprovalKeyHash(key)
             || !Guid.TryParse(command.ActorId, out var commandActor) || commandActor != actor || string.IsNullOrWhiteSpace(command.OriginalCorrelationId)
-            || command.RequestHash != AccountingApiService.Sha256(NormalJournalCommandNamesV1.ApproveDraft + "|"
-                + JsonSerializer.Serialize(new { draftId = source.Id, expectedVersion, periodId }, Json))) return null;
+            || command.RequestHash != ApprovalPayloadHash(source.Id, expectedVersion, periodId)) return null;
         AccountingApiResult<NormalJournalDraftViewV1>? stored;
         try
         {

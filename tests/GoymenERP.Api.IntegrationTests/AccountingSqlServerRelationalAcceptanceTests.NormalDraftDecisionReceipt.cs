@@ -28,7 +28,7 @@ public sealed partial class AccountingSqlServerRelationalAcceptanceTests
         Assert.DoesNotContain("approvalReceipt", JsonSerializer.Serialize(replay), StringComparison.OrdinalIgnoreCase);
         var stored = await run.ScalarAsync<string>("SELECT ResultJson FROM accounting.Commands WHERE CommandName=@n AND IdempotencyKeyHash=@k",
             ("@n", NormalJournalCommandNamesV1.ApproveDraft), ("@k", proof.IdempotencyKeyHash));
-        Assert.Equal(proof.OriginalResultDigest, AccountingApiService.Sha256(stored));
+        Assert.Equal(proof.OriginalResultDigest, Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(stored))));
         Assert.DoesNotContain("approvalReceipt", stored, StringComparison.OrdinalIgnoreCase);
         Assert.Equal(AccountingApiStatus.Conflict, (await scope.Service.ApproveAsync(id, 1, Guid.NewGuid(), "normal-receipt-period")).Status);
         await NormalSafetyDurable(run, id, true); scope.AssertClean();

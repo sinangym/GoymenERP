@@ -111,7 +111,7 @@ public sealed partial class NormalJournalDraftLifecycleV1Tests
         var port = new DecisionProtocolPort(); var service = ApprovalService(port, port.Inner, new ApprovalCompany(Company), new ApprovalUser(), new ApprovalAuthority());
         var period = Guid.NewGuid(); const string key = "normal-receipt-negative";
         var result = await service.ApproveAsync(port.Inner.Record.Id, 1, period, key);
-        var command = Assert.IsType<AccountingCommandRecord>(await port.Inner.FindCommandAsync(NormalJournalCommandNamesV1.ApproveDraft, AccountingApiService.Sha256(key)));
+        var command = Assert.IsType<AccountingCommandRecord>(await port.Inner.FindCommandAsync(NormalJournalCommandNamesV1.ApproveDraft, NormalJournalDraftServiceV1.ApprovalKeyHash(key)));
         var source = port.Inner.Record;
         command = fault switch
         {
