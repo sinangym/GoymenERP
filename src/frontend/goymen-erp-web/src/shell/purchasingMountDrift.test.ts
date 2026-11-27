@@ -18,6 +18,7 @@ describe('shell ↔ Purchasing lane route catalogue', () => {
   it.each([
     [CAPABILITY.purchasingRequestWorkDecision, 'purchasing.request.v1'],
     [CAPABILITY.purchasingOrderWorkDecision, 'purchasing.order.v1'],
+    [CAPABILITY.purchasingServiceOrderWorkDecision, 'purchasing.service-order.v1'],
   ] as const)('mounts %s once ahead of legacy generic detail without a menu entry', (capability, kind) => {
     const path = `/onaylarim/${kind}/:approvalId`
     expect(CAPABILITY_ROUTE[capability]).toBe(path)
@@ -44,6 +45,7 @@ describe('shell ↔ Purchasing lane route catalogue', () => {
     expect([...shellIds].sort()).toEqual([
       CAPABILITY.purchasingRequestWorkDecision,
       CAPABILITY.purchasingOrderWorkDecision,
+      CAPABILITY.purchasingServiceOrderWorkDecision,
       PURCHASING_CAPABILITY.requestCreate,
       PURCHASING_CAPABILITY.requestDetail,
       PURCHASING_CAPABILITY.requestList,

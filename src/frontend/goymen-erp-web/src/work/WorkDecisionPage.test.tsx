@@ -220,3 +220,84 @@ describe('WP8 native purchase order approve-only purpose',()=>{
   expect(screen.queryByText(T.done)).toBeNull();expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
  })
 })
+
+
+const serviceKind='purchasing.service-order.v1',serviceCap='purchasing.service-order.work-decision'
+const servicePath=`/work/decisions/${serviceKind}/${id}`,serviceRoute=`/onaylarim/${serviceKind}/${id}`
+const servicePreview={...preview,kind:serviceKind,documentLabel:'SENTETIK hizmet',approvalReasonRequired:true,rejectionSupported:false}
+
+describe('WP8 native service order purpose',()=>{
+ it('requires the actual human reason for approval and keeps browse/create/price and rejection unavailable',async()=>{
+  let decided=false
+  const calls=installFetch({capabilities:[serviceCap],respond:(url,init)=>{
+   if(!url.includes(servicePath))return undefined
+   if(init?.method==='POST'){decided=true;return json({companyId:COMPANY_A,kind:serviceKind,itemId:id,state:'Approved',replayed:false,originalCorrelationId:'SENTETIK'})}
+   return json(decided?{...servicePreview,pending:false,sourceVersion:'8'}:servicePreview)
+  }})
+  const router=mount(serviceRoute,true);await screen.findByText('SENTETIK hizmet',{exact:false})
+  const input=screen.getByRole('textbox',{name:T.reason}) as HTMLTextAreaElement
+  expect(input.maxLength).toBe(1000);expect(input.value).toBe('')
+  expect(screen.getByText(T.approvalReasonRequired(1000))).toBeTruthy()
+  expect(screen.queryByRole('button',{name:T.reject})).toBeNull()
+  const button=screen.getByRole('button',{name:T.approve}) as HTMLButtonElement
+  expect(button.disabled).toBe(true)
+  fireEvent.change(input,{target:{value:'   '}});expect(button.disabled).toBe(true)
+  const reason='R'.repeat(1000)
+  fireEvent.change(input,{target:{value:`  ${reason}  `}});expect(button.disabled).toBe(false)
+  await userEvent.setup().click(button);await screen.findByText(T.done);await screen.findByText(T.closed)
+  const sent=calls.filter(call=>call.method==='POST');expect(sent).toHaveLength(1)
+  expect(sent[0].body).toEqual({expectedVersion:'7',approve:true,reason,delegationId:null})
+  expect(sent[0].headers['X-Company-Id']).toBe(COMPANY_A);expect(sent[0].headers['Idempotency-Key']).toBeTruthy()
+  for(const route of ['/satinalma/hizmet-siparisleri','/satinalma/hizmet-siparisleri/yeni',`/satinalma/hizmet-siparisleri/${id}`]) {
+   await act(async()=>{await router.navigate(route)})
+   await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+  }
+  expect(calls.some(call=>call.url.includes('/purchasing/'))).toBe(false)
+ })
+ it('does not truncate or send an overlong service approval reason',async()=>{
+  const calls=installFetch({capabilities:[serviceCap],respond:url=>url.includes(servicePath)?json(servicePreview):undefined})
+  mount(serviceRoute);await screen.findByText('SENTETIK hizmet',{exact:false})
+  const input=screen.getByRole('textbox',{name:T.reason}) as HTMLTextAreaElement
+  fireEvent.change(input,{target:{value:'R'.repeat(1001)}});expect(input.value).toHaveLength(1001)
+  expect((screen.getByRole('button',{name:T.approve}) as HTMLButtonElement).disabled).toBe(true)
+  await userEvent.setup().click(screen.getByRole('button',{name:T.approve}))
+  expect(calls.some(call=>call.method==='POST')).toBe(false)
+ })
+ it('preserves the original human reason/version/key through unknown remount and a newer Draft preview',async()=>{
+  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-service-decision'})
+  let posts=0
+  const calls=installFetch({capabilities:[serviceCap],respond:(url,init)=>{
+   if(!url.includes(servicePath))return undefined
+   if(init?.method==='POST')return ++posts===1?problem(503):new Response(JSON.stringify({companyId:COMPANY_A,kind:serviceKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'original'}),{status:200,headers:{'Content-Type':'application/json','Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'}})
+   return json(posts?{...servicePreview,sourceVersion:'9'}:servicePreview)
+  }})
+  mount(serviceRoute);await screen.findByText('SENTETIK hizmet',{exact:false})
+  fireEvent.change(screen.getByRole('textbox',{name:T.reason}),{target:{value:'  Original human reason  '}})
+  await userEvent.setup().click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+  cleanup();mount(serviceRoute);await screen.findByText(T.unknown);await screen.findByText('SENTETIK hizmet',{exact:false})
+  expect(screen.getByRole('textbox',{name:T.reason}).closest('fieldset')?.disabled).toBe(true)
+  await userEvent.setup().click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+  const sent=calls.filter(call=>call.method==='POST');expect(sent).toHaveLength(2)
+  expect(sent[1].body).toEqual(sent[0].body);expect(sent[1].body).toEqual({expectedVersion:'7',approve:true,reason:'Original human reason',delegationId:null})
+  expect(sent[1].headers['Idempotency-Key']).toBe(sent[0].headers['Idempotency-Key'])
+  expect(calls.filter(call=>call.url.includes(servicePath)&&call.method==='GET').length).toBeGreaterThanOrEqual(3)
+ })
+ it.each([{companyId:COMPANY_B},{rejectionSupported:true},{rejectionSupported:undefined},{approvalReasonRequired:false}])('fails closed on untrusted service preview %j',async delta=>{
+  const calls=installFetch({capabilities:[serviceCap],respond:url=>url.includes(servicePath)?json({...servicePreview,...delta}):undefined})
+  mount(serviceRoute);await waitFor(()=>expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull())
+  expect(screen.queryByText('SENTETIK hizmet',{exact:false})).toBeNull();expect(calls.some(call=>call.method==='POST')).toBe(false)
+ })
+ it('does not read service owner without its purpose capability',async()=>{
+  const calls=installFetch({capabilities:['purchasing.service-orders.approve'],respond:url=>url.includes(servicePath)?json(servicePreview):undefined})
+  mount(serviceRoute,true);await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+  expect(calls.some(call=>call.url.includes(servicePath))).toBe(false)
+ })
+ it('keeps fresh native refusal authoritative after the human reason is entered',async()=>{
+  const calls=installFetch({capabilities:[serviceCap],respond:(url,init)=>url.includes(servicePath)?init?.method==='POST'?problem(403):json(servicePreview):undefined})
+  mount(serviceRoute);await screen.findByText('SENTETIK hizmet',{exact:false})
+  fireEvent.change(screen.getByRole('textbox',{name:T.reason}),{target:{value:'Actual human reason'}})
+  await userEvent.setup().click(screen.getByRole('button',{name:T.approve}))
+  await waitFor(()=>expect(screen.queryByRole('button',{name:T.approve})).toBeNull())
+  expect(screen.queryByText(T.done)).toBeNull();expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
+ })
+})

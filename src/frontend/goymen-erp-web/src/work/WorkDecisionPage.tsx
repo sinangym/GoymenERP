@@ -76,8 +76,9 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {preview.sourceVersion}</p>
       {kind === 'inventory.opening-cost.v1' ? <p>{cost == null ? T.hiddenCost : `${T.cost}: ${cost}`}</p> : null}
       <h3>{T.reference}</h3><ul>{preview.references.map((ref, i) => <li key={i}>{inboxRoleText(ref.role) ?? T.reference}: {ref.label}</li>)}</ul>
-      {preview.pending ? <fieldset disabled={frozen}>{preview.rejectionSupported === false ? <p>{T.approvalOnly}</p>
-        : <label>{T.reason}<textarea value={reason} maxLength={reasonLimit} onChange={event => setReason(event.target.value)} /></label>}
+      {preview.pending ? <fieldset disabled={frozen}>{preview.rejectionSupported === false ? <p>{T.approvalOnly}</p> : null}
+        {preview.rejectionSupported !== false || preview.approvalReasonRequired ? <label>{T.reason}<textarea value={reason} maxLength={reasonLimit} onChange={event => setReason(event.target.value)} /></label> : null}
+        {kind === 'purchasing.service-order.v1' ? <p>{T.approvalReasonRequired(reasonLimit)}</p> : null}
         {kind === 'purchasing.request.v1' ? <p>{T.rejectionReasonRequired(reasonLimit)}</p> : null}
         <label><input type="checkbox" checked={useDelegation} onChange={event => { setUseDelegation(event.target.checked); setDelegationId('') }} />{T.delegation}</label>
         {useDelegation ? <><label>{T.delegationChoice}<select value={delegationId} onChange={event => setDelegationId(event.target.value)}><option value="">{T.choose}</option>
