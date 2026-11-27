@@ -1962,7 +1962,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Complete weighing purpose/UI and remaining native owner adapters; all64-flow SQL/HTTP/browser/CI/K3 acceptance gates remain. Paired19 is source coverage only.",
+      "next_action": "Complete supplier-return purpose/UI and remaining native owner adapters; all64-flow SQL/HTTP/browser/CI/K3 acceptance gates remain. Paired20 is source coverage only.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2065,7 +2065,7 @@
         "activation": "No grants/flags/provider changes"
       },
       "execution": {
-        "source_commit": "e6f12d9d12b8461729c5b2e8ed133e7e072d77c2",
+        "source_commit": "e0debba67f3d818dabaf3018315ca91e71894e92",
         "implemented_kinds": [
           "inventory.opening-cost.v1",
           "finance.cash-account.v1",
@@ -2085,7 +2085,8 @@
           "counterparty.tax-identity-change.v1",
           "counterparty.legal-name-change.v1",
           "logistics.plan-excess.v1",
-          "inventory.transfer-overage.v1"
+          "inventory.transfer-overage.v1",
+          "logistics.weighing-difference.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -2102,8 +2103,8 @@
           "Sales backend": "Sales.UnitTests at f4ccda30f: 2440 passed, 0 failed, 0 skipped. Existing native approval fixtures now use independent maker/checker actors under YOL-D23; negative fences preserved.",
           "Finance latest full unit suite": "1986/1986 passed, 0 skipped at aa10817d3; credit profile fields and native credit Work fences included.",
           "Sales latest full unit suite": "2469/2469 passed, 0 skipped at 324b9da8c; native order/invoice/subcontract guards included.",
-          "Purchasing latest full unit suite": "1296/1296 passed, 0 skipped at f1e7d5269; invoice variance and receipt purpose/native fences included.",
-          "Latest owner/Work composition": "e6f12d9d1 API415 total:411 passed,4 failed,0 skipped. All four failures are retained normal-host Manufacturing/Logistics authority hash/registry gates awaiting final pins; no full API/HTTP acceptance.31 weighing host cases and configured nonrelational refusal passed; later7a5a821 adds clean/pending writer distinction, execution pending.",
+          "Purchasing latest full unit suite": "1306/1306 passed, 0 skipped at5ab6b3ea3; native supplier-return rejection and two replay-only race unit cases included. Actual SQL NOT_RUN.",
+          "Latest owner/Work composition": "5ab6b3ea3 selected API98/98 passed skip0: PurchasingRequest65,Weighing31,nativeBoundary2. Clean/pending writer configured nonrelational refusals now passed. Earlier e6 API415:411PASS4FAIL remains retained; four normal-host Manufacturing/Logistics authority hash/registry failures await final pins, not waived. Later e0debba67 selected API96/96 passed skip0 (PurchasingRequest65,Weighing31); entire integration assembly including additional2 supplier rejection SQL race facts compiled. Earlier5ab nativeBoundary2 remains separate exact-source evidence.",
           "Prior failed runs": "83-run wrong-scope fixture corrected; later 93-run contained 91 pass and two failures (pure Sales declaration expectation corrected; normal HTTP authority pin remains NOT_ACCEPTED). New service fixture run1259 pass/1 failure correctly hit immutable history; fixture corrected without weakening native guards. Original logs retained. New SQL refusal fixture CS8619 at9bef fixed by separate await branches e5fd8ae07; no assertions changed. UI159 pass/1 failed test wrongly assumed no legacy route; corrected to exact existing fallback component/path and final160 passed.",
           "Manufacturing latest full unit suite": "1560/1560 passed, 0 skipped at 9bef612e9; publication/provider source included. Manufacturing module tree unchanged through 255453f72.",
           "Deferred host pins": "Earlier 78-case run at 6920c495e had 76 pass/2 normal-host authority-pin failures; retained NOT_ACCEPTED. Pins deferred to train close, no gate waived.",
@@ -2111,8 +2112,8 @@
           "Inventory latest full unit suite": "2284/2284 passed skip0 at8435fae61; paired overage declaration/link source included. No SQL acceptance.",
           "Counterparty native identity decisions": "Paired source-delivered and403 unit cases passed skip0 at74c65ee95;12 native+6 Work SQL facts remain NOT_RUN. No role activation.",
           "Counterparty latest full unit suite": "403/403 passed skip0 at74c65ee95; human proof/source publication included.",
-          "Logistics latest full unit suite": "588/588 passed skip0 ate6f12d9d1; weighing native boundary and staged purpose included. Prior8435 fixture failure and8e26 stale tuple failure logs retained, fixed without guard weakening.",
-          "Latest frontend": "Combined root tree equals521afa9bac.0e40076d7 Work3+mount209 passed skip0/full tsc0;521 two-line mount test delta8 passed skip0/8file lint0errors0warnings. AI4files98 passed at unchangedeb64. This is source/unit/TypeScript evidence, not browser acceptance.",
+          "Logistics latest full unit suite": "588/588 passed skip0 ate0debba67; weighing paired publication included. Original failed fixture/stale tuple logs retained; no actual SQL acceptance.",
+          "Latest frontend": "Root b07b69b76 entire frontend tree equals agent73840e010fc91f14722c2f441ae052c1b2ec335c: five focused files238/238 passed skip0, fulltsc-b0,10-file scopedlint0errors0warnings. Includes native kilogram contracts and WP6 kind tests. Prior failed overage logs retained. Actual browser NOT_RUN.",
           "Historical API compile failure at2ba0032c8": "At2ba0032c8 integration assembly failed CS0246: nonexistent SqlServerTheory. Corrected by19a6351ee to12 existing SqlServerFact wrappers sharing unchanged assertion bodies. API host execution NOT_RUN for this increment; failure log retained."
         },
         "reuse": [
@@ -2508,12 +2509,11 @@
               "e70ac369a"
             ],
             "scope": "Weighing approve-only native owner purpose with complete immutable evaluation/product/actor/kilogram receipt proof and authorized17-field human preview. Native integer version and decimal text wire reused; false capability and existing inbox link preserved until UI pairing.",
-            "local_checks": "e6f12d9d1 full Logistics588/588 passed skip0. Full integration assembly including7 new weighing SQL sources compiled; selected API415:411PASS4FAIL0skip, all4 normal-host authority hash/registry failures deferred to final pins, not waived.31 weighing host cases passed. Earlier root unconfigured test fixture corrected;7a5a821 clean/pending nonrelational boundary delta still awaits execution.",
+            "local_checks": "e6f12d9d1 full Logistics588/588 passed skip0. Full integration assembly including7 new weighing SQL sources compiled; selected API415:411PASS4FAIL0skip, all4 normal-host authority hash/registry failures deferred to final pins, not waived.31 weighing host cases passed. Earlier root unconfigured test fixture corrected;7a5a821 clean/pending nonrelational boundary delta still awaits execution. Later5ab API98 includes clean/pending writer distinction passed; see paired publication increment.",
             "sql": "3 Work SQL facts inventoried. Native4 SQL facts plus prior kernel SQL acceptance remain NOT_RUN.",
             "review": "Bounded nonauthor full14+3-file purpose review completed without concrete P0/P1/P2. Missing human context fixed byafc3dfd4f; clean-writer boundary distinction strengthened in7a5a821. Not full K3/runtime acceptance.",
             "remaining": [
-              "Compile and selected local cohort",
-              "Weighing paired UI/source publication",
+              "Paired publication combined local checks",
               "Real SQL/HTTP/browser,final pins/full CI/two independent K3"
             ],
             "new_permissions": [],
@@ -2523,17 +2523,33 @@
             "source_commit": "83b84d805",
             "source_commits": [
               "83b84d805",
-              "5b8664bcb"
+              "5b8664bcb",
+              "e30165814"
             ],
             "scope": "Native supplier-return rejection prerequisite reuses existing goods-receipt guarded transaction, durable refusal and bounded replay-only-after-abort pattern. Approval borrowed Inventory participants, price disclosure and existing policies preserved. Existing scoped audit writer reused; no Work adapter/publication yet.",
-            "local_checks": "10 new unit rows and4 SQL facts (11 inner scenarios) written. Build/unit/SQL NOT_RUN for this increment. Additional2 unit race cases use the native service with synthetic stores, not real SQL.",
-            "review": "Bounded root full6-file source read and nonauthor fullsource/caller review; P2 missing race branch tests added5b8664bcb, delta review pending. No full K3.",
-            "sql": "4 new SQL facts inventoried, execution NOT_RUN. New concurrency winner/read-only-after-abort branch actual SQL evidence NOT_COVERED; must be addressed before native/Work acceptance.",
+            "local_checks": "5ab6b3ea3 full Purchasing1306/1306 and selected API98/98 passed skip0. Includes10 new native rejection unit rows; earlier4 SQL facts compiled. Two additional SQL race facts added e30165814 await compilation. Actual SQL NOT_RUN. Additional2 SQL race source facts compiled at e0debba67; actual SQL NOT_RUN.",
+            "review": "Bounded root/full6-file and nonauthor native caller review completed; two missing race unit cases source-reviewed after5b8664bcb. Additional SQL race source read by root, not actual SQL/full K3.",
+            "sql": "6 SQL facts inventoried;2 native-service abort/read-only winner/no-winner race facts added e30165814. Actual SQL NOT_RUN; synthetic unit concurrency evidence is separate.",
             "remaining": [
-              "Compile/full Purchasing unit and relevant API boundary checks",
               "Actual SQL rollback/audit/concurrency proof",
               "Supplier return purpose/UI pairing",
               "Final pins/full CI/two independent K3"
+            ],
+            "new_permissions": [],
+            "migration": null
+          },
+          {
+            "source_commit": "e0debba67f3d818dabaf3018315ca91e71894e92",
+            "source_commits": [
+              "8b90f56f8",
+              "b07b69b76",
+              "e0debba67"
+            ],
+            "scope": "Paired weighing Work UI and owner capability1.10 publication; exact17-field immutable human evaluation/product table, native approve only, frozen original version/key on unknown replay. Existing native links remain references; no new grants/flags/provider.",
+            "local_checks": "e0debba67 fullLogistics588/588 and selectedAPI96/96 passed skip0; full integration assembly including new2 native supplier rejection SQL race facts compiled. Agent738 frontend238/238 skip0/fulltsc0/scoped10-file lint0errors0warnings; entire integrated frontend tree equal. Actual SQL/HTTP/browser NOT_RUN.",
+            "review": "Non-author full10-file UI source review and7-file publication diff review found no concrete P0/P1/P2. Small printed label/text followup read by root. Not full K3.",
+            "remaining": [
+              "Actual SQL/HTTP/browser,final pins/full CI/two independent K3"
             ],
             "new_permissions": [],
             "migration": null
@@ -2610,12 +2626,14 @@
           "e70ac369a",
           "7a5a821",
           "83b84d805",
-          "5b8664bcb"
+          "5b8664bcb",
+          "e30165814",
+          "8b90f56f8",
+          "b07b69b76",
+          "e0debba67"
         ],
-        "kind_count_scope": "19 paired source kinds plus1 staged weighing backend; not20 accepted flows. All64 runtime acceptances remain open.",
-        "staged_kinds": [
-          "logistics.weighing-difference.v1"
-        ]
+        "kind_count_scope": "20 paired source kinds; not20 accepted flows. All64 runtime acceptances remain open.",
+        "staged_kinds": []
       }
     },
     {
