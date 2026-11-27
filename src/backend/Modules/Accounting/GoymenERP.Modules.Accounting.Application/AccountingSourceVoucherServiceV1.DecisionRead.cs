@@ -57,7 +57,7 @@ public sealed partial class AccountingSourceVoucherServiceV1 : IAccountingSource
             || p.SourceDocumentId == Guid.Empty || p.InvoiceId == Guid.Empty || p.SourceActorId == Guid.Empty
             || p.PartyId == Guid.Empty || p.DocumentCurrencyId == Guid.Empty || p.FinalizedVersion < 1 || p.MappingVersion < 1
             || p.Version < 1 || source.CreatedAtUtc.Offset != TimeSpan.Zero || string.IsNullOrWhiteSpace(p.DocumentKind)
-            || p.Lines is not { Count: > 0 } || p.Lines.Any(x => x.LineNumber < 1 || x.AccountId == Guid.Empty
+            || p.Lines is not { Count: > 0 } || p.Lines.Any(x => x is null || x.LineNumber < 1 || x.AccountId == Guid.Empty
                 || x.Side is not (1 or 2) || string.IsNullOrWhiteSpace(x.MappingKey) || !SourceVoucherAmount(x.FunctionalAmount))
             || p.Lines.Select(x => x.LineNumber).Distinct().Count() != p.Lines.Count || !SourceVoucherAmount(p.FunctionalPayable)
             || p.FunctionalPayable != source.CommercialAmounts.FunctionalPayable.ToString("0.############################", CultureInfo.InvariantCulture)

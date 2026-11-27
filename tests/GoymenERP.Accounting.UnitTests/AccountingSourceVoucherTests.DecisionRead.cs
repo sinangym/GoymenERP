@@ -44,7 +44,7 @@ public sealed partial class AccountingSourceVoucherTests
         Assert.Equal(0,reader.Writes);
     }
     [Theory]
-    [InlineData("null-record")][InlineData("foreign")][InlineData("amount")][InlineData("current-core")][InlineData("unknown-status")][InlineData("maker")]
+    [InlineData("null-record")][InlineData("foreign")][InlineData("amount")][InlineData("current-core")][InlineData("unknown-status")][InlineData("maker")][InlineData("null-line")]
     public async Task Purpose_missing_or_mismatched_owner_facts_never_become_human_success(string fault)
     {
         var f=new Fixture();var s=DecisionSource();
@@ -54,6 +54,7 @@ public sealed partial class AccountingSourceVoucherTests
         if(fault=="unknown-status")s=s with{CurrentVoucher=s.CurrentVoucher with{Status="invented"}};
         if(fault=="maker")f.User.UserId=Maker.ToString("D");
         if(fault=="null-record")s=s with{StoredVoucher=null!};
+        if(fault=="null-line")s=s with{StoredVoucher=s.StoredVoucher with{Lines=[null!]}};
         var reader=new DecisionStore(s);var service=new AccountingSourceVoucherServiceV1(reader,f.Commands,f.Authority,f.Company,f.User,new Correlation());
         var answer=await service.ReadDecisionAsync(Invoice,_=>Task.CompletedTask);
         Assert.Equal(fault=="maker"?AccountingApiStatus.Denied:AccountingApiStatus.Unavailable,answer.Status);Assert.Null(answer.Resource);Assert.Equal(0,reader.Writes);
