@@ -78,7 +78,10 @@ public sealed record ApprovedAccountingSourceCatalogViewV1(
     Guid? ActivatedByUserId,
     DateTimeOffset? ActivatedAtUtc,
     int AccountCount,
-    int BindingCount);
+    int BindingCount)
+{
+    [System.Text.Json.Serialization.JsonIgnore] public ApprovedAccountingSourceCatalogActivationReceiptV1? ActivationReceipt { get; init; }
+}
 
 public interface IApprovedAccountingSourceCatalogStoreV1 : IApprovedNormalJournalSourceBindingCatalogV1
 {
@@ -231,7 +234,9 @@ public sealed partial class ApprovedAccountingSourceCatalogServiceV1(
 
         if (string.IsNullOrWhiteSpace(idempotencyKey)) return Task.FromResult(Invalid("idempotencyKey"));
         if (!companyContext.IsResolved || !TryContext(out var capturedCompany, out var capturedActor)) return Task.FromResult(Denied());
-        return catalogs.RunActivationAsync(replayOnly => RunAsync(
+        return catalogs.RunActivationAsync(async replayOnly =>
+        {
+            var answer = await RunAsync(
             ApprovedAccountingSourceCatalogPermissionNamesV1.Activate,
             ApprovedAccountingSourceCatalogCommandNamesV1.Activate,
             idempotencyKey,
@@ -250,7 +255,9 @@ public sealed partial class ApprovedAccountingSourceCatalogServiceV1(
                     token);
                 return Success(AccountingApiStatus.Ok, record);
             },
-            cancellationToken, capturedCompany, capturedActor, replayOnly),
+            cancellationToken, capturedCompany, capturedActor, replayOnly);
+            return await AttachCatalogActivationReceiptAsync(answer, packageId, request, idempotencyKey, capturedCompany, capturedActor, cancellationToken);
+        },
             token => ActivationFenceAsync(capturedCompany, capturedActor, token), cancellationToken);
     }
 
@@ -460,7 +467,7 @@ public sealed partial class ApprovedAccountingSourceCatalogServiceV1(
         if (!ActivationContextMatches(company, actor)) throw new NormalJournalAuthorityDeniedException();
         var scope = await authority.RevalidatePermissionScopeAsync(ApprovedAccountingSourceCatalogPermissionNamesV1.Activate, company, token);
         token.ThrowIfCancellationRequested();
-        if (!Granted(scope) || !ActivationContextMatches(company, actor)) throw new NormalJournalAuthorityDeniedException();
+        if (scope is null || !Granted(scope) || !ActivationContextMatches(company, actor)) throw new NormalJournalAuthorityDeniedException();
     }
 
     private async Task FenceAsync(

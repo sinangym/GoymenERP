@@ -36,7 +36,7 @@ public sealed partial class AccountingApprovedSourceCatalogSqlServerRelationalAc
                 if (scope.Writer.HasPendingDrafts) pendingSeen = true;
                 if (save.Saved) savedFences++;
                 var reached = fault == "after-audit" ? pendingSeen && !scope.Writer.HasPendingDrafts && !save.Saved
-                    : fault == "precommit" ? savedFences == 5 : fault == "postcommit" ? commits.Commits > 0 : save.Saved;
+                    : fault == "precommit" ? savedFences == 10 : fault == "postcommit" ? commits.Commits > 0 : save.Saved;
                 if (!deny || !reached) return true;
                 observed = true;
                 if (fault == "company") { scope.Company.Set(CompanyB); return true; }
@@ -48,7 +48,7 @@ public sealed partial class AccountingApprovedSourceCatalogSqlServerRelationalAc
             if (fault == "cancel") await Assert.ThrowsAnyAsync<OperationCanceledException>(() => scope.Activate(package.Id, "owned-catalog", cancellation.Token));
             else { var refused = await scope.Activate(package.Id, "owned-catalog"); Assert.Equal(AccountingApiStatus.Denied, refused.Status); Assert.Null(refused.Resource); }
             Assert.True(observed);
-            if (fault == "precommit") Assert.Equal(5, savedFences); // Save1; catalog postSave2; lifecycle release3; owner4; precommit5.
+            if (fault == "precommit") Assert.Equal(10, savedFences); // Save1; catalog2; lifecycle3; receipt entry4/command5/store entry6/package7/release8; owner9/precommit10.
             scope.AssertClean();
             Assert.Equal(fault == "postcommit" ? new Counts(1, before.Commands + 1, before.Audits + 1) : before, await run.CountsAsync(package.Id));
             Assert.Equal(fault == "postcommit" ? 2L : 1L, (await run.CatalogAsync(package.Id)).Version);

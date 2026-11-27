@@ -275,7 +275,7 @@ public sealed partial class ApprovedAccountingSourceCatalogLifecycleV1Tests
             Task.FromResult(answers[Math.Min(index++, answers.Length - 1)]);
     }
 
-    private sealed class MemoryStore : IApprovedAccountingSourceCatalogStoreV1, IAccountingCommandLog
+    private sealed partial class MemoryStore : IApprovedAccountingSourceCatalogStoreV1, IAccountingCommandLog
     {
         private readonly List<AccountingCommandRecord> commands = [];
 
