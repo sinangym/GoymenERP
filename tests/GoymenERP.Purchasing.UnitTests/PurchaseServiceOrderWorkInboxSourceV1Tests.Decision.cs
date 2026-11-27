@@ -1,9 +1,12 @@
 using System.Text.Json;
+using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Work;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Domain.Services;
 using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
+using GoymenERP.Modules.Purchasing.Infrastructure.WorkInbox;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using static GoymenERP.Purchasing.UnitTests.PurchasingWorkInboxTestWorld;
 
 namespace GoymenERP.Purchasing.UnitTests;
@@ -49,13 +52,28 @@ public sealed partial class PurchaseServiceOrderWorkInboxSourceV1Tests
     {
         var world = new PurchasingWorkInboxTestWorld();
         var draft = Draft(CompanyA, "SENTETIK-broken", Start);
-        await world.SeedAsync(CompanyA, db => Add(db, [draft]));
-        await using (var db = world.Context(CompanyA))
+        var company = new CompanyContext(); company.Set(CompanyA);
+        // SENTETIK persisted-corruption seam. Native write guards must continue rejecting history edits;
+        // corrupt only after those guards in the test interceptor, not through a production write path.
+        await using var db = new PurchasingDbContext(new DbContextOptionsBuilder<PurchasingDbContext>()
+            .UseInMemoryDatabase("SENTETIK-corrupt-service-order-" + Guid.NewGuid().ToString("N"))
+            .AddInterceptors(new CorruptSnapshot(draft with { OrderId = Guid.NewGuid() })).Options, company);
+        Add(db, [draft]);
+        await db.SaveChangesAsync();
+        var source = new PurchaseServiceOrderWorkInboxSourceV1(db, world.Fence(CompanyA));
+        await Assert.ThrowsAsync<InvalidOperationException>(() => source.ReadDecisionAsync(world.Caller(CompanyA), draft.OrderId, default));
+    }
+
+    private sealed class CorruptSnapshot(PurchaseServiceOrderState malformed) : SaveChangesInterceptor
+    {
+        public override ValueTask<InterceptionResult<int>> SavingChangesAsync(DbContextEventData eventData,
+            InterceptionResult<int> result, CancellationToken cancellationToken = default)
         {
-            var revision = await db.ServiceOrderRevisions.SingleAsync();
-            revision.SnapshotJson = JsonSerializer.Serialize(draft with { OrderId = Guid.NewGuid() }, PurchaseServiceOrderStoreV1.Json);
-            await db.SaveChangesAsync();
+            var db = Assert.IsType<PurchasingDbContext>(eventData.Context);
+            var row = Assert.Single(db.ChangeTracker.Entries<PurchaseServiceOrderRevisionRow>());
+            Assert.Equal(EntityState.Added, row.State);
+            row.Entity.SnapshotJson = JsonSerializer.Serialize(malformed, PurchaseServiceOrderStoreV1.Json);
+            return ValueTask.FromResult(result);
         }
-        await Assert.ThrowsAsync<InvalidOperationException>(() => Source(world).ReadDecisionAsync(world.Caller(CompanyA), draft.OrderId, default));
     }
 }
