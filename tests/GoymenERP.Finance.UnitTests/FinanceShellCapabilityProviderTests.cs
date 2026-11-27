@@ -17,7 +17,7 @@ public sealed class FinanceShellCapabilityProviderTests
     {
         var declarations = new FinanceShellCapabilityProvider().GetDeclarations();
 
-        Assert.Equal(57, declarations.Count);
+        Assert.Equal(58, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(
             !declaration.CapabilityId.StartsWith("finance.credits.", StringComparison.Ordinal)
             && !declaration.CapabilityId.StartsWith("finance.official-sales-invoices.", StringComparison.Ordinal)
@@ -44,11 +44,13 @@ public sealed class FinanceShellCapabilityProviderTests
         var byId = provider.GetDeclarations().ToDictionary(declaration => declaration.CapabilityId, StringComparer.Ordinal);
 
         Assert.Equal("CHATGPT-BUSINESS/FINANCE", provider.Owner);
-        Assert.Equal("1.23", provider.ContractVersion);
+        Assert.Equal("1.24", provider.ContractVersion);
         (string Capability, string Route, string Path, string Screen, ShellCapabilityRoutePrecedence Precedence, string[] Permissions)[] expected =
         [
             ("finance.manual-bank-payment.work-decision", "finance-manual-bank-payment-work-decision", "/onaylarim/finance.manual-bank-payment.v1/:approvalId", "F-MANUAL-BANK-PAYMENT-WORK-DECISION",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [FinancePermissionNames.ManualBankPaymentApprove]),
+            ("finance.bank-account-iban-change.work-decision", "finance-bank-account-iban-change-work-decision", "/onaylarim/finance.bank-account-iban-change.v1/:approvalId", "F-BANK-ACCOUNT-IBAN-CHANGE-WORK-DECISION",
+                ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceBankAccountApprove]),
             ("finance.bank-account.work-decision", "finance-bank-account-work-decision", "/onaylarim/finance.bank-account.v1/:approvalId", "F-BANK-ACCOUNT-WORK-DECISION",
                 ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, [ErpPermissions.FinanceBankAccountApprove]),
             ("finance.credit-account.work-decision", "finance.credit-account-work-decision", "/onaylarim/finance.credit-account.v1/:approvalId", "W-FIN-CREDIT-ACCOUNT-01",
@@ -315,6 +317,18 @@ public sealed class FinanceShellCapabilityProviderTests
             }
         }
         Assert.Equal(22, declarations.Count(item => item.ParentCapabilityId is not null));
+    }
+
+    [Fact]
+    public void Iban_purpose_is_standalone_company_wide_approve_only_and_does_not_expand_native_bank_read()
+    {
+        var rows = new FinanceShellCapabilityProvider().GetDeclarations();
+        var purpose = Assert.Single(rows, row => row.CapabilityId == FinanceShellCapabilityProvider.BankAccountIbanChangeWorkDecisionCapabilityId);
+        Assert.Null(purpose.ParentCapabilityId); Assert.True(purpose.ImplementationAvailable);
+        Assert.Equal([ErpPermissions.FinanceBankAccountApprove], purpose.RequiredPermissions);
+        Assert.Equal(ShellCapabilityContextRequirement.SingleCompany, purpose.ContextRequirement);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, purpose.ScopeRequirement);
+        Assert.Equal([ErpPermissions.FinanceBankAccountRead], Assert.Single(rows, row => row.CapabilityId == FinanceShellCapabilityProvider.BankAccountListCapabilityId).RequiredPermissions);
     }
 
     [Fact]

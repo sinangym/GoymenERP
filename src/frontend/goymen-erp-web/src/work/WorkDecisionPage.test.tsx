@@ -1535,7 +1535,7 @@ it('mounts dispatch as the 25th native purpose under its exact standalone capabi
  expect(route?.path).toBe(`onaylarim/${dispatchKind}/:approvalId`)
  const element=route?.element as ReactElement<{capability:readonly string[];children:ReactElement<{kind:string}>}>
  expect(element.props.capability).toEqual([dispatchCap]);expect(element.props.children.type).toBe(WorkDecisionPage);expect(element.props.children.props.kind).toBe(dispatchKind)
- expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(27)
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(28)
 })
 it.each([{companyId:COMPANY_B},{logisticsDispatchNote:{...dispatchProof,dispatchNoteId:COMPANY_A}},{rejectionSupported:true}])('does not expose malformed/foreign dispatch proof %j',async(delta)=>{
  installFetch({capabilities:[dispatchCap],respond:url=>url.includes(dispatchPath)?json({...dispatchPreview,...delta}):undefined});mountDispatchPurpose()
@@ -1609,7 +1609,7 @@ it('mounts the customer return purpose under its exact standalone capability amo
  expect(route?.path).toBe(`onaylarim/${customerKind}/:approvalId`)
  expect(route).toBeDefined()
  expect((route!.element as ReactElement<{capability:readonly string[]}>).props.capability).toEqual([customerCap])
- expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(27)
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(28)
 })
 it('does not restore a customer-return unknown attempt under another authentication session',async()=>{
  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-return-old'})
@@ -1754,4 +1754,85 @@ it('clears manual payment approval when a fresh server 403 removes its standalon
  mountManualPayment();await screen.findByRole('button',{name:T.approve});fireEvent.click(screen.getByRole('button',{name:T.approve}))
  await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
  expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
+})
+
+
+const ibanKind='finance.bank-account-iban-change.v1',ibanCap='finance.bank-account-iban-change.work-decision'
+const ibanPath=`/work/decisions/${ibanKind}/${id}`
+const ibanHuman={accountId:id,companyId:COMPANY_A,companyLegalName:'SENTETIK şirketin hukuki sahibi',currentIban:'SENTETIK eski IBAN',proposedIban:'TR060006100519786457841327',reason:'SENTETIK özel değişiklik nedeni',proposedBy:'SENTETIK IBAN hazırlayan',proposedAtUtc:'2026-11-27T08:00:00Z'}
+const ibanPreview={...preview,kind:ibanKind,rejectionSupported:false,bankAccountIbanChange:ibanHuman,
+ references:[{role:'bank-account',recordId:id,label:'SENTETIK banka hesabı',link:null}],
+ rules:[{ruleCode:'finance.bank-account-iban-change-approval-required',threshold:null,actual:null,deviation:null,unit:null}]}
+const mountIban=()=>mount(`/onaylarim/${ibanKind}/${id}`,true)
+it('shows the exact IBAN human proof under approve-only authority and sends no raw proof or money command',async()=>{
+ const calls=installFetch({capabilities:[ibanCap],respond:(url,init)=>url.includes(ibanPath)?init?.method==='POST'
+  ?json({companyId:COMPANY_A,kind:ibanKind,itemId:id,state:'Approved',replayed:false,originalCorrelationId:'SENTETIK-original'}):json(ibanPreview):undefined})
+ mountIban();const region=await screen.findByRole('region',{name:T.ibanProposal})
+ for(const value of Object.values(ibanHuman))expect(within(region).getByText(value)).toBeTruthy()
+ expect(screen.queryByRole('textbox',{name:T.reason})).toBeNull();expect(screen.queryByRole('button',{name:T.reject})).toBeNull()
+ fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.method==='POST');expect(sent).toHaveLength(1)
+ expect(sent[0]!.body).toEqual({expectedVersion:'7',approve:true,reason:null,delegationId:null})
+ expect(calls.some(call=>call.url.includes('/finance/')||call.url.includes('/ai/'))).toBe(false)
+ expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
+ expect(calls.filter(call=>call.url.includes(ibanPath)&&call.method!=='POST')).toHaveLength(1)
+})
+it.each(['unavailable','replacement'])('restores only the original IBAN command across unknown/remount with %s current GET',async mode=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-iban-session'});let posts=0
+ const calls=installFetch({capabilities:[ibanCap],respond:(url,init)=>{
+  if(!url.includes(ibanPath))return undefined
+  if(init?.method==='POST')return ++posts===1?problem(503):json({companyId:COMPANY_A,kind:ibanKind,itemId:id,state:'Approved',replayed:true,originalCorrelationId:'SENTETIK-original'},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK-original'})
+  return posts===0?json(ibanPreview):mode==='unavailable'?problem(503):json({...ibanPreview,sourceVersion:'9',bankAccountIbanChange:{...ibanHuman,proposedBy:IDENTITY.userId,proposedIban:'TR330006100519786457841326'}})
+ }})
+ mountIban();await screen.findByRole('button',{name:T.approve});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ const journal=JSON.stringify(sessionStorage)
+ for(const value of [ibanHuman.currentIban,ibanHuman.proposedIban,ibanHuman.companyLegalName,ibanHuman.reason])expect(journal).not.toContain(value)
+ cleanup();mountIban();await screen.findByRole('button',{name:T.retry});expect(await screen.findByText(`${T.version}: 7`)).toBeTruthy()
+ expect(screen.queryByRole('region',{name:T.ibanProposal})).toBeNull();expect(screen.queryByRole('button',{name:T.approve})).toBeNull()
+ expect(calls.filter(call=>call.url.includes(ibanPath)&&call.method!=='POST')).toHaveLength(1)
+ fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+ const sent=calls.filter(call=>call.method==='POST');expect(sent).toHaveLength(2)
+ expect(sent[1]!.body).toEqual(sent[0]!.body);expect(sent[1]!.body).toEqual({expectedVersion:'7',approve:true,reason:null,delegationId:null})
+ expect(sent[1]!.headers['Idempotency-Key']).toBe(sent[0]!.headers['Idempotency-Key'])
+})
+it.each([{capabilities:[]},{capabilities:['finance.bank-accounts.approve']},{capabilities:['finance.bank-accounts.list']}])('does not read an IBAN purpose without its standalone capability %j',async({capabilities})=>{
+ const calls=installFetch({capabilities,respond:url=>url.includes(ibanPath)?json(ibanPreview):undefined});mountIban()
+ await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(calls.some(call=>call.url.includes(ibanPath))).toBe(false)
+})
+it('does not turn a new unavailable IBAN preview into an approval or disclose a foreign-company proof',async()=>{
+ const calls=installFetch({capabilities:[ibanCap],respond:url=>url.includes(ibanPath)?problem(503):undefined});mountIban()
+ await waitFor(()=>expect(document.querySelector('[data-state="service-unavailable"]')).not.toBeNull())
+ expect(screen.queryByRole('button',{name:T.approve})).toBeNull();expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(call=>call.method==='POST')).toHaveLength(0)
+ cleanup();installFetch({capabilities:[ibanCap],respond:url=>url.includes(ibanPath)?json({...ibanPreview,bankAccountIbanChange:{...ibanHuman,companyId:COMPANY_B}}):undefined});mountIban()
+ await waitFor(()=>expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull());expect(screen.queryByText(ibanHuman.proposedIban)).toBeNull()
+})
+it('closes a retained IBAN retry when fresh purpose authority is gone and never restores it into another session',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-iban-old-session'});const capabilities=[ibanCap]
+ const calls=installFetch({capabilities,respond:(url,init)=>url.includes(ibanPath)?init?.method==='POST'?problem(503):json(ibanPreview):undefined})
+ mountIban();await screen.findByRole('button',{name:T.approve});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ cleanup();capabilities.splice(0);mountIban();await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+ expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(call=>call.method==='POST')).toHaveLength(1)
+ cleanup();capabilities.push(ibanCap);Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-iban-new-session'});mountIban()
+ await screen.findByRole('button',{name:T.approve});expect(screen.queryByRole('button',{name:T.retry})).toBeNull()
+})
+it('applies fresh server 403 to an IBAN decision instead of retaining raw human proof on screen',async()=>{
+ const capabilities=[ibanCap]
+ installFetch({capabilities,respond:(url,init)=>{if(!url.includes(ibanPath))return undefined;if(init?.method==='POST'){capabilities.splice(0);return problem(403)}return json(ibanPreview)}})
+ mountIban();await screen.findByRole('button',{name:T.approve});fireEvent.click(screen.getByRole('button',{name:T.approve}))
+ await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(screen.queryByText(ibanHuman.proposedIban)).toBeNull()
+})
+
+
+it('does not carry an unknown IBAN command or its private preview into a different company',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-iban-company-session'})
+ const calls=installFetch({capabilities:[ibanCap],respond:(url,init)=>{
+  if(!url.includes(ibanPath))return undefined
+  const company=(init?.headers as Record<string,string>)?.['X-Company-Id']??COMPANY_A
+  return init?.method==='POST'?problem(503):json({...ibanPreview,companyId:company,bankAccountIbanChange:{...ibanHuman,companyId:company,companyLegalName:company===COMPANY_A?ibanHuman.companyLegalName:'SENTETIK başka şirket',proposedIban:company===COMPANY_A?ibanHuman.proposedIban:'TR330006100519786457841326'}})
+ }})
+ mountIban();await screen.findByRole('button',{name:T.approve});fireEvent.click(screen.getByRole('button',{name:T.approve}));await screen.findByText(T.unknown)
+ await userEvent.setup().selectOptions(screen.getByRole('combobox',{name:'Şirket'}),COMPANY_B)
+ await waitFor(()=>expect(calls.some(call=>call.url.includes(ibanPath)&&call.method==='GET'&&call.headers['X-Company-Id']===COMPANY_B)).toBe(true))
+ expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(screen.queryByText(ibanHuman.proposedIban)).toBeNull()
+ const sent=calls.filter(call=>call.url.includes(ibanPath)&&call.method==='POST');expect(sent).toHaveLength(1);expect(sent[0]!.headers['X-Company-Id']).toBe(COMPANY_A)
 })

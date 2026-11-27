@@ -2,7 +2,7 @@ import { AI_PANEL_CAPABILITY } from '../ai/aiCapabilities'
 import { WorkSalesSummary } from './WorkSalesSummary'
 import { customerReturnText as CUSTOMER_RETURN } from '../logistics/customerReturnText'
 import { DISPATCH_NOTE_TEXT as DISPATCH } from '../logistics/logisticsText'
-import { BANK_COLUMN, BANK_MASTER_NOTICE, currencyFallback } from '../finance/bankAccountText'
+import { BANK_COLUMN, BANK_MASTER_NOTICE, IBAN_CHANGE_NEW, IBAN_CHANGE_REASON, currencyFallback } from '../finance/bankAccountText'
 import { SUPPLIER_RETURN_TEXT as SUPPLIER_RETURN, SUPPLIER_RETURN_SOURCE_BLOCK_TEXT } from '../purchasing/supplierReturnText'
 import { KIND_LABEL, TAX_IDENTITY_TEXT } from '../cari/taxIdentity'
 import { LEGAL_NAME_TEXT } from '../cari/legalName'
@@ -63,7 +63,9 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const attempt = useScopedCommandAttempt<WorkDecisionRequest, WorkDecisionResult>(`work-decision:${kind}:${id}`,
     (payload, key) => sendWorkDecision(company!, kind, id, payload, key), payload => isWorkDecisionRequest(payload, kind))
   // A validated historical command resolves through its native receipt, not a newer maker's preview.
-  const historicalRetry = (kind === 'inventory.transfer-loss.v1' || kind === 'inventory.transfer-overage.v1') && attempt.hasPendingRetry
+  const ibanChange = kind === 'finance.bank-account-iban-change.v1'
+  const receiptRetryKind = ibanChange || kind === 'inventory.transfer-loss.v1' || kind === 'inventory.transfer-overage.v1'
+  const historicalRetry = receiptRetryKind && attempt.hasPendingRetry
   const [reconcilingHistorical, setReconcilingHistorical] = useState(historicalRetry)
   const query = useQuery({ queryKey: [namespace, shell.routeEntryGeneration, 'work-decision', kind, id],
     enabled: company !== null && namespace !== null && !capabilityFailClosed(shell) && !historicalRetry && !reconcilingHistorical, queryFn: async ({ signal }) => {
@@ -113,12 +115,15 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       ...(overage ? { inventoryTransferOverage: { requestNumber: preview.inventoryTransferOverage!.requestNumber, decidedAtUtc: workDecisionLocalUtc(decisionTime)! } } : {}),
       ...(loss ? { inventoryTransferLoss: { requestNumber: preview.inventoryTransferLoss!.requestNumber, decidedAtUtc: workDecisionLocalUtc(decisionTime)! } } : {}),
       ...(kind === 'manufacturing.plan.v1' && options !== undefined ? { manufacturingPlanReapproval: { selectedLabelIds: [...selectedLabels] } } : {}) })
-    if (answer.type === 'applied') void query.refetch()
+    if (answer.type === 'applied') {
+      if (ibanChange) setReconcilingHistorical(true)
+      else void query.refetch()
+    }
   }
   const retry = async () => {
-    if (timedTransfer && attempt.hasPendingRetry) setReconcilingHistorical(true)
+    if (receiptRetryKind && attempt.hasPendingRetry) setReconcilingHistorical(true)
     const answer = await attempt.retry()
-    if (answer.type === 'applied' && !timedTransfer) void query.refetch()
+    if (answer.type === 'applied' && !receiptRetryKind) void query.refetch()
   }
   const stockProof = preview?.inventoryStockCount ?? preview?.inventoryStockScrap
   const stockScrap = kind === 'inventory.stock-scrap.v1'
@@ -127,11 +132,11 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
     <Link to="/onaylarim/kuyruk">{T.back}</Link>
     {preview === null ? reconciledHistorical ? <p>{T.priorDecisionResolved}</p> : historicalRetry ? <div><p>{T.priorDecisionPending}</p>
       <p>{T.version}: {attempt.pendingPayload?.expectedVersion}</p>
-      <p>{overage ? T.overageRequestNumber : T.lossRequestNumber}: {frozenTransferRequest?.requestNumber}</p>
-      <p>{T.lossFrozenTime}: {frozenTransferRequest?.decidedAtUtc}</p>
+      {ibanChange ? <p>{T.ibanRetained}</p> : <><p>{overage ? T.overageRequestNumber : T.lossRequestNumber}: {frozenTransferRequest?.requestNumber}</p>
+      <p>{T.lossFrozenTime}: {frozenTransferRequest?.decidedAtUtc}</p></>}
     </div> : <StateBlock state={query.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(query.data) as RemoteViewState<unknown>}
       subject={T.title} onRetry={() => void query.refetch()} /> : <>
-      <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {(customerReturn || supplierReturn || kind === 'logistics.dispatch-note.v1' || kind === 'finance.manual-bank-payment.v1' || kind === 'finance.bank-account.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'logistics.plan-excess.v1' || overage) && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
+      <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {(ibanChange || customerReturn || supplierReturn || kind === 'logistics.dispatch-note.v1' || kind === 'finance.manual-bank-payment.v1' || kind === 'finance.bank-account.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'logistics.plan-excess.v1' || overage) && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
       <section aria-label={INBOX.rulesHeading}><h3>{INBOX.rulesHeading}</h3>
         {preview.rules.length === 0 ? <p>{T.rulesUnavailable}</p> : <ul>{preview.rules.map((rule, index) => <li key={`${rule.ruleCode}:${index}`}>
           <p>{inboxRuleText(rule.ruleCode) ?? <>{INBOX.ruleUnknown} <code>{rule.ruleCode}</code></>}</p>
@@ -185,6 +190,16 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
         <td>{line.lineNo}</td><td>{line.shipmentId}</td><td>{line.instructionLineId}</td><td>{line.sourceOrderId} / {line.sourceOrderLineId}</td>
         <td>{line.productId}</td><td>{line.unitId}</td><td>{line.quantity}</td><td>{line.quantityKg ?? T.dispatchNoKg}</td>
       </tr>)}</tbody></table></section> : null}
+      {preview.bankAccountIbanChange ? <section aria-label={T.ibanProposal}><h3>{T.ibanProposal}</h3><dl className={styles.facts}>
+        <dt>{T.ibanHolder}</dt><dd>{preview.bankAccountIbanChange.companyLegalName}</dd>
+        <dt>{T.bankAccountId}</dt><dd>{preview.bankAccountIbanChange.accountId}</dd>
+        <dt>{T.bankCompany}</dt><dd>{preview.bankAccountIbanChange.companyId}</dd>
+        <dt>{T.ibanCurrent}</dt><dd>{preview.bankAccountIbanChange.currentIban === null ? T.ibanAbsent : preview.bankAccountIbanChange.currentIban}</dd>
+        <dt>{IBAN_CHANGE_NEW}</dt><dd>{preview.bankAccountIbanChange.proposedIban}</dd>
+        <dt>{IBAN_CHANGE_REASON}</dt><dd>{preview.bankAccountIbanChange.reason}</dd>
+        <dt>{T.bankProposedBy}</dt><dd>{preview.bankAccountIbanChange.proposedBy}</dd>
+        <dt>{T.bankProposedAt}</dt><dd>{preview.bankAccountIbanChange.proposedAtUtc}</dd>
+      </dl><p>{T.ibanApprovalOnly}</p></section> : null}
       {preview.bankAccount ? <section aria-label={T.bankProposal}><h3>{T.bankProposal}</h3><dl className={styles.facts}>
         <dt>{BANK_COLUMN.name}</dt><dd>{preview.bankAccount.account.displayName}</dd>
         <dt>{BANK_COLUMN.currency}</dt><dd>{currencyFallback(preview.bankAccount.account.currencyId)}</dd>

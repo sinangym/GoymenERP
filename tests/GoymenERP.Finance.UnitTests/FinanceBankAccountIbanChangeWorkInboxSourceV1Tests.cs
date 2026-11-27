@@ -53,7 +53,8 @@ public sealed class FinanceBankAccountIbanChangeWorkInboxSourceV1Tests : Finance
         Assert.Equal(Start.ToUniversalTime(), item.WaitingSinceUtc);
         Assert.Equal(Maker, item.PreparedBy);
         Assert.False(item.Excludes(account.ProposedBy));
-        Assert.Equal("/finans/banka-hesaplari", item.Link);
+        Assert.Equal("/onaylarim/finance.bank-account-iban-change.v1/" + account.Id.ToString("D"), item.Link);
+        Assert.Equal("/finans/banka-hesaplari", FinanceBankAccountIbanChangeWorkInboxSourceV1.ScreenPath);
         Assert.Equal(
             [new WorkApprovalRuleResultV1(FinanceBankAccountIbanChangeWorkInboxSourceV1.ApprovalRequiredRule, null, null, null, null)],
             item.Rules);

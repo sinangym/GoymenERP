@@ -237,7 +237,7 @@ it('mounts only the safe bank approval purpose while preserving the native F04 c
  expect(CAPABILITY_NAV_LABEL[capability]).toBe('')
  expect(matchRoutes(workRoutes,'/onaylarim/finance.bank-account.v1/cccccccc-0000-4000-8000-000000000001')?.at(-1)?.route.path).toBe('onaylarim/finance.bank-account.v1/:approvalId')
  expect(WORK_INBOX_KINDS.filter(row=>row.kind==='finance.bank-account.v1')).toEqual([{kind:'finance.bank-account.v1',module:'finance',capability}])
- expect(WORK_INBOX_KINDS.find(row=>row.kind==='finance.bank-account-iban-change.v1')?.capability).toBe(FINANCE_CAPABILITY.bankAccountsApprove)
+ expect(WORK_INBOX_KINDS.find(row=>row.kind==='finance.bank-account-iban-change.v1')?.capability).toBe(CAPABILITY.financeBankAccountIbanChangeWorkDecision)
  expect(CAPABILITY_ROUTE[CAPABILITY.financeBankAccountsList]).toBe(FINANCE_ROUTE.bankAccountsList)
  expect(matchRoutes(financeRoutes,FINANCE_ROUTE.bankAccountsList)?.at(-1)?.route.path).toBe(FINANCE_ROUTE.bankAccountsList.slice(1))
 })
@@ -253,4 +253,16 @@ it('mounts manual bank payment as an approve-only Work purpose while keeping nat
  expect(FINANCE_CAPABILITY.manualBankPaymentsApprove).toBe('finance.manual-bank-payments.approve')
  expect(FINANCE_CAPABILITY.manualBankPaymentsRecord).toBe('finance.manual-bank-payments.record')
  expect(matchRoutes(financeRoutes,manualBankPaymentDetailPath('cccccccc-0000-4000-8000-000000000001'))?.at(-1)?.route.path).toBe(FINANCE_ROUTE.manualBankPaymentsDetail.slice(1))
+})
+
+
+it('mounts the separate IBAN human purpose with its exact capability and preserves native bank browse',()=>{
+ const capability=CAPABILITY.financeBankAccountIbanChangeWorkDecision
+ expect(capability).toBe('finance.bank-account-iban-change.work-decision')
+ expect(CAPABILITY_ROUTE[capability]).toBe('/onaylarim/finance.bank-account-iban-change.v1/:approvalId')
+ expect(CAPABILITY_NAV_LABEL[capability]).toBe('')
+ expect(matchRoutes(workRoutes,'/onaylarim/finance.bank-account-iban-change.v1/cccccccc-0000-4000-8000-000000000001')?.at(-1)?.route.path).toBe('onaylarim/finance.bank-account-iban-change.v1/:approvalId')
+ expect(WORK_INBOX_KINDS.filter(row=>row.kind==='finance.bank-account-iban-change.v1')).toEqual([{kind:'finance.bank-account-iban-change.v1',module:'finance',capability}])
+ expect(matchRoutes(financeRoutes,FINANCE_ROUTE.bankAccountsList)?.at(-1)?.route.path).toBe(FINANCE_ROUTE.bankAccountsList.slice(1))
+ expect(FINANCE_CAPABILITY.bankAccountsApprove).toBe('finance.bank-accounts.approve')
 })

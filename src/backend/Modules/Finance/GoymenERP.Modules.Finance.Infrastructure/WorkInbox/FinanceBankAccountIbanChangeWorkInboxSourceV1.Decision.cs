@@ -57,7 +57,7 @@ internal sealed partial class FinanceBankAccountIbanChangeWorkInboxSourceV1
             throw new InvalidOperationException("Original IBAN proposal proof is missing or ambiguous.");
         var proof = selected[0].Proof!;
         var historical = new WorkInboxItemV1(ModuleName, KindName, itemId, FinanceWorkInboxFence.ShortReference(itemId), proof.ChangeProposedAtUtc,
-            ScreenPath, proof.ChangeProposedBy, [new(ApprovalRequiredRule, null, null, null, null)],
+            FinanceWorkInboxFence.Link(WorkDecisionPath, itemId), proof.ChangeProposedBy, [new(ApprovalRequiredRule, null, null, null, null)],
             [FinanceWorkInboxRead.Reference("bank-account", itemId)]);
         await RequirePurposeFence(context, token);
         return new(context.CompanyId, historical, selectedVersion, false, BankAccountIbanChangeProof:

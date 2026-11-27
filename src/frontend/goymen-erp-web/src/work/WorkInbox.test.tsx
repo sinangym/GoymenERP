@@ -615,3 +615,14 @@ it.each([{granted:['finance.manual-bank-payment.work-decision'],visible:true},{g
   expect(card.getAttribute('data-kind')).toBe(PAYMENT_KIND)
  }else{expect(screen.queryByTestId('work-inbox-item')).toBeNull();expect(api.inboxReads()).toHaveLength(0)}
 })
+
+
+it.each([{granted:['finance.bank-account-iban-change.work-decision'],visible:true},{granted:[],visible:false},
+ {granted:[FINANCE_CAPABILITY.bankAccountsApprove],visible:false}])('uses only the standalone IBAN purpose capability for its safe inbox item %j',async({granted,visible})=>{
+ const kind='finance.bank-account-iban-change.v1',permission='finance.bank-account.approve',link=`/onaylarim/${kind}/${PAYMENT_ID}`
+ const item={...paymentItem,kind,link,awaitingPermission:permission,ruleVersion:RV(kind),explanation:{rules:[{ruleCode:'finance.bank-account-iban-change-approval-required',threshold:null,actual:null,deviation:null,unit:null}],references:[{role:'bank-account',label:'SENTETIK banka hesabı',recordId:PAYMENT_ID,link:null}]}}
+ const api=installFetch({granted,inbox:()=>json(inbox({items:[item],sources:[src('finance',kind,permission,'BusinessDays')]}))})
+ await renderAt('/onaylarim/kuyruk')
+ if(visible){await screen.findByTestId('work-inbox-item');expect(within(cardOf(kind)).getByRole('link').getAttribute('href')).toBe(link);expect(api.inboxReads()).toHaveLength(1)}
+ else{await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(api.inboxReads()).toHaveLength(0)}
+})

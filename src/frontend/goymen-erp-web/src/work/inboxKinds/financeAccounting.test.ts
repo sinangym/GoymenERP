@@ -71,3 +71,10 @@ it('maps the single manual-payment kind to its native approve-only Work purpose 
  expect(inboxPermissionText('finance.manual-bank-payment.approve')).not.toBe('finance.manual-bank-payment.approve')
  expect(inboxRuleText('finance.manual-bank-payment-approval-required')).not.toBeNull()
 })
+
+
+it('maps IBAN approval to one standalone purpose without adding a bank read permission',()=>{
+ expect(FINANCE_INBOX_KINDS.filter(row=>row.kind==='finance.bank-account-iban-change.v1')).toEqual([{kind:'finance.bank-account-iban-change.v1',module:'finance',capability:'finance.bank-account-iban-change.work-decision'}])
+ expect(inboxPermissionText('finance.bank-account.approve')).not.toBe('finance.bank-account.approve')
+ expect(inboxRuleText('finance.bank-account-iban-change-approval-required')).not.toBeNull()
+})

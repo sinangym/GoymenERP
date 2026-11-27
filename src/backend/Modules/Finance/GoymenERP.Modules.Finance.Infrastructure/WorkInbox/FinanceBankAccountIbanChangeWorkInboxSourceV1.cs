@@ -24,6 +24,7 @@ internal sealed partial class FinanceBankAccountIbanChangeWorkInboxSourceV1(
 {
     public const string ModuleName = "finance";
     public const string KindName = "finance.bank-account-iban-change.v1";
+    public const string WorkDecisionPath = "/onaylarim/finance.bank-account-iban-change.v1";
     public const string ScreenPath = "/finans/banka-hesaplari";
 
     /// <summary>An IBAN change on an approved bank account needs one approval by someone other than its proposer (D4).</summary>
@@ -62,7 +63,7 @@ internal sealed partial class FinanceBankAccountIbanChangeWorkInboxSourceV1(
         }
 
         return new WorkInboxItemV1(ModuleName, KindName, row.Id, FinanceWorkInboxFence.ShortReference(row.Id),
-            proposedAt.ToUniversalTime(), ScreenPath, row.PendingIbanProposedBy,
+            proposedAt.ToUniversalTime(), FinanceWorkInboxFence.Link(WorkDecisionPath, row.Id), row.PendingIbanProposedBy,
             [new WorkApprovalRuleResultV1(ApprovalRequiredRule, null, null, null, null)],
             [
                 FinanceWorkInboxRead.Reference("bank-account", row.Id, FinanceWorkInboxRead.Name(row.DisplayName, row.Id)),
