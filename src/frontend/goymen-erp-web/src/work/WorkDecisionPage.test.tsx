@@ -9,7 +9,7 @@ import { AppShell } from '../shell/AppShell'
 import { COMPANY_A, COMPANY_B, IDENTITY, installFetch, json, problem } from '../settings/testHarness'
 import { shellRoutes } from '../shell/router'
 import { ApprovalInboxDetailPage } from './ApprovalInboxPages'
-import type { CounterpartyWorkDecisionKind } from './workDecisionApi'
+import type { CounterpartyWorkDecisionKind, WorkDecisionPreview } from './workDecisionApi'
 import { WorkDecisionPage } from './WorkDecisionPage'
 import { workRoutes } from './workRoutes'
 import { WORK_DECISION_TEXT as T } from './workDecisionText'
@@ -702,10 +702,10 @@ it.each([{capabilities:[]},{capabilities:['inventory.stock-transfer.loss-approve
 
 // Component-only candidate harness: the two owner capabilities remain staged, with no production purpose mount.
 const cpKinds=['counterparty.tax-identity-change.v1','counterparty.legal-name-change.v1'] as const
-const cpProofPreview = (cp: typeof cpKinds[number]) => ({
+const cpProofPreview = (cp: typeof cpKinds[number]): WorkDecisionPreview => ({
  ...preview,kind:cp,rejectionSupported:true,references:[{role:'party',label:'CAR-000001',recordId:id,link:null}],
  ...(cp==='counterparty.tax-identity-change.v1'
-  ? {counterpartyTaxIdentityChange:{partyId:id,changeRequestId:id,currentTaxIdentityNumber:'1234567890',proposedTaxIdentityNumber:'10000000146',proposedKind:'tckn',reason:'SENTETIK vergi düzeltme gerekçesi'}}
+  ? {counterpartyTaxIdentityChange:{partyId:id,changeRequestId:id,currentTaxIdentityNumber:'1234567890',proposedTaxIdentityNumber:'10000000146',proposedKind:'tckn' as const,reason:'SENTETIK vergi düzeltme gerekçesi'}}
   : {counterpartyLegalNameChange:{partyId:id,changeRequestId:id,currentLegalName:'E'.repeat(250),proposedLegalName:'Y'.repeat(250),reason:'SENTETIK unvan değişikliği gerekçesi'}}),
 })
 function mountCounterpartyCandidate(cp:CounterpartyWorkDecisionKind){

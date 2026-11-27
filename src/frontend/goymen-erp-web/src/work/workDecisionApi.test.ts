@@ -1,3 +1,4 @@
+import type { WorkDecisionPreview } from './workDecisionApi'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { decodeWorkDecisionPreview, sendWorkDecision, isWorkDecisionRequest, isWorkDecisionKind, isSalesWorkDecisionKind, workDecisionReasonLimit, workDecisionLocalUtc, WORK_DECISION_KINDS, COUNTERPARTY_WORK_DECISION_CAPABILITY, isCounterpartyWorkDecisionKind } from './workDecisionApi'
 import { decodeDelegation, decodeDelegationPage, decodePeople } from './workDelegationApi'
@@ -376,10 +377,10 @@ it.each([true,false])('accepts only the matching immutable native loss state, ac
 
 
 const cpKinds=['counterparty.tax-identity-change.v1','counterparty.legal-name-change.v1'] as const
-const cpProofPreview = (cp: typeof cpKinds[number]) => ({
+const cpProofPreview = (cp: typeof cpKinds[number]): WorkDecisionPreview => ({
  ...preview,kind:cp,rejectionSupported:true,references:[{role:'party',label:'CAR-000001',recordId:id,link:null}],
  ...(cp==='counterparty.tax-identity-change.v1'
-  ? {counterpartyTaxIdentityChange:{partyId:id,changeRequestId:id,currentTaxIdentityNumber:'1234567890',proposedTaxIdentityNumber:'10000000146',proposedKind:'tckn',reason:'SENTETIK vergi düzeltme gerekçesi'}}
+  ? {counterpartyTaxIdentityChange:{partyId:id,changeRequestId:id,currentTaxIdentityNumber:'1234567890',proposedTaxIdentityNumber:'10000000146',proposedKind:'tckn' as const,reason:'SENTETIK vergi düzeltme gerekçesi'}}
   : {counterpartyLegalNameChange:{partyId:id,changeRequestId:id,currentLegalName:'E'.repeat(250),proposedLegalName:'Y'.repeat(250),reason:'SENTETIK unvan değişikliği gerekçesi'}}),
 })
 it('keeps both staged Counterparty purposes out of the mounted fifteen and pins their actual cari capability ids', () => {
