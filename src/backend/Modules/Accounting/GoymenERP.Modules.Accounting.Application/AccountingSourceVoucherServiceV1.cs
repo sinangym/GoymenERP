@@ -52,7 +52,7 @@ public sealed partial class AccountingSourceVoucherServiceV1(IAccountingSourceVo
 
     private async Task<AccountingApiResult<AccountingSourceVoucherViewV1>> Run(string action, string permission, object payload,
         string key, Func<Guid, Func<CancellationToken, Task>, AccountingCommandMetadata, Task<AccountingSourceVoucherViewV1>> write,
-        CancellationToken cancellationToken, ApprovalCapture? approval = null, bool replayOnly = false)
+        CancellationToken cancellationToken, ApprovalCapture? approval = null, bool replayOnly = false, Guid approvalId = default, long approvalVersion = 0)
     {
         if (string.IsNullOrWhiteSpace(key) || key.Length > 128 || payload is null)
             return new(AccountingApiStatus.Invalid, null, false, AccountingApiCodes.RequestInvalid);
@@ -64,7 +64,11 @@ public sealed partial class AccountingSourceVoucherServiceV1(IAccountingSourceVo
         var requestHash = AccountingApiService.Sha256(command + "|" + JsonSerializer.Serialize(payload, Json));
         var prior = await commands.FindCommandAsync(command, keyHash, cancellationToken);
         if (!await AllowedRun(cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
-        if (prior is not null) return Replay(prior, actorText, requestHash);
+        if (prior is not null)
+        {
+            var replay = Replay(prior, actorText, requestHash);
+            return approval is not null ? await AttachSourceVoucherReceiptAsync(replay, approvalId, approvalVersion, key, approval, cancellationToken, prior) : replay;
+        }
         if (replayOnly) return new(AccountingApiStatus.Conflict, null, false, AccountingStoreCodes.ConcurrentChange);
         var scope = await authority.RevalidatePermissionScopeAsync(permission, companyId, cancellationToken);
         if (approval is not null) cancellationToken.ThrowIfCancellationRequested();
@@ -105,7 +109,8 @@ public sealed partial class AccountingSourceVoucherServiceV1(IAccountingSourceVo
         {
             var result = await write(actor, Fence, metadata);
             if (approval is not null && !await AllowedRun(cancellationToken)) return Denied<AccountingSourceVoucherViewV1>();
-            return new(AccountingApiStatus.Ok, result, false, null);
+            var answer = new AccountingApiResult<AccountingSourceVoucherViewV1>(AccountingApiStatus.Ok, result, false, null);
+            return approval is not null ? await AttachSourceVoucherReceiptAsync(answer, approvalId, approvalVersion, key, approval, cancellationToken) : answer;
         }
         catch (DeniedException) { return Denied<AccountingSourceVoucherViewV1>(); }
         catch (AccountingVersionConflictException exception)

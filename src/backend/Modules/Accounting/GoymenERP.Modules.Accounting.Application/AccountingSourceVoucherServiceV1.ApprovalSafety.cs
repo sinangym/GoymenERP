@@ -11,7 +11,7 @@ public sealed partial class AccountingSourceVoucherServiceV1
         token.ThrowIfCancellationRequested();
         var captured=new ApprovalCapture(companyId,actor,actorText);
         return store.RunApprovalAsync(replayOnly=>Run("approve",NormalJournalPermissionNamesV1.DraftApprove,new{id,version},key,
-            (userId,fence,metadata)=>store.ApproveAsync(id,version,userId,fence,metadata,token),token,captured,replayOnly),
+            (userId,fence,metadata)=>store.ApproveAsync(id,version,userId,fence,metadata,token),token,captured,replayOnly,id,version),
             ct=>ApprovalFenceAsync(captured,ct),token);
     }
     private async Task ApprovalFenceAsync(ApprovalCapture captured,CancellationToken token)

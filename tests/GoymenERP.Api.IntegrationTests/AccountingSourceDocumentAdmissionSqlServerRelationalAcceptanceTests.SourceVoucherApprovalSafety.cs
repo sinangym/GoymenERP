@@ -62,14 +62,15 @@ public sealed partial class AccountingSourceDocumentAdmissionSqlServerRelational
     [SqlServerFact]
     public async Task Source_voucher_owned_postsave_precommit_and_postcommit_fences_rollback_or_suppress_original_once()
     {
-        foreach(var phase in new[]{1,5,6})
+        foreach(var phase in new[]{1,21,22})
         {
             await using var run=await Run.StartAsync(true);await OpenVoucherPeriod(run);var admission=await run.AdmitAsync(CompanyA,Request(CompanyA));var before=await VoucherSafetyCounts(run);
             var save=new VoucherApprovalSave();await using var owner=new VoucherApprovalScope(run,save:save);var savedFences=0;var fired=false;
-            // Final voucher Save: 1 SaveOwned postSave, 2 store release, 3 service release, 4 runner result fence, 5 precommit, 6 postcommit release.
+            // Final voucher Save: 1 postSave, 2 store release, 3 service release, 4/5 receipt Commands fences;
+            // six source reads 6..17, final source 18, receipt release 19, runner result 20, precommit 21, postcommit 22.
             owner.Authority.BeforeRead=_=>{if(save.VoucherSaved&&++savedFences==phase){fired=true;owner.Authority.Granted=false;}return Task.CompletedTask;};
             var denied=await owner.Approve(admission.VoucherDraftId!.Value,"SENTETIK-late");Assert.True(fired);Assert.Equal(AccountingApiStatus.Denied,denied.Status);Assert.Null(denied.Resource);
-            var committed=phase==6;Assert.Equal(committed?before with{Journals=before.Journals+1,Lines=before.Lines+4,Deliveries=before.Deliveries+1,Commands=before.Commands+1,Audits=before.Audits+2}:before,await VoucherSafetyCounts(run));
+            var committed=phase==22;Assert.Equal(committed?before with{Journals=before.Journals+1,Lines=before.Lines+4,Deliveries=before.Deliveries+1,Commands=before.Commands+1,Audits=before.Audits+2}:before,await VoucherSafetyCounts(run));
             Assert.Equal(1,owner.Writer.Discards);owner.AssertClean();owner.Authority.BeforeRead=null;owner.Authority.Granted=true;
             var accepted=await owner.Approve(admission.VoucherDraftId!.Value,"SENTETIK-late");Assert.Equal(AccountingApiStatus.Ok,accepted.Status);Assert.Equal(committed,accepted.IsReplay);
             var replay=await owner.Approve(admission.VoucherDraftId.Value,"SENTETIK-late");Assert.True(replay.IsReplay);Assert.Equal(owner.CorrelationId,replay.OriginalCorrelationId);

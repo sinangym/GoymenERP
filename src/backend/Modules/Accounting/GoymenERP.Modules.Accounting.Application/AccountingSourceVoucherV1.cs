@@ -12,7 +12,10 @@ public sealed record AccountingSourceVoucherViewV1(Guid Id, Guid CompanyId, stri
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     Guid? CancellationId = null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-    AccountingJournalReversalProposalViewV1? ReversalProposal = null);
+    AccountingJournalReversalProposalViewV1? ReversalProposal = null)
+{
+    [JsonIgnore] public AccountingSourceVoucherApprovalReceiptV1? ApprovalReceipt { get; init; }
+}
 
 public sealed record AccountingSourceVoucherLineViewV1(int LineNumber, string MappingKey, int Side,
     Guid AccountId, string FunctionalAmount, int? SourceLineNumber, string? VatRateCode, string? AccountCode = null, string? AccountName = null);
