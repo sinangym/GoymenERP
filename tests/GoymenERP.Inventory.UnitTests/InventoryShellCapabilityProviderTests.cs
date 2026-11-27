@@ -24,12 +24,12 @@ public sealed class InventoryShellCapabilityProviderTests
     {
         var provider = new InventoryShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
-        Assert.Equal(23, declarations.Count);
+        Assert.Equal(24, declarations.Count);
         var declaration = Assert.Single(declarations,
             item => item.CapabilityId == InventoryShellCapabilityProvider.OpeningStockCapabilityId);
 
         Assert.Equal("INVENTORY", provider.Owner);
-        Assert.Equal("1.16", provider.ContractVersion);
+        Assert.Equal("1.17", provider.ContractVersion);
         Assert.Equal(ErpPermissions.InventoryOpeningStockRecord, declaration.CapabilityId);
         Assert.Equal("inventory.opening-stock", declaration.RouteId);
         Assert.Equal("/stok/acilis", declaration.RoutePath);

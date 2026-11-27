@@ -22,7 +22,8 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
     [property: JsonIgnore] WorkCounterpartyTaxIdentityChangePreviewV1? CounterpartyTaxIdentityChange = null,
     [property: JsonIgnore] WorkCounterpartyLegalNameChangePreviewV1? CounterpartyLegalNameChange = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] WorkLogisticsPlanExcessOptionsV1? LogisticsPlanExcess = null,
-    [property: JsonIgnore] WorkLogisticsPlanExcessProofV1? LogisticsPlanExcessProof = null);
+    [property: JsonIgnore] WorkLogisticsPlanExcessProofV1? LogisticsPlanExcessProof = null,
+    [property: JsonIgnore] WorkInventoryTransferOverageProofV1? InventoryTransferOverageProof = null);
 
 /// <summary>Approval-purpose identities from the current plan revision, never an implicit user selection.</summary>
 public sealed record WorkManufacturingPlanReapprovalOptionsV1(IReadOnlyList<Guid> ParentRollIds);
@@ -50,3 +51,12 @@ public sealed record WorkLogisticsPlanExcessPreviewV1(string InstructionVersion,
 /// <summary>Owner-only immutable proposal binding for validating the original native receipt.</summary>
 public sealed record WorkLogisticsPlanExcessProofV1(Guid CompanyId, Guid ExceptionId, Guid InstructionId, Guid LineId,
     string Quantity, string Reason, string ProposedBy, DateTimeOffset ProposedAtUtc);
+
+/// <summary>Native numbered excess request; exposed only by the authorized human purpose GET.</summary>
+public sealed record WorkInventoryTransferOveragePreviewV1(int RequestNumber, DateTimeOffset RequestedAtUtc,
+    Guid TransferId, Guid LineId, string Kilograms, int? PieceCount, string Reason, string RequestedBy, string ReceivedBy);
+/// <summary>Retained owner history for exact native replay, never Inbox/AI metadata.</summary>
+public sealed record WorkInventoryTransferOverageProofV1(Guid TransferId, Guid LineId, string ReceivedBy,
+    IReadOnlyList<WorkInventoryTransferOverageRequestProofV1> Requests);
+public sealed record WorkInventoryTransferOverageRequestProofV1(int RequestNumber, DateTimeOffset RequestedAtUtc,
+    string PreparedBy, string Status, string Kilograms, int? PieceCount, string Reason);

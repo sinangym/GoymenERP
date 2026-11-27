@@ -246,32 +246,36 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             payloadHash, freshAuthorityFence, cancellationToken);
     }
 
-    public async Task<InventoryTransferReceiptResultV1?> ReplayDecideOverageAsync(
-        Guid transferId,
-        Guid lineId,
-        DecideInventoryTransferOverageV1 request,
-        InventoryCommandMetadata metadata,
-        Func<CancellationToken, Task> freshAuthorityFence,
-        CancellationToken cancellationToken = default)
+    public Task<InventoryTransferReceiptResultV1?> ReplayDecideOverageAsync(Guid transferId, Guid lineId,
+        DecideInventoryTransferOverageV1 request, InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken = default) =>
+        RunOwnedOverageDecisionAsync(transferId, lineId, request, metadata, freshAuthorityFence, true, cancellationToken);
+
+    public async Task<InventoryTransferReceiptResultV1> DecideOverageAsync(Guid transferId, Guid lineId,
+        DecideInventoryTransferOverageV1 request, InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence, CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(freshAuthorityFence);
-        RequireTransferCall(metadata);
-        var parsed = OverageDecisionPayload(transferId, lineId, request);
-        return await FindReceiptKeyReplayAsync(DecideTransferOverageCommand,
-            GenealogyHash(metadata.IdempotencyKey.Trim()), parsed.PayloadHash, metadata.ActorId,
-            freshAuthorityFence, cancellationToken);
+        try
+        {
+            return await RunOwnedOverageDecisionAsync(transferId, lineId, request, metadata, freshAuthorityFence, false, cancellationToken)
+                ?? throw TransferError(503, InventoryTransferCodesV1.Unavailable);
+        }
+        catch (LossDecisionSaveRace race)
+        {
+            var winner = await RunOwnedOverageDecisionAsync(transferId, lineId, request, metadata, freshAuthorityFence, true, cancellationToken);
+            return winner ?? throw TransferError(409, InventoryTransferCodesV1.ConcurrentChange, race.InnerException!);
+        }
     }
 
-    public Task<InventoryTransferReceiptResultV1> DecideOverageAsync(
-        Guid transferId,
-        Guid lineId,
-        DecideInventoryTransferOverageV1 request,
-        InventoryCommandMetadata metadata,
-        Func<CancellationToken, Task> freshAuthorityFence,
-        CancellationToken cancellationToken = default) =>
-        WithinPhysicalValidationTransactionAsync(() => DecideOverageCoreAsync(transferId, lineId, request,
-            metadata, freshAuthorityFence, cancellationToken), cancellationToken);
+    private Task<InventoryTransferReceiptResultV1?> RunOwnedOverageDecisionAsync(Guid transferId, Guid lineId,
+        DecideInventoryTransferOverageV1 request, InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence, bool replayOnly, CancellationToken token)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        return RunOwnedReceiptDecisionAsync(metadata, freshAuthorityFence, DecideTransferOverageCommand,
+            () => OverageDecisionPayload(transferId, lineId, request).PayloadHash,
+            fence => DecideOverageCoreAsync(transferId, lineId, request, metadata, fence, token), replayOnly, token);
+    }
 
     private async Task<InventoryTransferReceiptResultV1> DecideOverageCoreAsync(
         Guid transferId,
@@ -993,7 +997,7 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
         // A result stored before KLN-D107 has no re-request list; it replays with an empty one.
         if (stored is not { Transfer: { } transfer, Facts: { } facts })
             throw TransferError(503, InventoryTransferCodesV1.Unavailable);
-        if (lossDecisionFence is not null && command == DecideTransferLossCommand) lossDecisionReceiptProven = true;
+        if (lossDecisionFence is not null && command is DecideTransferLossCommand or DecideTransferOverageCommand) lossDecisionReceiptProven = true;
         return new(transfer, facts.OverageRenewals is null ? facts with { OverageRenewals = [] } : facts, true,
             prior.CorrelationId);
     }
@@ -1029,7 +1033,7 @@ public sealed partial class InventoryStore : IInventoryTransferReceiptWriterV1, 
             throw TransferError(409, InventoryTransferCodesV1.ConcurrentChange, exception);
         }
 
-        if (lossDecisionFence is not null && command == DecideTransferLossCommand)
+        if (lossDecisionFence is not null && command is DecideTransferLossCommand or DecideTransferOverageCommand)
         {
             lossDecisionReceiptProven = true;
             await lossDecisionFence(cancellationToken);

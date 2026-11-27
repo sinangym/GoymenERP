@@ -25,7 +25,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.WorkInbox;
 /// grant, so <see cref="IWorkInboxSourceV1.AcceptsScopedApprovers"/> stays false and a scoped holder is not asked.
 /// </para>
 /// </summary>
-internal sealed class InventoryTransferOverageWorkInboxSourceV1 : IWorkInboxSourceV1
+internal sealed partial class InventoryTransferOverageWorkInboxSourceV1 : IWorkApprovalDecisionSourceV1
 {
     public const string ModuleName = "inventory";
     public const string KindName = "inventory.transfer-overage.v1";

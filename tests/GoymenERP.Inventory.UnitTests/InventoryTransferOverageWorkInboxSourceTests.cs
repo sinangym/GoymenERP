@@ -14,7 +14,7 @@ namespace GoymenERP.Inventory.UnitTests;
 /// excesses without a decision (request 1) and its corrected re-requests without a decision, oldest first, with the owner's
 /// "may not decide" set (receiver; re-requester) and the stored kilograms/pieces as rule numbers. SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class InventoryTransferOverageWorkInboxSourceTests
+public sealed partial class InventoryTransferOverageWorkInboxSourceTests
 {
     private const string Kind = "inventory.transfer-overage.v1";
 

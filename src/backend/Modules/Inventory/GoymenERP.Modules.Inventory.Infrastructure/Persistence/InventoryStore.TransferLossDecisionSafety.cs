@@ -14,15 +14,28 @@ public sealed partial class InventoryStore
         Func<CancellationToken, Task> freshAuthorityFence, bool replayOnly, CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(request);
+        return await RunOwnedReceiptDecisionAsync(metadata, freshAuthorityFence, DecideTransferLossCommand,
+            () => LossDecisionPayload(transferId, lineId, request).PayloadHash,
+            fence => DecideLossCoreAsync(transferId, lineId, request, metadata, fence, token), replayOnly, token);
+    }
+
+    // Shared only by the two native receipt decisions. Other participant/borrowed transaction paths are unchanged.
+    private async Task<InventoryTransferReceiptResultV1?> RunOwnedReceiptDecisionAsync(InventoryCommandMetadata metadata,
+        Func<CancellationToken, Task> freshAuthorityFence, string command, Func<string> payloadHash,
+        Func<Func<CancellationToken, Task>, Task<InventoryTransferReceiptResultV1>> mutate, bool replayOnly, CancellationToken token)
+    {
         ArgumentNullException.ThrowIfNull(freshAuthorityFence);
         // Entry refusals cannot consume or clear another caller's handles, changes or audit drafts.
         if (lossDecisionAuditWriter is null) throw TransferError(503, InventoryTransferCodesV1.Unavailable);
         if (System.Transactions.Transaction.Current is not null || !dbContext.Database.IsRelational()
             || dbContext.Database.CurrentTransaction is not null || dbContext.ChangeTracker.HasChanges()
             || lossDecisionAuditWriter.HasPendingDrafts || lossDecisionFence is not null)
+        {
+            if (command == DecideTransferOverageCommand) throw TransferError(503, InventoryTransferCodesV1.Unavailable);
             throw new InvalidOperationException("A transfer loss decision requires its own clean Inventory transaction.");
+        }
         RequireTransferCall(metadata);
-        var parsed = LossDecisionPayload(transferId, lineId, request);
+        var hash = payloadHash();
         RequireResolvedCompany();
         var companyId = companyContext.CompanyId;
         async Task Fence(CancellationToken current)
@@ -42,9 +55,9 @@ public sealed partial class InventoryStore
             {
                 await Fence(token);
                 var result = replayOnly
-                    ? await FindReceiptKeyReplayAsync(DecideTransferLossCommand, GenealogyHash(metadata.IdempotencyKey.Trim()),
-                        parsed.PayloadHash, metadata.ActorId, Fence, token)
-                    : await DecideLossCoreAsync(transferId, lineId, request, metadata, Fence, token);
+                    ? await FindReceiptKeyReplayAsync(command, GenealogyHash(metadata.IdempotencyKey.Trim()),
+                        hash, metadata.ActorId, Fence, token)
+                    : await mutate(Fence);
                 await Fence(token);
                 // Only a successfully stored native command or a real immutable key replay can commit.
                 // A different-key prior domain decision remains the existing read-only answer, never a new receipt.

@@ -12,7 +12,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Shell;
 public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "INVENTORY";
-    public const string OwnerContractVersion = "1.16";
+    public const string OwnerContractVersion = "1.17";
     // STK-S8: actual Settings/departure owners are registered by the host; their unavailable/legacy fences still apply.
     // 1.8 / STK-S18: future supply allocation read route and separately granted write control; no grant is added.
     public const string FutureAllocationReadCapabilityId = InventoryPermissionManifestV1.FutureAllocationRead;
@@ -231,6 +231,10 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
             ShellCapabilityScopeRequirement.CompanyWide,
             [ErpPermissions.InventoryOpeningStockRecord],
             ImplementationAvailable: true),
+        new("inventory.transfer-overage.work-decision", "inventory.transfer-overage-work-decision",
+            "/onaylarim/inventory.transfer-overage.v1/:approvalId", "W-INV-TRANSFER-OVERAGE-01",
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide, [ErpPermissions.InventoryStockTransferOverageApprove], ImplementationAvailable: false),
         new("inventory.transfer-loss.work-decision", "inventory.transfer-loss-work-decision",
             "/onaylarim/inventory.transfer-loss.v1/:approvalId", "W-INV-TRANSFER-LOSS-01",
             ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,

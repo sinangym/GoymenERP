@@ -95,14 +95,15 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
             await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents"));
         var stockBeforeApproval = await run.ScalarAsync<decimal>(
             "SELECT SUM(QuantityKg) FROM inventory.Balances WHERE CompanyId = @company", ("@company", CompanyA));
-        // A borrowed transaction stays with its caller: the actual approval can be saved, then rolled back in full.
+        // Decisions now require their own clean owner transaction. Caller-owned work is refused without cleanup.
         await using (var scope = run.Store(CompanyA))
         {
             await using var transaction = await scope.DbContext.Database.BeginTransactionAsync();
-            var staged = await scope.Store.DecideOverageAsync(transferId, lineId, approvalRequest, approvalMetadata, Authorized);
-            var movementId = Assert.Single(staged.Facts.OverageRenewals).MovementId!.Value;
+            var refusal = await Assert.ThrowsAsync<InventoryTransferException>(() => scope.Store.DecideOverageAsync(
+                transferId, lineId, approvalRequest, approvalMetadata, Authorized));
+            Assert.Equal((503, InventoryTransferCodesV1.Unavailable), (refusal.Status, refusal.Code));
             Assert.Same(transaction, scope.DbContext.Database.CurrentTransaction);
-            Assert.True(await scope.DbContext.Movements.AsNoTracking().AnyAsync(row => row.Id == movementId));
+            Assert.Empty(scope.DbContext.ChangeTracker.Entries());
             await transaction.RollbackAsync();
         }
         Assert.Equal(beforeApproval, (
@@ -115,7 +116,7 @@ public sealed partial class InventorySqlServerRelationalAcceptanceTests
         Assert.Equal(stockBeforeApproval, await run.ScalarAsync<decimal>(
             "SELECT SUM(QuantityKg) FROM inventory.Balances WHERE CompanyId = @company", ("@company", CompanyA)));
 
-        // The same key can succeed after caller rollback; without a caller transaction the command owns its commit.
+        // Refused caller state created no receipt; the same key can succeed in the clean owned boundary.
         var approved = await DecideOverageAsync(run, transferId, lineId, approvalRequest, approvalMetadata);
         Assert.False(approved.IsReplay);
         var approvedRenewal = Assert.Single(approved.Facts.OverageRenewals);

@@ -214,7 +214,7 @@ public sealed record InventoryTransferReceiptResultV1(
     InventoryTransferReceiptFactsViewV1 Facts,
     bool IsReplay,
     string OriginalCorrelationId,
-    // Internal owner proof: the loss boundary stored a command or read its exact immutable key receipt.
+    // Internal owner proof: a loss/overage owned decision stored a command or read its exact immutable key receipt.
     // A domain-level prior decision can also have IsReplay=true; that alone does not prove a key receipt.
     [property: JsonIgnore] bool CommandReceiptProven = false);
 
