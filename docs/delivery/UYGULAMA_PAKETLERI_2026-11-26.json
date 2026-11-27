@@ -3820,7 +3820,10 @@
               "passed": 1154,
               "failed": 0,
               "skipped": 0,
-              "seconds": 90.6578995
+              "seconds": 90.6578995,
+              "lint_errors": 0,
+              "lint_warnings": 1,
+              "lint_warning": "Existing cashExchangeBookValue.ts:32 no-control-regex warning; rule not disabled and existing validation retained."
             },
             "original_failures": "2883 frontend1071 total:1062PASS9FAIL, invalid native documentNumber fixture; two requested filenames did not exist and were NOT_RUN. Corrected complete9-file cohort1154 at39a. Purchasing2985 test-source CS8852 init callback; corrected90df without assertion change. ControlledHost90df1198PASS1FAIL because registry still expected67 instead of actual69; corrected39a. Original artifacts retained."
           },
