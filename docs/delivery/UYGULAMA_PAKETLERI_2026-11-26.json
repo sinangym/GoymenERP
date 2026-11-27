@@ -2518,6 +2518,25 @@
             ],
             "new_permissions": [],
             "migration": null
+          },
+          {
+            "source_commit": "83b84d805",
+            "source_commits": [
+              "83b84d805",
+              "5b8664bcb"
+            ],
+            "scope": "Native supplier-return rejection prerequisite reuses existing goods-receipt guarded transaction, durable refusal and bounded replay-only-after-abort pattern. Approval borrowed Inventory participants, price disclosure and existing policies preserved. Existing scoped audit writer reused; no Work adapter/publication yet.",
+            "local_checks": "10 new unit rows and4 SQL facts (11 inner scenarios) written. Build/unit/SQL NOT_RUN for this increment. Additional2 unit race cases use the native service with synthetic stores, not real SQL.",
+            "review": "Bounded root full6-file source read and nonauthor fullsource/caller review; P2 missing race branch tests added5b8664bcb, delta review pending. No full K3.",
+            "sql": "4 new SQL facts inventoried, execution NOT_RUN. New concurrency winner/read-only-after-abort branch actual SQL evidence NOT_COVERED; must be addressed before native/Work acceptance.",
+            "remaining": [
+              "Compile/full Purchasing unit and relevant API boundary checks",
+              "Actual SQL rollback/audit/concurrency proof",
+              "Supplier return purpose/UI pairing",
+              "Final pins/full CI/two independent K3"
+            ],
+            "new_permissions": [],
+            "migration": null
           }
         ],
         "source_commits": [
@@ -2588,7 +2607,10 @@
           "0528e81cd",
           "48157273c",
           "afc3dfd4f",
-          "e70ac369a"
+          "e70ac369a",
+          "7a5a821",
+          "83b84d805",
+          "5b8664bcb"
         ],
         "kind_count_scope": "19 paired source kinds plus1 staged weighing backend; not20 accepted flows. All64 runtime acceptances remain open.",
         "staged_kinds": [
