@@ -34,7 +34,7 @@ public sealed partial class LogisticsShellCapabilityProvider : IShellCapabilityP
     public const string OwnerId = "LOGISTICS";
     // WP8: the paired Work decision implementation; native screen availability and grants are unchanged.
     // Source availability is not SQL/browser/CI acceptance or environment activation.
-    public const string OwnerContractVersion = "1.10";
+    public const string OwnerContractVersion = "1.11";
     public const string TransferDeparturesCapabilityId = LogisticsPermissionManifestV1.TransferDeparturesRecord;
     public const string PlanExcessPrepareCapabilityId = "logistics.shipments.plan-excess.prepare";
     public const string PlanExcessApproveCapabilityId = "logistics.shipments.plan-excess.approve";
@@ -66,6 +66,9 @@ public sealed partial class LogisticsShellCapabilityProvider : IShellCapabilityP
     public const string PlanExcessWorkDecisionCapabilityId = "logistics.plan-excess.work-decision";
     public const string PlanExcessWorkDecisionRoutePath = "/onaylarim/logistics.plan-excess.v1/:approvalId";
 
+    public const string DispatchNoteWorkDecisionCapabilityId = "logistics.dispatch-note.work-decision";
+    public const string DispatchNoteWorkDecisionRoutePath = "/onaylarim/logistics.dispatch-note.v1/:approvalId";
+
     public string Owner => OwnerId;
 
     public string ContractVersion => OwnerContractVersion;
@@ -73,6 +76,10 @@ public sealed partial class LogisticsShellCapabilityProvider : IShellCapabilityP
     public IReadOnlyCollection<ShellCapabilityDeclaration> GetDeclarations() =>
     [
         .. SubcontractDeliveryDeclarations(),
+        new ShellCapabilityDeclaration(DispatchNoteWorkDecisionCapabilityId, DispatchNoteWorkDecisionCapabilityId,
+            DispatchNoteWorkDecisionRoutePath, "L-DISPATCH-NOTE-WORK-DECISION",
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide, [LogisticsPermissionManifestV1.DispatchNotesApprove], ImplementationAvailable: false),
         new ShellCapabilityDeclaration(PlanExcessWorkDecisionCapabilityId, PlanExcessWorkDecisionCapabilityId,
             PlanExcessWorkDecisionRoutePath, "L-PLAN-EXCESS-WORK-DECISION",
             ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,

@@ -28,7 +28,8 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
     [property: JsonIgnore] WorkSupplierReturnCostExceptionProofV1? SupplierReturnCostExceptionProof = null,
     [property: JsonIgnore] WorkInventoryStockCountProofV1? InventoryStockCountProof = null,
     [property: JsonIgnore] WorkBankAccountProofV1? BankAccountProof = null,
-    [property: JsonIgnore] WorkInventoryStockScrapProofV1? InventoryStockScrapProof = null);
+    [property: JsonIgnore] WorkInventoryStockScrapProofV1? InventoryStockScrapProof = null,
+    [property: JsonIgnore] WorkLogisticsDispatchNoteProofV1? LogisticsDispatchNoteProof = null);
 
 /// <summary>Immutable, price-free native count evidence, exposed only by the authorized human purpose GET.</summary>
 public sealed record WorkInventoryStockCountPreviewV1(Guid LabelId, string LabelVersion,
@@ -104,3 +105,15 @@ public sealed record WorkSupplierReturnCostExceptionProofV1(Guid CompanyId, Guid
 /// <summary>Safe native account view and immutable proposer identity. No card/IBAN/account-number data.</summary>
 public sealed record WorkBankAccountProofV1(Guid CompanyId, Guid AccountId, Guid CurrencyId, string DisplayName,
     bool IsActive, bool IsUsableForReceipt, string ProposedBy, DateTimeOffset ProposedAtUtc);
+
+
+/// <summary>Full price-free native dispatch document for the authorized human GET only; never Inbox/AI content.</summary>
+public sealed record WorkLogisticsDispatchNotePreviewV1(Guid InstructionId, Guid DispatchNoteId, Guid CustomerPartyId,
+    Guid CompanyAccountId, DateOnly EffectiveOn, string Status, string? Number, string? EDispatchNumber,
+    string CreatedBy, DateTimeOffset CreatedAtUtc, IReadOnlyList<WorkLogisticsDispatchNoteLinePreviewV1> Lines);
+public sealed record WorkLogisticsDispatchNoteLinePreviewV1(int LineNo, Guid ShipmentId, Guid InstructionLineId,
+    Guid SourceOrderId, Guid SourceOrderLineId, Guid ProductId, Guid UnitId, string Quantity,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? QuantityKg = null);
+/// <summary>Owner-only company/version binding, separate from mutable status and from the original command receipt.</summary>
+public sealed record WorkLogisticsDispatchNoteProofV1(Guid CompanyId, string InstructionVersion,
+    WorkLogisticsDispatchNotePreviewV1 Note);

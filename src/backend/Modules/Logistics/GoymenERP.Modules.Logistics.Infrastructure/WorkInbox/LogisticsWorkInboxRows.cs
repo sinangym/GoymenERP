@@ -16,6 +16,8 @@ internal abstract class LogisticsWorkInboxRows
 
     public abstract IQueryable<DispatchNoteRow> DispatchNotes { get; }
 
+    public abstract IQueryable<DispatchNoteLineRow> DispatchNoteLines { get; }
+
     public abstract IQueryable<LogisticsPlanExcessRow> PlanExcessExceptions { get; }
 
     public abstract IQueryable<WeighingDifferenceRecordRow> WeighingDifferences { get; }
@@ -39,6 +41,8 @@ internal sealed class LogisticsWorkInboxDbRows(LogisticsDbContext dbContext) : L
     public override IQueryable<LoadingInstructionLineRow> Lines => dbContext.Lines.AsNoTracking();
 
     public override IQueryable<DispatchNoteRow> DispatchNotes => dbContext.DispatchNotes.AsNoTracking();
+
+    public override IQueryable<DispatchNoteLineRow> DispatchNoteLines => dbContext.DispatchNoteLines.AsNoTracking();
 
     public override IQueryable<LogisticsPlanExcessRow> PlanExcessExceptions => dbContext.PlanExcessExceptions.AsNoTracking();
 

@@ -906,16 +906,17 @@ public sealed class LogisticsPersistenceModelTests
         var provider = new LogisticsShellCapabilityProvider();
         var declarations = provider.GetDeclarations().Where(item =>
             !item.CapabilityId.StartsWith("logistics.subcontract-deliveries.", StringComparison.Ordinal)).ToList();
-        Assert.Equal("1.10", provider.ContractVersion);
-        Assert.Equal(16, declarations.Count);
+        Assert.Equal("1.11", provider.ContractVersion);
+        Assert.Equal(17, declarations.Count);
         Assert.All(declarations, declaration => Assert.Equal(
             declaration.CapabilityId is not (LogisticsShellCapabilityProvider.PlanExcessPrepareCapabilityId
-                or LogisticsShellCapabilityProvider.PlanExcessApproveCapabilityId), declaration.ImplementationAvailable));
+                or LogisticsShellCapabilityProvider.PlanExcessApproveCapabilityId or LogisticsShellCapabilityProvider.DispatchNoteWorkDecisionCapabilityId), declaration.ImplementationAvailable));
         var excessPrepare = Assert.Single(declarations, item => item.CapabilityId == LogisticsShellCapabilityProvider.PlanExcessPrepareCapabilityId);
         Assert.Equal(LogisticsShellCapabilityProvider.DetailCapabilityId, excessPrepare.ParentCapabilityId);
         Assert.Equal([LogisticsPermissionManifestV1.InstructionsRead, LogisticsPermissionManifestV1.LoadsRecord], excessPrepare.RequiredPermissions);
         Assert.Equal(
             [
+                ("logistics.dispatch-note.work-decision", "/onaylarim/logistics.dispatch-note.v1/:approvalId", LogisticsPermissionManifestV1.DispatchNotesApprove),
                 ("logistics.instructions.create", "/lojistik/yukleme-talimatlari/yeni", LogisticsPermissionManifestV1.InstructionsCreate),
                 ("logistics.instructions.detail", "/lojistik/yukleme-talimatlari/:instructionId", LogisticsPermissionManifestV1.InstructionsRead),
                 ("logistics.instructions.list", "/lojistik/yukleme-talimatlari", LogisticsPermissionManifestV1.InstructionsRead),
@@ -934,8 +935,7 @@ public sealed class LogisticsPersistenceModelTests
         Assert.Equal("logistics.shipments.record", LogisticsPermissionManifestV1.ShipmentsRecord);
         Assert.Equal("logistics.deliveries.record", LogisticsPermissionManifestV1.DeliveriesRecord);
         Assert.Equal(22, LogisticsPermissionManifestV1.Names.Distinct(StringComparer.Ordinal).Count());
-        // AT-055: the dispatch note's three names (prepare, approve, cancel), each its own and, like the weighbridge record, with no
-        // shell declaration (server-measured commands on the detail).
+        // The native detail commands remain unchanged. Only approve has an additional, staged purpose route.
         Assert.Equal("logistics.dispatch-notes.create", LogisticsPermissionManifestV1.DispatchNotesCreate);
         Assert.Equal("logistics.dispatch-notes.approve", LogisticsPermissionManifestV1.DispatchNotesApprove);
         Assert.Equal("logistics.dispatch-notes.cancel", LogisticsPermissionManifestV1.DispatchNotesCancel);
@@ -943,7 +943,13 @@ public sealed class LogisticsPersistenceModelTests
                      LogisticsPermissionManifestV1.DispatchNotesCancel })
         {
             Assert.Contains(name, LogisticsPermissionManifestV1.Names);
-            Assert.DoesNotContain(declarations, declaration => declaration.RequiredPermissions.Contains(name));
+            if (name == LogisticsPermissionManifestV1.DispatchNotesApprove)
+            {
+                var purpose = Assert.Single(declarations, declaration => declaration.RequiredPermissions.Contains(name));
+                Assert.Equal(LogisticsShellCapabilityProvider.DispatchNoteWorkDecisionCapabilityId, purpose.CapabilityId);
+                Assert.False(purpose.ImplementationAvailable); Assert.Null(purpose.ParentCapabilityId);
+            }
+            else Assert.DoesNotContain(declarations, declaration => declaration.RequiredPermissions.Contains(name));
         }
         // AT-053: the weighbridge record has its own name and, like recording a load, no shell declaration (a server-measured command on the detail).
         Assert.Equal("logistics.weighings.record", LogisticsPermissionManifestV1.WeighingsRecord);

@@ -22,7 +22,7 @@ namespace GoymenERP.Modules.Logistics.Infrastructure.WorkInbox;
 /// escalation and "şimdi" notification), and the note's own approval or cancellation time as its decision time (D10).
 /// </para>
 /// </summary>
-internal sealed class LogisticsDispatchNoteWorkInboxSourceV1 : IWorkInboxFollowUpSourceV1
+internal sealed partial class LogisticsDispatchNoteWorkInboxSourceV1 : IWorkInboxFollowUpSourceV1, IWorkApprovalDecisionSourceV1
 {
     public const string ModuleName = "logistics";
     public const string KindName = "logistics.dispatch-note.v1";

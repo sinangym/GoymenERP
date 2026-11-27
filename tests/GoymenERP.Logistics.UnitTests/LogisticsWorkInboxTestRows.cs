@@ -18,17 +18,20 @@ internal sealed class LogisticsInMemoryWorkInboxRows : LogisticsWorkInboxRows
     public List<LoadingInstructionRow> InstructionRows { get; } = [];
     public List<LoadingInstructionLineRow> LineRows { get; } = [];
     public List<DispatchNoteRow> DispatchNoteRows { get; } = [];
+    public List<DispatchNoteLineRow> DispatchNoteLineRows { get; } = [];
     public List<LogisticsPlanExcessRow> PlanExcessRows { get; } = [];
     public List<WeighingDifferenceRecordRow> WeighingDifferenceRows { get; } = [];
     public List<WeighingDifferenceProductRow> WeighingDifferenceProductRows { get; } = [];
     public List<WeighingDifferenceEnteredByRow> WeighingDifferenceEnteredByRows { get; } = [];
     public List<CustomerReturnRow> CustomerReturnRows { get; } = [];
     public bool FailReads { get; set; }
+    public Action<int>? AfterRead { get; set; }
     public int Reads { get; private set; }
 
     public override IQueryable<LoadingInstructionRow> Instructions => InstructionRows.AsQueryable();
     public override IQueryable<LoadingInstructionLineRow> Lines => LineRows.AsQueryable();
     public override IQueryable<DispatchNoteRow> DispatchNotes => DispatchNoteRows.AsQueryable();
+    public override IQueryable<DispatchNoteLineRow> DispatchNoteLines => DispatchNoteLineRows.AsQueryable();
     public override IQueryable<LogisticsPlanExcessRow> PlanExcessExceptions => PlanExcessRows.AsQueryable();
     public override IQueryable<WeighingDifferenceRecordRow> WeighingDifferences => WeighingDifferenceRows.AsQueryable();
     public override IQueryable<WeighingDifferenceProductRow> WeighingDifferenceProducts => WeighingDifferenceProductRows.AsQueryable();
@@ -38,7 +41,10 @@ internal sealed class LogisticsInMemoryWorkInboxRows : LogisticsWorkInboxRows
     public override Task<List<T>> ListAsync<T>(IQueryable<T> query, CancellationToken cancellationToken)
     {
         Reads++;
-        return FailReads ? throw new InvalidOperationException("SENTETIK read failure") : Task.FromResult(query.ToList());
+        if (FailReads) throw new InvalidOperationException("SENTETIK read failure");
+        var result = query.ToList();
+        AfterRead?.Invoke(Reads);
+        return Task.FromResult(result);
     }
 }
 
@@ -62,6 +68,7 @@ internal sealed class LogisticsSqlTranslatingWorkInboxRows : LogisticsWorkInboxR
     public override IQueryable<LoadingInstructionRow> Instructions => inner.Instructions;
     public override IQueryable<LoadingInstructionLineRow> Lines => inner.Lines;
     public override IQueryable<DispatchNoteRow> DispatchNotes => inner.DispatchNotes;
+    public override IQueryable<DispatchNoteLineRow> DispatchNoteLines => inner.DispatchNoteLines;
     public override IQueryable<LogisticsPlanExcessRow> PlanExcessExceptions => inner.PlanExcessExceptions;
     public override IQueryable<WeighingDifferenceRecordRow> WeighingDifferences => inner.WeighingDifferences;
     public override IQueryable<WeighingDifferenceProductRow> WeighingDifferenceProducts => inner.WeighingDifferenceProducts;
