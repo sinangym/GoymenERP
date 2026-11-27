@@ -479,6 +479,34 @@ const weighedReturn = { customerReturnId: requestPayload.customerReturnId, compa
   reason: 'SENTETIK', requestedBy: 'maker', occurredAtUtc: '2026-11-27T07:00:00Z', requestedAtUtc: '2026-11-27T07:01:00Z',
   decidedBy: null, decidedAtUtc: null, decisionNote: null, inventoryMovementId: null, originalLabelId: null, originalShipmentMovementId: null,
   weighing: { weighingId: weighId, direction: 'GrossFirst', firstWeighingKg: '1013.125', secondWeighingKg: '1000', netKg: '13.125', recordedBy: 'operator', recordedAtUtc: '2026-11-27T08:00:00Z' } };
+const kilogramLineId = '00000000-0000-4000-8000-000000000031';
+function approvedKilogramReturn() {
+  const { weighing, ...unweighed } = weighedReturn;
+  void weighing;
+  return { ...unweighed, customerReturnId: '00000000-0000-4000-8000-000000000032', loadingInstructionLineId: kilogramLineId,
+    quantity: '0.5', status: 'Approved', version: '2', decidedBy: 'checker', decidedAtUtc: '2026-11-27T09:00:00Z',
+    inventoryMovementId: weighId, originalLabelId: weighId, originalShipmentMovementId: weighId };
+}
+it.each(['Piece', 'Kilogram'] as const)('validates sibling source rows without applying the selected %s unit to the whole order', async quantityUnit => {
+  const kilogramReturn = approvedKilogramReturn();
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify([weighedReturn, kilogramReturn]), { status: 200 })));
+  const selected = quantityUnit === 'Piece' ? weighedReturn : kilogramReturn;
+  const outcome = await customerReturnEndpointAdapter.read({ ...weighContext, quantityUnit,
+    loadingInstructionLineId: selected.loadingInstructionLineId }, new AbortController().signal);
+  expect(outcome).toEqual({ type: 'succeeded', returns: [selected] });
+});
+it.each(['foreign-company', 'foreign-order', 'malformed-sibling', 'unweighed-piece-approved', 'weighed-kilogram'])('retains strict global and selected-line source refusal: %s', async fault => {
+  const sibling = approvedKilogramReturn();
+  if (fault === 'foreign-company') sibling.companyId = weighId;
+  if (fault === 'foreign-order') sibling.sourceOrderId = weighId;
+  const rows = fault === 'malformed-sibling' ? [weighedReturn, { ...sibling, extra: 'untrusted' }]
+    : [weighedReturn, sibling];
+  const selected = fault === 'unweighed-piece-approved' || fault === 'weighed-kilogram' ?
+    { ...weighContext, quantityUnit: fault === 'weighed-kilogram' ? 'Kilogram' as const : 'Piece' as const,
+      loadingInstructionLineId: fault === 'unweighed-piece-approved' ? kilogramLineId : weighContext.loadingInstructionLineId } : weighContext;
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(rows), { status: 200 })));
+  expect((await customerReturnEndpointAdapter.read(selected, new AbortController().signal)).type).toBe('malformed');
+});
 it('replays only the original native Pending2 weighing receipt with the same five-field body and key', async () => {
   const fetch = vi.fn(async () => new Response(JSON.stringify({ return: weighedReturn, isReplay: true, originalCorrelationId: 'original' }), {
     status: 200, headers: { 'Content-Type': 'application/json', 'Idempotency-Replayed': 'true', 'Idempotency-Original-Correlation-Id': 'original' } }));

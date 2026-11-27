@@ -368,17 +368,18 @@ export const customerReturnEndpointAdapter: CustomerReturnEndpointAdapter = {
     if (response.status !== 200) return { type: "http", status: response.status };
     const decoded = decodeCustomerReturnListV1(body, {
       companyId: context.companyId,
-      quantityUnit: context.quantityUnit,
     });
     if (!decoded.ok || decoded.value.some((item) => item.sourceOrderId !== context.salesOrderId)) {
       return { type: "malformed" };
     }
-    return {
-      type: "succeeded",
-      returns: decoded.value.filter((item) =>
-        item.loadingInstructionId === context.loadingInstructionId
-        && item.loadingInstructionLineId === context.loadingInstructionLineId),
-    };
+    // The endpoint is order-wide. The selected line's unit is not evidence about sibling lines.
+    const selected = decodeCustomerReturnListV1(decoded.value.filter((item) =>
+      item.loadingInstructionId === context.loadingInstructionId
+      && item.loadingInstructionLineId === context.loadingInstructionLineId), {
+      companyId: context.companyId, loadingInstructionId: context.loadingInstructionId,
+      loadingInstructionLineId: context.loadingInstructionLineId, quantityUnit: context.quantityUnit,
+    });
+    return selected.ok ? { type: "succeeded", returns: selected.value } : { type: "malformed" };
   },
   request(context, attempt, signal) {
     return command(
