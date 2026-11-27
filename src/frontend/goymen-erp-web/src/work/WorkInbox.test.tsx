@@ -634,6 +634,7 @@ it.each([{granted:['price-lists.package-standard-version.work-decision'],visible
  const api=installFetch({granted,inbox:()=>json(inbox({items:[item],sources:[src('product',kind,permission,'BusinessDays')]}))})
  await renderAt('/onaylarim/kuyruk')
  if(visible){await screen.findByTestId('work-inbox-item');expect(within(cardOf(kind)).getAllByRole('link').map(anchor=>anchor.getAttribute('href'))).toContain(link)
+  await userEvent.setup().click(within(cardOf(kind)).getByRole('button',{name:T.explanationToggle}))
   expect(within(cardOf(kind)).getByRole('link',{name:'SENTETIK ürün'}).getAttribute('href')).toBe(`/urun/${PARTY_ID}`)
  }else{expect(api.inboxReads()).toHaveLength(0);expect(screen.queryByTestId('work-inbox-item')).toBeNull()}
 })
