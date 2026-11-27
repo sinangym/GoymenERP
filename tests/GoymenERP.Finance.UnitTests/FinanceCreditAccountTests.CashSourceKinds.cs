@@ -1,7 +1,6 @@
 using System.Text.Json;
 using GoymenERP.Modules.Finance.Contracts;
 using GoymenERP.Modules.Finance.Infrastructure;
-using Microsoft.EntityFrameworkCore;
 
 namespace GoymenERP.Finance.UnitTests;
 
@@ -77,20 +76,17 @@ public sealed partial class FinanceCreditAccountTests
     public async Task Approval_revalidates_a_stored_cash_kind_instead_of_accepting_a_legacy_incompatible_plan()
     {
         await using var run = new Run();
-        var proposed = (await run.ProposeAsync(Maker, Request())).Resource!;
-        await using (var db = run.Memory(CompanyA))
-        {
-            var row = await db.CreditAccounts.SingleAsync(x => x.Id == proposed.Id);
-            row.SourceProfileJson = JsonSerializer.Serialize(proposed.Profile! with
-                { Cash = new(CreditCashKindV1.Revolving, null) }, FinanceJson.CreateOptions());
-            await db.SaveChangesAsync();
-        }
+        // Seed a legacy snapshot before insert; the immutable native row cannot be rewritten.
+        var legacy = Account(FinanceCreditAccountService.Proposed);
+        legacy.SourceProfileJson = JsonSerializer.Serialize(Profile(CreditAccountGroup.Cash) with
+            { Cash = new(CreditCashKindV1.Revolving, null) }, FinanceJson.CreateOptions());
+        var proposed = await run.SeedAsync(legacy);
         AssertIssue(await run.ApproveAsync(Checker, new(proposed.Id, "1")), CommandOutcome.ValidationFailed,
             "profile.planNature", "credit_source_profile_invalid");
         Assert.Equal((FinanceCreditAccountService.Proposed, 1L),
             ((await run.RowAsync(proposed.Id)).Status, (await run.RowAsync(proposed.Id)).Version));
-        Assert.Single(await run.CommandsAsync());
-        Assert.Single(await run.AuditsAsync(proposed.Id));
+        Assert.Empty(await run.CommandsAsync());
+        Assert.Empty(await run.AuditsAsync(proposed.Id));
         Assert.Equal(CommandOutcome.Succeeded, (await run.RejectAsync(Checker, new(proposed.Id, "1", Reason))).Outcome);
     }
 
