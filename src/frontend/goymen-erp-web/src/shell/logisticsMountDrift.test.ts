@@ -32,7 +32,7 @@ describe('shell ↔ Logistics lane capability ids', () => {
     expect(CAPABILITY.logisticsTransferDepartures).toBe(LOGISTICS_CAPABILITY.transferDepartures)
     expect(CAPABILITY.logisticsPlanExcessApprove).toBe(LOGISTICS_CAPABILITY.planExcessApprove)
     const shellIds = (Object.values(CAPABILITY) as string[]).filter((id) => id.startsWith('logistics.'))
-    expect([...shellIds].sort()).toEqual([...Object.values(LOGISTICS_CAPABILITY).filter((id) => id !== LOGISTICS_CAPABILITY.planExcessPrepare), ...Object.values(SUBCONTRACT_CAPABILITY), 'logistics.plan-excess.work-decision', 'logistics.weighing-difference.work-decision', 'logistics.dispatch-note.work-decision'].sort())
+    expect([...shellIds].sort()).toEqual([...Object.values(LOGISTICS_CAPABILITY).filter((id) => id !== LOGISTICS_CAPABILITY.planExcessPrepare), ...Object.values(SUBCONTRACT_CAPABILITY), 'logistics.plan-excess.work-decision', 'logistics.weighing-difference.work-decision', 'logistics.dispatch-note.work-decision', 'logistics.customer-return.work-decision'].sort())
   })
 
   it('agrees with the lane on every route, value by value', () => {
@@ -99,4 +99,16 @@ it('pairs the dispatch Work route, blank navigation and inbox with the existing 
  expect(WORK_INBOX_KINDS.filter(row=>row.kind==='logistics.dispatch-note.v1')).toEqual([{kind:'logistics.dispatch-note.v1',module:'logistics',capability:'logistics.dispatch-note.work-decision'}])
  expect(CAPABILITY_ROUTE[CAPABILITY.logisticsInstructionsDetail]).toBe(LOGISTICS_ROUTE.detail)
  expect(instructionDetailRoute('cccccccc-0000-4000-8000-000000000001')).toBe('/lojistik/yukleme-talimatlari/cccccccc-0000-4000-8000-000000000001')
+})
+
+it('pairs customer return Work purpose with its exact capability and preserves native instruction detail',()=>{
+ expect(CAPABILITY.logisticsCustomerReturnWorkDecision).toBe('logistics.customer-return.work-decision')
+ expect(CAPABILITY_ROUTE[CAPABILITY.logisticsCustomerReturnWorkDecision]).toBe('/onaylarim/logistics.customer-return.v1/:approvalId')
+ expect(CAPABILITY_NAV_LABEL[CAPABILITY.logisticsCustomerReturnWorkDecision]).toBe('')
+ const route=matchRoutes(workRoutes,'/onaylarim/logistics.customer-return.v1/cccccccc-0000-4000-8000-000000000001')?.at(-1)?.route
+ expect(route?.path).toBe('onaylarim/logistics.customer-return.v1/:approvalId')
+ expect(route).toBeDefined()
+ expect((route!.element as {props:{capability:readonly string[]}}).props.capability).toEqual(['logistics.customer-return.work-decision'])
+ expect(WORK_INBOX_KINDS.filter(row=>row.kind==='logistics.customer-return.v1')).toEqual([{kind:'logistics.customer-return.v1',module:'logistics',capability:'logistics.customer-return.work-decision'}])
+ expect(CAPABILITY_ROUTE[CAPABILITY.logisticsInstructionsDetail]).toBe(LOGISTICS_ROUTE.detail)
 })

@@ -585,3 +585,21 @@ it.each([['logistics.dispatch-notes.approve'],[LOGISTICS_CAPABILITY.instructions
  await renderAt('/onaylarim/kuyruk');await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
  expect(api.inboxReads()).toHaveLength(0);expect(screen.queryByTestId('work-inbox-list')).toBeNull()
 })
+
+const returnKind='logistics.customer-return.v1',returnPermission='logistics.customer-returns.decision',returnId='d1000000-0000-4000-8000-000000000005'
+const returnLink=`/onaylarim/${returnKind}/${returnId}`
+const returnItem={...dispatchItem,kind:returnKind,itemId:returnId,documentLabel:'SENTETIK iade',link:returnLink,awaitingPermission:returnPermission,ruleVersion:RV(returnKind),
+ explanation:{rules:[{ruleCode:'logistics.customer-return-request',threshold:'2',actual:'1',deviation:null,unit:'kg'}],references:[{role:'loading-instruction',label:'SENTETIK talimat',recordId:PARTY_ID,link:`/lojistik/yukleme-talimatlari/${PARTY_ID}`}]}}
+const returnSource={module:'logistics',kind:returnKind,awaitingPermission:returnPermission,durationClass:'BusinessDays',ruleVersion:RV(returnKind),state:'Ready',hasMore:false}
+it('opens customer return inbox only through its Work purpose and preserves its native instruction reference',async()=>{
+ const api=installFetch({granted:[CAPABILITY.logisticsCustomerReturnWorkDecision],inbox:()=>json(inbox({items:[returnItem],sources:[returnSource]}))})
+ await renderAt('/onaylarim/kuyruk');await screen.findByTestId('work-inbox-list')
+ expect(within(cardOf(returnKind)).getByRole('link',{name:T.openOwnerLabel('Müşteri iadesi kabul kararı','SENTETIK iade')}).getAttribute('href')).toBe(returnLink)
+ expect(within(cardOf(returnKind)).getByRole('link',{name:'SENTETIK talimat'}).getAttribute('href')).toBe(`/lojistik/yukleme-talimatlari/${PARTY_ID}`)
+ expect(api.inboxReads()).toHaveLength(1);expect(api.inboxReads()[0].companyId).toBe(COMPANY);expect(api.queueReads()).toHaveLength(0)
+})
+it.each(['logistics.customer-returns.decision','logistics.customer-returns.approve',LOGISTICS_CAPABILITY.instructionsDetail])('does not read the Work return inbox through native-only capability %s',async native=>{
+ const api=installFetch({granted:[native],inbox:()=>json(inbox({items:[returnItem],sources:[returnSource]}))})
+ await renderAt('/onaylarim/kuyruk');await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+ expect(api.inboxReads()).toHaveLength(0);expect(screen.queryByTestId('work-inbox-list')).toBeNull()
+})

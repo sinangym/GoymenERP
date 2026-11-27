@@ -131,7 +131,7 @@ internal sealed partial class LogisticsCustomerReturnWorkInboxSourceV1 : IWorkAp
 
         var label = LogisticsWorkInboxFence.Id(row.CustomerReturnId);
         item = new WorkInboxItemV1(ModuleName, KindName, row.CustomerReturnId, label, row.RequestedAtUtc.ToUniversalTime(),
-            LogisticsWorkInboxFence.InstructionLink(row.InstructionId), row.RequestedBy.Trim(),
+            "/onaylarim/logistics.customer-return.v1/" + row.CustomerReturnId.ToString("D"), row.RequestedBy.Trim(),
             [
                 new WorkApprovalRuleResultV1(ReturnRequestRule, WorkInboxRulesV1.Decimal(row.SourceDeliveredQuantity),
                     WorkInboxRulesV1.Decimal(row.Quantity), null, unit),

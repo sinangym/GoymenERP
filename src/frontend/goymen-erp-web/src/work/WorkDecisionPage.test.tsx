@@ -1,4 +1,3 @@
-import { CapabilityRoute } from '../shell/CapabilityRoute'
 import { customerReturnText as CUSTOMER_RETURN } from '../logistics/customerReturnText'
 import { CUSTOMER_RETURN_WORK_DECISION_CAPABILITY } from './workDecisionApi'
 import { DISPATCH_NOTE_WORK_DECISION_CAPABILITY } from './workDecisionApi'
@@ -1533,7 +1532,7 @@ it('mounts dispatch as the 25th native purpose under its exact standalone capabi
  expect(route?.path).toBe(`onaylarim/${dispatchKind}/:approvalId`)
  const element=route?.element as ReactElement<{capability:readonly string[];children:ReactElement<{kind:string}>}>
  expect(element.props.capability).toEqual([dispatchCap]);expect(element.props.children.type).toBe(WorkDecisionPage);expect(element.props.children.props.kind).toBe(dispatchKind)
- expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(25)
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(26)
 })
 it.each([{companyId:COMPANY_B},{logisticsDispatchNote:{...dispatchProof,dispatchNoteId:COMPANY_A}},{rejectionSupported:true}])('does not expose malformed/foreign dispatch proof %j',async(delta)=>{
  installFetch({capabilities:[dispatchCap],respond:url=>url.includes(dispatchPath)?json({...dispatchPreview,...delta}):undefined});mountDispatchPurpose()
@@ -1559,11 +1558,7 @@ const customerFacts={loadingInstructionId:COMPANY_A,loadingInstructionLineId:id,
  quantityUnit:'Kilogram',quantity:'1.250',sourceDeliveredQuantity:'100.000',reason:'SENTETIK privatehuman iade nedeni',requestedBy:'SENTETIK iade hazırlayan',occurredAtUtc:'0001-01-01T00:00:00+00:00',requestedAtUtc:'2026-11-27T08:00:00Z',status:'Pending'}
 const customerPreview={...preview,kind:customerKind,sourceVersion:'1',rejectionSupported:true,approvalSupported:true,logisticsCustomerReturn:customerFacts,
  references:[{role:'loading-instruction',label:'Talimat',recordId:COMPANY_A,link:'/lojistik/yukleme-talimatlari/'+COMPANY_A}],rules:[{ruleCode:'logistics.customer-return-request',threshold:'100',actual:'1.25',deviation:null,unit:'kg'}]}
-function mountCustomerCandidate(){
- const router=createMemoryRouter([{path:'/',element:<AppShell/>,children:[{path:`onaylarim/${customerKind}/:approvalId`,element:<CapabilityRoute capability={[customerCap]}><WorkDecisionPage kind={customerKind}/></CapabilityRoute>}]}],{initialEntries:[`/onaylarim/${customerKind}/${id}`]})
- render(<ShellProvider queryClient={new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})}><RouterProvider router={router}/></ShellProvider>)
- return router
-}
+function mountCustomerCandidate(){return mount(`/onaylarim/${customerKind}/${id}`)}
 it.each([true,false])('shows all 15 native return facts and submits an optional unbounded trimmed note; approve=%s',async approve=>{
  const calls=installFetch({capabilities:[customerCap],respond:(url,init)=>url.includes(customerPath)?init?.method==='POST'?json({companyId:COMPANY_A,kind:customerKind,itemId:id,state:approve?'Approved':'Rejected',replayed:false,originalCorrelationId:'SENTETIK'}):json(customerPreview):undefined})
  mountCustomerCandidate();const region=await screen.findByRole('region',{name:T.customerReturnProposal})
@@ -1606,10 +1601,12 @@ it.each([{capabilities:[]},{capabilities:['logistics.customer-returns.approve']}
  const calls=installFetch({capabilities,respond:url=>url.includes(customerPath)?json(customerPreview):undefined});mountCustomerCandidate()
  await waitFor(()=>expect(calls.some(call=>call.url.endsWith('/shell/capabilities'))).toBe(true));expect(calls.some(call=>call.url.includes(customerPath))).toBe(false)
 })
-it('keeps the return candidate out of the 25 public decision mounts until its paired publication',()=>{
+it('mounts the customer return purpose under its exact standalone capability among 26 decisions',()=>{
  const route=matchRoutes(workRoutes,`/onaylarim/${customerKind}/${id}`)?.at(-1)?.route
- expect(route?.path).toBe('onaylarim/:kind/:approvalId')
- expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(25)
+ expect(route?.path).toBe(`onaylarim/${customerKind}/:approvalId`)
+ expect(route).toBeDefined()
+ expect((route!.element as ReactElement<{capability:readonly string[]}>).props.capability).toEqual([customerCap])
+ expect(workRoutes.filter(candidate=>candidate.path?.startsWith('onaylarim/')&&candidate.path.endsWith('/:approvalId')&&candidate.path!=='onaylarim/:kind/:approvalId')).toHaveLength(26)
 })
 it('does not restore a customer-return unknown attempt under another authentication session',async()=>{
  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-return-old'})

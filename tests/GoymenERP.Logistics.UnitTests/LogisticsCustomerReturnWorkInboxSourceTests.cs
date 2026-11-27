@@ -47,12 +47,13 @@ public sealed class LogisticsCustomerReturnWorkInboxSourceTests
         F.AssertContractShape(result, "logistics", "logistics.customer-return.v1");
         Assert.Equal([F.Id(32), F.Id(31)], result.Items!.Select(item => item.ItemId));
         var first = result.Items![0];
-        Assert.Equal(("/lojistik/yukleme-talimatlari/" + F.Id(2).ToString("D"), F.Id(32).ToString("D"),
+        Assert.Equal(("/onaylarim/logistics.customer-return.v1/" + F.Id(32).ToString("D"), F.Id(32).ToString("D"),
                 F.T0.AddMinutes(10).ToUniversalTime(), F.Maker),
             (first.Link, first.DocumentLabel, first.WaitingSinceUtc, first.PreparedBy));
         Assert.Null(first.ExcludedDeciders);
         Assert.Equal(["loading-instruction"], first.References.Select(reference => reference.Role));
         Assert.Equal(F.Id(2), first.References[0].RecordId);
+        Assert.Equal(LogisticsWorkInboxFence.InstructionLink(F.Id(2)), first.References[0].Link);
     }
 
     [Fact]

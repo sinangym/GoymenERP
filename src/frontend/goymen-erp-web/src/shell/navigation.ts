@@ -439,6 +439,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'logistics.operations-work.sales': 'Operasyon işleri — Satış',
   'logistics.operations-work.purchase': 'Operasyon işleri — Satın alma',
   'logistics.dispatch-note.work-decision': '',
+  'logistics.customer-return.work-decision': '',
   'logistics.weighing-difference.work-decision': '',
   'logistics.plan-excess.work-decision': '',
   'logistics.shipments.plan-excess.approve': 'Plan üstü sevk onayı',

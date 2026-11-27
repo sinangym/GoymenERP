@@ -34,7 +34,7 @@ public sealed partial class LogisticsShellCapabilityProvider : IShellCapabilityP
     public const string OwnerId = "LOGISTICS";
     // WP8: the paired Work decision implementation; native screen availability and grants are unchanged.
     // Source availability is not SQL/browser/CI acceptance or environment activation.
-    public const string OwnerContractVersion = "1.13";
+    public const string OwnerContractVersion = "1.14";
     public const string TransferDeparturesCapabilityId = LogisticsPermissionManifestV1.TransferDeparturesRecord;
     public const string PlanExcessPrepareCapabilityId = "logistics.shipments.plan-excess.prepare";
     public const string PlanExcessApproveCapabilityId = "logistics.shipments.plan-excess.approve";
@@ -81,7 +81,7 @@ public sealed partial class LogisticsShellCapabilityProvider : IShellCapabilityP
         new ShellCapabilityDeclaration(CustomerReturnWorkDecisionCapabilityId, CustomerReturnWorkDecisionCapabilityId,
             CustomerReturnWorkDecisionRoutePath, "L-CUSTOMER-RETURN-WORK-DECISION",
             ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
-            ShellCapabilityScopeRequirement.CompanyWide, [LogisticsPermissionManifestV1.CustomerReturnsDecision], ImplementationAvailable: false),
+            ShellCapabilityScopeRequirement.CompanyWide, [LogisticsPermissionManifestV1.CustomerReturnsDecision], ImplementationAvailable: true),
         new ShellCapabilityDeclaration(DispatchNoteWorkDecisionCapabilityId, DispatchNoteWorkDecisionCapabilityId,
             DispatchNoteWorkDecisionRoutePath, "L-DISPATCH-NOTE-WORK-DECISION",
             ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,

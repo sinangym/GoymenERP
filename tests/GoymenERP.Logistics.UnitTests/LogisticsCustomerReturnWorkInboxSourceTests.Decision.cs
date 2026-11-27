@@ -21,6 +21,8 @@ public sealed class LogisticsCustomerReturnDecisionSourceTests
             (human.SourceDeliveryId, human.SourceShipmentId, human.SourceOrderLineId, human.UnitId));
         Assert.Equal(("1.250", "100", "Kilogram", row.Reason, F.Maker),
             (human.Quantity, human.SourceDeliveredQuantity, human.QuantityUnit, human.Reason, human.RequestedBy));
+        Assert.Equal("/onaylarim/logistics.customer-return.v1/" + row.CustomerReturnId.ToString("D"), snapshot.Item.Link);
+        Assert.Equal(LogisticsWorkInboxFence.InstructionLink(row.LoadingInstructionId), snapshot.Item.References[0].Link);
         Assert.Equal(F.Maker, snapshot.Item.PreparedBy); Assert.DoesNotContain(row.Reason, JsonSerializer.Serialize(snapshot));
         Assert.DoesNotContain("logisticsCustomerReturnProof", JsonSerializer.Serialize(snapshot, new JsonSerializerOptions(JsonSerializerDefaults.Web)));
         Assert.Equal(2, f.Rows.Reads);
