@@ -1674,7 +1674,7 @@ function salesSummaryAnswer(version=summaryVersion){
  return {outcome:'answered',toolResults:[{toolId:'sales.draft-summary.v1',toolVersion:'1',outcome:'succeeded',contentJson:JSON.stringify({draftId:id,version,revision:'Rev.0',state:'Draft',approvalState:'PendingApproval',lines:[]}),source}],
  answer:{text:'SENTETIK kaynaklı Work satış özeti',citations:[{toolId:'sales.draft-summary.v1',toolVersion:'1',targetKind:source.targetKind,targetId:id,title:source.title,sourceVersion:summaryDigest,asOfUtc:source.asOfUtc}],modelDeployment:'SENTETIK-local',policyVersion:'SENTETIK-policy',answerId:summaryAnswerId}}
 }
-it.each([[],[AI_PANEL_CAPABILITY],['sales.drafts.detail']])('does not mount sales summary without both separate capabilities and leaves Work approval usable: %j',async extras=>{
+it.each([{extras:[]},{extras:[AI_PANEL_CAPABILITY]},{extras:['sales.drafts.detail']}])('does not mount sales summary without both separate capabilities and leaves Work approval usable: %j',async({extras})=>{
  const calls=installFetch({capabilities:[summaryCap,...extras],respond:(url,init)=>url.includes(summaryPath)?init?.method==='POST'?json({companyId:COMPANY_A,kind:summaryKind,itemId:id,state:'Approved',replayed:false,originalCorrelationId:'SENTETIK'}):json(summaryPreview):undefined})
  mount(`/onaylarim/${summaryKind}/${id}`);await screen.findByRole('button',{name:T.approve})
  expect(screen.queryByRole('region',{name:SUMMARY.heading})).toBeNull();expect(calls.some(call=>call.url.includes('/ai/'))).toBe(false)
