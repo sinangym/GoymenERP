@@ -1962,7 +1962,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Recompile/run affected owner composition after native SQL fixture correction; connect staged Counterparty owner purposes. Actual SQL/HTTP/browser, pins/full CI/two K3 remain.",
+      "next_action": "Compile/check final Counterparty human proof/publication with Logistics plan-excess purpose and AI mode cohort. Preserve17 versus64 acceptance distinction and all closure gates.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2071,7 +2071,9 @@
           "purchasing.incoming-invoice-variance.v1",
           "purchasing.goods-receipt-batch.v1",
           "manufacturing.plan.v1",
-          "inventory.transfer-loss.v1"
+          "inventory.transfer-loss.v1",
+          "counterparty.tax-identity-change.v1",
+          "counterparty.legal-name-change.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -2089,15 +2091,17 @@
           "Finance latest full unit suite": "1986/1986 passed, 0 skipped at aa10817d3; credit profile fields and native credit Work fences included.",
           "Sales latest full unit suite": "2469/2469 passed, 0 skipped at 324b9da8c; native order/invoice/subcontract guards included.",
           "Purchasing latest full unit suite": "1296/1296 passed, 0 skipped at f1e7d5269; invoice variance and receipt purpose/native fences included.",
-          "Latest owner/Work composition": "158/158 passed, 0 skipped at 255453f729163a83f30d6405546bfdb3f007b213; five owner host classes plus pure Manufacturing declaration. New SQL sources compiled, actual SQL/HTTP/browser NOT_RUN.",
+          "Latest owner/Work composition": "191/191 passed,0 failed,0 skipped atb155198e7; corrected12 native Counterparty SQL facts and3 loss purpose facts compiled. Later CP/Logistics/AI source checks pending.",
           "Prior failed runs": "83-run wrong-scope fixture corrected; later 93-run contained 91 pass and two failures (pure Sales declaration expectation corrected; normal HTTP authority pin remains NOT_ACCEPTED). New service fixture run1259 pass/1 failure correctly hit immutable history; fixture corrected without weakening native guards. Original logs retained. New SQL refusal fixture CS8619 at9bef fixed by separate await branches e5fd8ae07; no assertions changed. UI159 pass/1 failed test wrongly assumed no legacy route; corrected to exact existing fallback component/path and final160 passed.",
           "Manufacturing latest full unit suite": "1560/1560 passed, 0 skipped at 9bef612e9; publication/provider source included. Manufacturing module tree unchanged through 255453f72.",
           "Deferred host pins": "Earlier 78-case run at 6920c495e had 76 pass/2 normal-host authority-pin failures; retained NOT_ACCEPTED. Pins deferred to train close, no gate waived.",
           "Manufacturing Work UI": "170/170,0 skipped in9files atc900c99975690d5cf1ada22c48d157f742e97002; tsc/scopedlint exit0,one unchanged baseline warning. Whole frontend tree matches root1349d982c. Includes actual Manufacturing/loss capability, native route preservation, typed UTC frozen body and missing/wrong-capability refusals.",
           "Inventory latest full unit suite": "2275/2275 passed,0 failed,0 skipped at2ba0032c8f2c3576b609ecd008e82afaa6489279; final loss publication included.",
           "Counterparty native identity decisions": "SOURCE_READY atcdc4aac0c;10 entry unit cases +4 SQL theories/12 cases written; compilation/execution pending. Work adapters for these two kinds are not yet connected.",
-          "Counterparty latest full unit suite": "386/386 passed,0 failed,0 skipped at2ba0032c8f2c3576b609ecd008e82afaa6489279; native identity safety included.",
-          "Latest API compile failure": "At2ba0032c8 integration assembly failed CS0246: nonexistent SqlServerTheory. Corrected by19a6351ee to12 existing SqlServerFact wrappers sharing unchanged assertion bodies. API host execution NOT_RUN for this increment; failure log retained."
+          "Counterparty latest full unit suite": "400/400 passed,0 skipped at36518a3d26e0ebee1b0144d8b4af04da56a5860b; later human-proof/publication increment pending.",
+          "Latest API compile failure": "At2ba0032c8 integration assembly failed CS0246: nonexistent SqlServerTheory. Corrected by19a6351ee to12 existing SqlServerFact wrappers sharing unchanged assertion bodies. API host execution NOT_RUN for this increment; failure log retained.",
+          "Logistics latest full unit suite": "572/572 passed,0 skipped at36518a3d26e0ebee1b0144d8b4af04da56a5860b; native owned approval/replay boundary included. Later proposal SQL source compilation pending.",
+          "Latest frontend": "276/276 passed,0 failed/skipped in11files at agent63e26fe84504d0b11d18c11242bafd413f508fff; tsc-b/scopedlint exit0, one pre-existing Inventory warning. Whole frontend tree equals integratedrootd058e0c5a."
         },
         "reuse": [
           "existing FinanceCashAccountService commands and durable receipts",
@@ -2386,6 +2390,31 @@
             ],
             "new_permissions": [],
             "migration": null
+          },
+          {
+            "source_commit": "d058e0c5a",
+            "source_commits": [
+              "a8e081356",
+              "80e42ad85",
+              "18d6618f2",
+              "c6a288f40",
+              "609ff89b5",
+              "05f0af264",
+              "b80e19b44",
+              "d058e0c5a"
+            ],
+            "scope": "Counterparty exact human-only current/proposed identity proof, native250-name support through code captions, native owned204 decision receipts, paired source/UI publication; Logistics shared plan-excess proposal/approval entry-abort safety. No grant/activation.",
+            "local_checks": "CP400 and Logistics572 at36518; Work191 atb155; UI276/tsc/lint at63e. Later CSharp increment pending.",
+            "sql": "12 native CP facts+6 CP Work facts and4 Logistics boundary facts inventoried; new Work/proposal sources NOT_RUN.",
+            "review": "Bounded nonauthor review found tax blind-preview P1 and long-name P2, fixed by18d6618f2/e3f828a56; source delta review reports no additional concrete P0/P1/P2, not K3/runtime acceptance.",
+            "remaining": [
+              "Remaining owner adapters and64-flow actual acceptance",
+              "Logistics Work purpose staging",
+              "Loss locator/history scale1000",
+              "Actual SQL/HTTP/browser, pins/full CI/two independent K3"
+            ],
+            "new_permissions": [],
+            "migration": null
           }
         ],
         "source_commits": [
@@ -2431,9 +2460,17 @@
           "c1152cbc2",
           "1349d982c",
           "cdc4aac0c",
-          "19a6351ee"
+          "19a6351ee",
+          "a8e081356",
+          "80e42ad85",
+          "18d6618f2",
+          "c6a288f40",
+          "609ff89b5",
+          "05f0af264",
+          "b80e19b44",
+          "d058e0c5a"
         ],
-        "kind_count_scope": "15 connected source kinds; not 15 accepted flows. Native loss request number/time, historical maker and real command receipt proof are connected to the standalone Work route. All64 runtime acceptance remains open.",
+        "kind_count_scope": "17 connected source kinds; not17 accepted flows. Counterparty human-only immutable proposal proof and native links are paired. All64 actual runtime acceptances remain open.",
         "staged_kinds": []
       }
     },
@@ -2676,7 +2713,7 @@
       "backlog_parent": "W5-AIGATEWAY",
       "title": "Genel sohbet modu",
       "group": "TREN2",
-      "status": "SOURCE_REVIEW_REQUIRED",
+      "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
       "priority": "P1",
       "risk": "K2",
       "scope": "ERP araçları kapalı; ERP modunda web kapalı.",
@@ -2694,8 +2731,9 @@
       ],
       "reuse_mode": "SMALL_EXTENSION",
       "source_findings": [
-        "Devir belgesinde kalan iş; listedeki mevcut kaynak/testler bulundu.",
-        "Tam davranış ve runtime kabulü: NOT_RUN."
+        "Existing /ai/ask optional mode binds to same gateway: ERP is default; general-chat has no planner/catalog tools or grounding.",
+        "Existing budget/classification/local placement and fresh actor/company/permission release fences reused; actual Fake does not opt in to general chat.",
+        "AI flags/provider/AllowedTools remain unchanged and closed. UI mode switch and actual provider/HTTP/browser acceptance remain pending."
       ],
       "decisions": [
         "AI-D28"
@@ -2722,7 +2760,26 @@
         "src/backend/GoymenERP.Api/Ai/Gateway/AiGateway.cs",
         "tests/GoymenERP.Api.IntegrationTests/AiGatewayTests.cs"
       ],
-      "change_files": []
+      "change_files": [
+        "src/backend/GoymenERP.Api/Ai/AiAskService.cs",
+        "src/backend/GoymenERP.Api/Ai/AiContractsV1.cs",
+        "src/backend/GoymenERP.Api/Ai/Gateway/AiAnswerComposer.cs",
+        "src/backend/GoymenERP.Api/Ai/Gateway/AiGateway.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiAskServiceTests.Modes.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiAskServiceTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiGatewayTests.Modes.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AiGatewayTests.cs"
+      ],
+      "execution": {
+        "source_commit": "5e86e5aaaa442b69c1bfc7c10e8bf5da7ab68526",
+        "local_checks": "28 new source cases (18 Ask/10 Gateway); compilation/execution NOT_RUN. Existing4field wire roundtrip covered in source.",
+        "review": "Root bounded source review; additional nonauthor review pending, not K3.",
+        "next_action": "Run affected Ask/Gateway cohort, then bind separate general UI without making it a CUTOVER gate.",
+        "measurements": {
+          "token": "NOT_AVAILABLE",
+          "duration": "NOT_SEPARATELY_MEASURED"
+        }
+      }
     },
     {
       "id": "T2/WP-C1-LEDGER",

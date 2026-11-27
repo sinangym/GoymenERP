@@ -1322,8 +1322,8 @@
           "path": "src/backend/GoymenERP.Api/Ai/Gateway/AiGateway.cs",
           "line": 37,
           "anchor": "public async Task<AiGatewayResultV1> ComposeAsync(AiGatewayRequestV1 request, CancellationToken cancellationToken = default)",
-          "sha256": "8be4d87cd7a1081a4eae0bffb50b889ab00a24ef356f70bf3ca85241d520fe7b",
-          "git_blob": "53d7ff935f1a4018be99bff7dee03593fbc96e53"
+          "sha256": "6ee416268ecaa347205e0acf830586d57383234a3bb00adf8e38ae8e9b774805",
+          "git_blob": "e1819965e70a905f3d25926e49089cc0d0565101"
         }
       ],
       "tests": [
@@ -1331,11 +1331,11 @@
           "path": "tests/GoymenERP.Api.IntegrationTests/AiGatewayTests.cs",
           "line": 22,
           "anchor": "public async Task A_sourced_answer_restates_only_tool_numbers_cites_the_source_and_records_the_used_units()",
-          "sha256": "19d94c5b31f281e86e939ac4ff2fcf04a084709b8245591e583777e8d7b86ab9",
-          "git_blob": "cf03dda86a21790af6d3deb0e6a6a9ed15384fe1"
+          "sha256": "2980a29d06c376bec0dfbfc703adab18b17c1bb62c4d5d60a9528931482b19d1",
+          "git_blob": "2d7aae4d362faf3a2fba5f3585b6e0083a75b63d"
         }
       ],
-      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "source_commit": "5e86e5aaaa442b69c1bfc7c10e8bf5da7ab68526",
       "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
       "historical_ci_url": null,
