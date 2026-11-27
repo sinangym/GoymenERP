@@ -9,11 +9,11 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.WorkInbox;
 /// W1-A (AI-D31, AI-D32): the invoice line COGS corrections prepared and waiting for approval, as Accounting lists them for
 /// the Work inbox. A proposal waits while no approved revision names it and the line's latest revision is still the one it
 /// was prepared on (the approve command refuses an approved proposal and a stale line version); it waits since it was
-/// prepared. It is approved on the invoice line COGS approval screen by a company-wide holder of
+/// prepared. Its Work purpose invokes the native command for a company-wide holder of
 /// <c>accounting.journal.reverse.approve</c> (the permission the owner binds to this approval) other than its preparer
 /// (<c>SelfApproval</c>); no other user is refused.
 /// <para>
-/// The approve command also re-reads the finalized invoice line from its owner; that check stays on the owner's screen. The
+/// The approve command also re-reads the finalized invoice line from its owner; that check remains inside the owner's command. The
 /// approve command accepts only a company-wide grant (D11: no scoped approver).
 /// </para>
 /// </summary>
@@ -25,6 +25,7 @@ internal sealed partial class AccountingInvoiceLineCogsCorrectionWorkInboxSource
     public const string ModuleName = "accounting";
     public const string KindName = "accounting.invoice-line-cogs-correction.v1";
     public const string ScreenPath = "/muhasebe/fatura-satiri-smm-onay";
+    public const string PurposePath = AccountingInvoiceLineCogsDecisionBindingV1.PurposePath;
 
     /// <summary>A COGS account correction of an invoice line is posted only with a different person's approval.</summary>
     public const string ApprovalRequiredRule = "accounting.invoice-line-cogs-correction-approval-required";

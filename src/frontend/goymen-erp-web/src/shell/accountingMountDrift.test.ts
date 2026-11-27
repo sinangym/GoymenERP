@@ -49,6 +49,7 @@ const ROUTED = [
   [CAPABILITY.accountingPeriodReopeningWorkDecision, ACCOUNTING_CAPABILITY.periodReopeningWorkDecision, ACCOUNTING_ROUTE.periodReopeningWorkDecision],
   [CAPABILITY.accountingNormalDraftWorkDecision, ACCOUNTING_CAPABILITY.normalDraftWorkDecision, ACCOUNTING_ROUTE.normalDraftWorkDecision],
   [CAPABILITY.accountingManufacturingCostDifferenceWorkDecision, ACCOUNTING_CAPABILITY.manufacturingCostDifferenceWorkDecision, ACCOUNTING_ROUTE.manufacturingCostDifferenceWorkDecision],
+  [CAPABILITY.accountingInvoiceLineCogsCorrectionWorkDecision, ACCOUNTING_CAPABILITY.invoiceLineCogsCorrectionWorkDecision, ACCOUNTING_ROUTE.invoiceLineCogsCorrectionWorkDecision],
   [CAPABILITY.accountingPostingMappingWorkDecision, ACCOUNTING_CAPABILITY.postingMappingWorkDecision, ACCOUNTING_ROUTE.postingMappingWorkDecision],
   [CAPABILITY.accountingApprovedSourceCatalogWorkDecision, ACCOUNTING_CAPABILITY.approvedSourceCatalogWorkDecision, ACCOUNTING_ROUTE.approvedSourceCatalogWorkDecision],
   [CAPABILITY.accountingPostingQueues, ACCOUNTING_CAPABILITY.postingQueues, ACCOUNTING_ROUTE.postingQueues],
@@ -180,6 +181,20 @@ it('pairs only the manufacturing cost Work decision with its native approval per
  expect(WORK_INBOX_KINDS.filter(row=>row.kind===kind)).toEqual([{kind,module:'accounting',capability}])
  const mounted=workRoutes.filter(route=>route.path===path.slice(1));expect(mounted).toHaveLength(1)
  expect(matchRoutes(shellRoutes,path.replace(':approvalId','cccccccc-0000-4000-8000-000000000053'))?.at(-1)?.route).toBe(mounted[0])
+ expect(ACCOUNTING_ROUTE.accountPlan).toBe('/muhasebe/hesap-plani')
+ expect(ACCOUNTING_CAPABILITY.postingMappingsRead).toBe('accounting.posting-mappings.read')
+})
+
+it('pairs only the invoice line cost Work decision with its native approval permission route',()=>{
+ const kind='accounting.invoice-line-cogs-correction.v1',capability=CAPABILITY.accountingInvoiceLineCogsCorrectionWorkDecision
+ const path=`/onaylarim/${kind}/:approvalId`
+ expect(capability).toBe('accounting.invoice-line-cogs-correction.work-decision')
+ expect(ACCOUNTING_CAPABILITY.invoiceLineCogsCorrectionWorkDecision).toBe(capability)
+ expect(ACCOUNTING_ROUTE.invoiceLineCogsCorrectionWorkDecision).toBe(path)
+ expect(CAPABILITY_ROUTE[capability]).toBe(path);expect(CAPABILITY_NAV_LABEL[capability]).toBe('')
+ expect(WORK_INBOX_KINDS.filter(row=>row.kind===kind)).toEqual([{kind,module:'accounting',capability}])
+ const mounted=workRoutes.filter(route=>route.path===path.slice(1));expect(mounted).toHaveLength(1)
+ expect(matchRoutes(shellRoutes,path.replace(':approvalId','cccccccc-0000-4000-8000-000000000054'))?.at(-1)?.route).toBe(mounted[0])
  expect(ACCOUNTING_ROUTE.accountPlan).toBe('/muhasebe/hesap-plani')
  expect(ACCOUNTING_CAPABILITY.postingMappingsRead).toBe('accounting.posting-mappings.read')
 })

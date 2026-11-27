@@ -148,7 +148,7 @@ public sealed class AccountingInvoiceLineCogsCorrectionWorkInboxSourceV1Tests
         var first = result.Items![0];
         Assert.Equal(Kit.CallerText, first.PreparedBy);
         Assert.Null(first.ExcludedDeciders);
-        Assert.Equal(AccountingInvoiceLineCogsCorrectionWorkInboxSourceV1.ScreenPath, first.Link);
+        Assert.Equal(AccountingInvoiceLineCogsCorrectionWorkInboxSourceV1.PurposePath + "/" + first.ItemId.ToString("D"), first.Link);
         Assert.Equal(Kit.Start.ToUniversalTime(), first.WaitingSinceUtc);
         Assert.Equal([AccountingInvoiceLineCogsCorrectionWorkInboxSourceV1.ApprovalRequiredRule], first.Rules.Select(rule => rule.RuleCode));
         Assert.Equal([("invoice", (Guid?)invoice), ("invoice-line", line)],

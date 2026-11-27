@@ -132,7 +132,7 @@ public sealed partial class InvoiceLineCogsApprovalSafetyTests
         Assert.True(AccountingInvoiceLineCogsDecisionBindingV1.MatchesDecisionItem(snapshot.Item, detail));
         var json = JsonSerializer.Serialize(snapshot, Json); Assert.DoesNotContain("invoiceLineCogsProof", json, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("SENTETIK-account", json); Assert.DoesNotContain(snapshot.InvoiceLineCogsProof!.SourceFactsDigest, json);
-        Assert.Equal(AccountingInvoiceLineCogsCorrectionWorkInboxSourceV1.ScreenPath, snapshot.Item.Link);
+        Assert.Equal(AccountingInvoiceLineCogsCorrectionWorkInboxSourceV1.PurposePath + "/" + snapshot.Item.ItemId.ToString("D"), snapshot.Item.Link);
         user.Actor = Maker; await Assert.ThrowsAsync<UnauthorizedAccessException>(() => source.ReadDecisionAsync(context with { UserId = Maker.ToString("D") }, Proposal, default));
         await Assert.ThrowsAsync<InvalidOperationException>(() => new AccountingInvoiceLineCogsCorrectionWorkInboxSourceV1(db, new(company, new User(), authority)).ReadDecisionAsync(context, Proposal, default));
         Assert.Equal(0, store.Effects); Assert.Empty(store.Commands);

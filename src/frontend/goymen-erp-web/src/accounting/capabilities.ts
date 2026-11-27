@@ -50,6 +50,7 @@ export const ACCOUNTING_CAPABILITY = {
   /** ACC-V1 — read and approve a company draft with the narrow approval permission. */
   normalDraftApprove: 'accounting.normal-journal-drafts.approve',
   manufacturingCostDifferenceWorkDecision: 'accounting.manufacturing-cost-difference.work-decision',
+  invoiceLineCogsCorrectionWorkDecision: 'accounting.invoice-line-cogs-correction.work-decision',
   postingMappingWorkDecision: 'accounting.posting-mapping.work-decision',
   approvedSourceCatalogWorkDecision: 'accounting.approved-source-catalog.work-decision',
   journalReversalWorkDecision: 'accounting.journal-reversal.work-decision',
@@ -92,6 +93,7 @@ export const ACCOUNTING_ROUTE = {
   normalDraftDetail: '/muhasebe/normal-fisler/:draftId',
   normalDraftApprove: '/muhasebe/normal-fis-onay/:draftId',
   manufacturingCostDifferenceWorkDecision: '/onaylarim/accounting.manufacturing-cost-difference.v1/:approvalId',
+  invoiceLineCogsCorrectionWorkDecision: '/onaylarim/accounting.invoice-line-cogs-correction.v1/:approvalId',
   postingMappingWorkDecision: '/onaylarim/accounting.posting-mapping.v1/:approvalId',
   approvedSourceCatalogWorkDecision: '/onaylarim/accounting.approved-source-catalog.v1/:approvalId',
   journalReversalWorkDecision: '/onaylarim/accounting.journal-reversal.v1/:approvalId',

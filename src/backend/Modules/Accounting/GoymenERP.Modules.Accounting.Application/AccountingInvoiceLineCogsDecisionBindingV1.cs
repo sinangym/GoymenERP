@@ -8,11 +8,12 @@ public static class AccountingInvoiceLineCogsDecisionBindingV1
     public const string ModuleName = "accounting";
     public const string KindName = "accounting.invoice-line-cogs-correction.v1";
     public const string ScreenPath = "/muhasebe/fatura-satiri-smm-onay";
+    public const string PurposePath = "/onaylarim/accounting.invoice-line-cogs-correction.v1";
     public const string ApprovalRequiredRule = "accounting.invoice-line-cogs-correction-approval-required";
     public static WorkInboxItemV1? Item(Guid proposalId, Guid invoiceId, Guid lineId, Guid preparedBy, DateTimeOffset preparedAt)
     {
         if (proposalId == Guid.Empty || invoiceId == Guid.Empty || lineId == Guid.Empty || preparedBy == Guid.Empty) return null;
-        return new(ModuleName, KindName, proposalId, Caption(proposalId), preparedAt.ToUniversalTime(), ScreenPath, preparedBy.ToString("D", CultureInfo.InvariantCulture),
+        return new(ModuleName, KindName, proposalId, Caption(proposalId), preparedAt.ToUniversalTime(), PurposePath + "/" + proposalId.ToString("D", CultureInfo.InvariantCulture), preparedBy.ToString("D", CultureInfo.InvariantCulture),
             [new(ApprovalRequiredRule, null, null, null, null)],
             [new("invoice", Caption(invoiceId), invoiceId, null), new("invoice-line", Caption(lineId), lineId, null)]);
     }
