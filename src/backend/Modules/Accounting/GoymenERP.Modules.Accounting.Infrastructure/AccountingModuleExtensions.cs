@@ -104,6 +104,8 @@ public static class AccountingModuleExtensions
         services.AddScoped<IAccountingPostingAccountMappingResolverV1>(serviceProvider =>
             serviceProvider.GetRequiredService<AccountingPostingAccountMappingStoreV1>());
         services.AddScoped<AccountingPostingAccountMappingServiceV1>();
+        services.AddScoped<IAccountingPostingAccountMappingDecisionReadV1>(serviceProvider =>
+            serviceProvider.GetRequiredService<AccountingPostingAccountMappingServiceV1>());
         // B-04b: the source document acceptance port. The authority measurement is host-provided (never registered here:
         // with none composed the port answers Unavailable); no permission and no grant are added.
         services.TryAddScoped<IAccountingSourceDocumentAdmissionAuthorityV1,
