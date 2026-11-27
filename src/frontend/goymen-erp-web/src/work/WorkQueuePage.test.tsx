@@ -1,3 +1,4 @@
+import { MORNING_SUMMARY_TEXT } from './workMorningSummaryText'
 /**
  * WP1 (D5) one Work inbox in the REAL shell (router, CapabilityRoute, ShellProvider, auth boundary) over a stubbed fetch that
  * plays `GET /api/v1/work/inbox`, for an actor who holds only a native "Onaylarım" capability: the native D-05 kinds are
@@ -183,4 +184,10 @@ describe('/onaylarim/kuyruk — the one Work inbox for a native "Onaylarım" cap
     await waitFor(() => expect(router.state.location.pathname).toBe('/onaylarim/kuyruk'))
     expect(await screen.findByRole('heading', { level: 1, name: WORK_INBOX_TEXT.heading })).toBeTruthy()
   })
+})
+
+it('places the existing released morning summary on the one Work inbox without another route or queue',async()=>{
+ const {queueCalls}=installFetch([APPROVE]);await renderAt('/onaylarim/kuyruk')
+ expect(await screen.findByRole('heading',{level:2,name:MORNING_SUMMARY_TEXT.heading})).toBeTruthy()
+ expect(screen.getByTestId('work-inbox')).toBeTruthy();expect(queueCalls()).toHaveLength(0)
 })

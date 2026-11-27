@@ -1,3 +1,4 @@
+import { WorkMorningSummary } from './WorkMorningSummary'
 /**
  * W1-A / WP1 Work inbox (AI-D31, D5): `/onaylarim/kuyruk` is the ONE inbox. Its first view, "Benden karar bekleyen",
  * lists every approval waiting for the signed-in actor's decision — the four native D-05 kinds (official invoice import,
@@ -52,6 +53,7 @@ export function WorkQueuePage() {
         routeEntryGeneration={shell.routeEntryGeneration}
         enabled={inboxEnabled} />
     </section>
+    <WorkMorningSummary />
     {/* WP15 (1.16): upcoming legal deadlines, owned and computed by Settings; drawn only with settings.legal-deadlines.read. */}
     <LegalDeadlinesPanel heading />
   </section>
