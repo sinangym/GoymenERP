@@ -40,7 +40,7 @@ describe('staged native posting mapping purpose',()=>{
  it('preserves exact five command fields and cross-kind exclusivity',()=>{
   expect(isWorkDecisionRequest(request,kind)).toBe(true)
   for(const extra of [{approve:false},{reason:''},{postingAccountMappingSelection:null},{postingAccountMappingSelection:{}},{postingAccountMappingSelection:{expectedActiveMappingVersion:'0',sourceFactsDigest:'A'.repeat(64)}},{approvedSourceCatalogSelection:{expectedActiveCatalogVersion:'0'}},{delegationId:'00000000-0000-0000-0000-000000000000'}])expect(isWorkDecisionRequest({...request,...extra},kind)).toBe(false)
-  for(const other of WORK_DECISION_KINDS)expect(isWorkDecisionRequest(request,other)).toBe(false)
+  for(const other of WORK_DECISION_KINDS.filter(other=>other!==kind))expect(isWorkDecisionRequest(request,other)).toBe(false)
  })
  it.each(['missing','private','cross','foreign','identity','row-version','number','status','pending','activation','same-maker','default-date','bad-date','default-utc','time','plan-bind','foreign-plan','empty-plan','duplicate-plan-id','duplicate-plan-code','empty-name','rows-empty','rows-max','row-extra','row-missing','duplicate-row','unknown-purpose','wrong-key','selector','selector-long','cogs','vat','code','ref','caption','rule','active-identity'])('fails closed on malformed/native-incompatible human %s',fault=>{
   const v=fixture(company),h=v.postingAccountMapping,m=h.mapping;let raw:unknown=v
