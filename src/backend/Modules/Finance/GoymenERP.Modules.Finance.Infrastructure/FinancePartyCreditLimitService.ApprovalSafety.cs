@@ -72,8 +72,11 @@ public sealed partial class FinancePartyCreditLimitService
                 if (faults.Count > 0)
                     throw new AggregateException("Credit limit cleanup failed; winner replay is unsafe.", [failure, .. faults]);
                 if (failure is DecisionRefusal refusal) return refusal.Result;
-                if (!replayOnly && !committed && state.SaveAttempted && !state.Saved && failure is DbUpdateException update
-                    && (update is DbUpdateConcurrencyException || update.InnerException is SqlException { Number: 2601 or 2627 }))
+                // Serializable 1205 can precede Save (including Audit) or follow Save before Commit.
+                // Only a successful owned abort above may enter one original-key read; never repeat mutation.
+                if (!replayOnly && !committed && (IsDecisionDeadlock(failure)
+                    || state.SaveAttempted && !state.Saved && failure is DbUpdateException update
+                        && (update is DbUpdateConcurrencyException || update.InnerException is SqlException { Number: 2601 or 2627 })))
                     throw new DecisionSaveRace();
                 throw;
             }
@@ -123,6 +126,9 @@ public sealed partial class FinancePartyCreditLimitService
                 throw new DecisionRefusal(refusal);
         }
     }
+
+    private static bool IsDecisionDeadlock(Exception error) => error is SqlException { Number: 1205 }
+        or DbUpdateException { InnerException: SqlException { Number: 1205 } };
 
     private sealed record OwnedDecision(string Command, IAuditTransactionWriterV1 Writer, bool ReplayOnly)
     { internal bool SaveAttempted; internal bool Saved; }

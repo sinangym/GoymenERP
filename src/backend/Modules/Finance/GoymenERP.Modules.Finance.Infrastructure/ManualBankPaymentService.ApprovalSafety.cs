@@ -77,6 +77,7 @@ internal sealed class GuardedManualBankPaymentService(ManualBankPaymentService c
             active = true;
             IDbContextTransaction? transaction = null;
             var disposed = false;
+            var committed = false;
             try
             {
                 transaction = await database.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
@@ -88,6 +89,7 @@ internal sealed class GuardedManualBankPaymentService(ManualBankPaymentService c
                 if (audit.HasPendingDrafts) throw new InvalidOperationException("Approval Audit remains pending.");
                 await core.RequireOwnedApprovalFenceAsync(context, request.PaymentId, cancellationToken);
                 await transaction.CommitAsync(cancellationToken);
+                committed = true;
                 return result;
             }
             catch (Exception error)
@@ -106,6 +108,9 @@ internal sealed class GuardedManualBankPaymentService(ManualBankPaymentService c
                     }
                 }
                 if (error is ManualBankPaymentService.OwnedApprovalRefusal refused) return refused.Result;
+                // A Serializable deadlock can occur in owner reads/Audit before Save, or after Save before Commit.
+                // Cleanup must finish first; the only recovery is one immutable original-key read.
+                if (!replayOnly && !committed && IsApprovalDeadlock(error)) throw new ApprovalSaveRace();
                 if (error is DbUpdateException update && (update is DbUpdateConcurrencyException
                     || update.InnerException is SqlException { Number: 2601 or 2627 }))
                 {
@@ -125,6 +130,8 @@ internal sealed class GuardedManualBankPaymentService(ManualBankPaymentService c
 
     private static ManualBankPaymentCommandResult Unavailable(FinanceContext context) => new(CommandOutcome.Unavailable,
         null, false, context.CorrelationId, [new("request", "manual_bank_payment_approval_unavailable")]);
+    private static bool IsApprovalDeadlock(Exception error) => error is SqlException { Number: 1205 }
+        or DbUpdateException { InnerException: SqlException { Number: 1205 } };
     private sealed class ApprovalSaveRace : Exception;
 
     public Task<ManualBankPaymentCommandResult> DraftSaveAsync(FinanceContext c, CommandMetadata m, ManualBankPaymentDraftSaveRequest r, CancellationToken t) => core.DraftSaveAsync(c, m, r, t);
