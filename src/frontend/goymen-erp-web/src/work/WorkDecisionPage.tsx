@@ -1,3 +1,4 @@
+import { PRICE_LIST_TEXT as PRICE } from '../product/priceLists/priceListText'
 import { AI_PANEL_CAPABILITY } from '../ai/aiCapabilities'
 import { WorkSalesSummary } from './WorkSalesSummary'
 import { customerReturnText as CUSTOMER_RETURN } from '../logistics/customerReturnText'
@@ -65,8 +66,9 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const attempt = useScopedCommandAttempt<WorkDecisionRequest, WorkDecisionResult>(`work-decision:${kind}:${id}`,
     (payload, key) => sendWorkDecision(company!, kind, id, payload, key), payload => isWorkDecisionRequest(payload, kind))
   // A validated historical command resolves through its native receipt, not a newer maker's preview.
+  const priceList = kind === 'product.price-list-version.v1'
   const ibanChange = kind === 'finance.bank-account-iban-change.v1'
-  const receiptRetryKind = ibanChange || kind === 'inventory.transfer-loss.v1' || kind === 'inventory.transfer-overage.v1'
+  const receiptRetryKind = priceList || ibanChange || kind === 'inventory.transfer-loss.v1' || kind === 'inventory.transfer-overage.v1'
   const historicalRetry = receiptRetryKind && attempt.hasPendingRetry
   const [reconcilingHistorical, setReconcilingHistorical] = useState(historicalRetry)
   const query = useQuery({ queryKey: [namespace, shell.routeEntryGeneration, 'work-decision', kind, id],
@@ -78,7 +80,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   if (company === null || capabilityFailClosed(shell)) return <StateBlock state={{ kind: 'no-authorized-company' }} subject={T.title} />
   // Disabling a query does not erase cached data or a refetch already in flight.
   // An IBAN receipt retry must never display a replacement proposal as its human evidence.
-  const suppressIbanPreview = ibanChange && (attempt.hasPendingRetry || reconcilingHistorical || attempt.status.kind === 'applied')
+  const suppressIbanPreview = (priceList || ibanChange) && (attempt.hasPendingRetry || reconcilingHistorical || attempt.status.kind === 'applied')
   const preview = !suppressIbanPreview && query.data?.type === 'ok-single' ? query.data.data : null
   const frozen = attempt.status.kind === 'busy' || attempt.hasPendingRetry
   const reconciledHistorical = reconcilingHistorical && !attempt.hasPendingRetry && (attempt.status.kind === 'applied' || attempt.status.kind === 'refused')
@@ -125,7 +127,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       ...(loss ? { inventoryTransferLoss: { requestNumber: preview.inventoryTransferLoss!.requestNumber, decidedAtUtc: workDecisionLocalUtc(decisionTime)! } } : {}),
       ...(kind === 'manufacturing.plan.v1' && options !== undefined ? { manufacturingPlanReapproval: { selectedLabelIds: [...selectedLabels] } } : {}) })
     if (answer.type === 'applied') {
-      if (ibanChange) setReconcilingHistorical(true)
+      if (ibanChange || priceList) setReconcilingHistorical(true)
       else void query.refetch()
     }
   }
@@ -145,7 +147,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       <p>{T.lossFrozenTime}: {frozenTransferRequest?.decidedAtUtc}</p></>}
     </div> : <StateBlock state={query.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(query.data) as RemoteViewState<unknown>}
       subject={T.title} onRetry={() => void query.refetch()} /> : <>
-      <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {(packageStandard || ibanChange || customerReturn || supplierReturn || kind === 'logistics.dispatch-note.v1' || kind === 'finance.manual-bank-payment.v1' || kind === 'finance.bank-account.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'logistics.plan-excess.v1' || overage) && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
+      <h2>{inboxKindText(kind)} · {preview.documentLabel}</h2><p>{T.version}: {(priceList || packageStandard || ibanChange || customerReturn || supplierReturn || kind === 'logistics.dispatch-note.v1' || kind === 'finance.manual-bank-payment.v1' || kind === 'finance.bank-account.v1' || kind === 'inventory.stock-scrap.v1' || kind === 'inventory.stock-count.v1' || kind === 'logistics.plan-excess.v1' || overage) && frozen ? attempt.pendingPayload?.expectedVersion : preview.sourceVersion}</p>
       <section aria-label={INBOX.rulesHeading}><h3>{INBOX.rulesHeading}</h3>
         {preview.rules.length === 0 ? <p>{T.rulesUnavailable}</p> : <ul>{preview.rules.map((rule, index) => <li key={`${rule.ruleCode}:${index}`}>
           <p>{inboxRuleText(rule.ruleCode) ?? <>{INBOX.ruleUnknown} <code>{rule.ruleCode}</code></>}</p>
@@ -199,6 +201,18 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
         <td>{line.lineNo}</td><td>{line.shipmentId}</td><td>{line.instructionLineId}</td><td>{line.sourceOrderId} / {line.sourceOrderLineId}</td>
         <td>{line.productId}</td><td>{line.unitId}</td><td>{line.quantity}</td><td>{line.quantityKg ?? T.dispatchNoKg}</td>
       </tr>)}</tbody></table></section> : null}
+      {preview.productPriceList ? <section aria-label={PRICE.listHeading}><h3>{PRICE.listHeading}</h3><dl className={styles.facts}>
+        <dt>{T.packageVersionId}</dt><dd>{preview.productPriceList.versionId}</dd><dt>{T.version}</dt><dd>{preview.productPriceList.versionNo}</dd>
+        <dt>{PRICE.name}</dt><dd>{preview.productPriceList.name}</dd><dt>{PRICE.currency}</dt><dd>{preview.productPriceList.currencyCode}</dd>
+        <dt>{PRICE.channel}</dt><dd>{PRICE.channelSales}</dd><dt>{PRICE.vatBasis}</dt><dd>{PRICE.vatExcluded}</dd>
+        <dt>{PRICE.validFrom}</dt><dd>{preview.productPriceList.validFrom}</dd><dt>{PRICE.validThrough}</dt><dd>{preview.productPriceList.validThrough ?? PRICE.none}</dd>
+        <dt>{PRICE.columns.scope}</dt><dd>{preview.productPriceList.scope.kind === 'Company' ? PRICE.scopeCompany : PRICE.scopeCustomer}</dd>
+        <dt>{T.priceListRecord}</dt><dd>{preview.productPriceList.priceListId}</dd>
+        {preview.productPriceList.scope.kind === 'Customer' ? <><dt>{T.packageCustomer}</dt><dd>{preview.productPriceList.scope.partyId} / {preview.productPriceList.scope.companyAccountId}</dd></> : null}
+      </dl><table><caption>{PRICE.linesHeading}</caption><thead><tr>{[T.priceLineNumber,PRICE.product,PRICE.priceUnit,PRICE.unitPrice,PRICE.floorUnitPrice,PRICE.lowerQuantity,PRICE.upperQuantity].map(label=><th scope="col" key={label}>{label}</th>)}</tr></thead>
+        <tbody>{preview.productPriceList.lines.map(line=><tr key={line.lineId}><td>{line.lineNo}</td><td>{line.productCode ?? PRICE.none} · {line.productName ?? PRICE.none} · {line.productId}<small>{line.lineId}</small></td>
+          <td>{line.priceUnitId}</td><td>{line.unitPrice}</td><td>{line.floorUnitPrice ?? PRICE.none}</td><td>{line.lowerQuantity}</td><td>{line.upperQuantity ?? PRICE.none}</td></tr>)}</tbody></table>
+      </section> : null}
       {preview.productPackageStandard ? <section aria-label={T.packageProposal}><h3>{T.packageProposal}</h3><dl className={styles.facts}>
         <dt>{T.packageVersionId}</dt><dd>{preview.itemId}</dd>
         <dt>{T.packageSourceKind}</dt><dd>{T.packageSourceKinds[preview.productPackageStandard.sourceKind]}</dd>

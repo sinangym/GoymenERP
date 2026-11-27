@@ -185,7 +185,7 @@ function quantityAtoms(value: string): bigint {
   return (BigInt(integer) * 1000n) + BigInt(fraction.padEnd(3, '0'))
 }
 
-function decodeScope(value: unknown): PriceListScope | null {
+export function decodePriceListScope(value: unknown): PriceListScope | null {
   if (!isObject(value)) return null
   const { kind, partyId, companyAccountId } = value
   if (kind === 'Company' && partyId === null && companyAccountId === null) return { kind, partyId, companyAccountId }
@@ -193,7 +193,7 @@ function decodeScope(value: unknown): PriceListScope | null {
   return null
 }
 
-function decodeLine(value: unknown): PriceListLine | null {
+export function decodePriceListLine(value: unknown): PriceListLine | null {
   if (!isObject(value)) return null
   const { lineId, lineNo, productId, productCode, productName, priceUnitId, unitPrice, floorUnitPrice, lowerQuantity, upperQuantity } = value
   if (!isText(lineId) || !isPositiveCount(lineNo) || !isText(productId) || !isNullableText(productCode) || !isNullableText(productName)
@@ -210,7 +210,7 @@ function decodeVersion(value: unknown): PriceListVersion | null {
     || (status !== 'Draft' && status !== 'Planned' && status !== 'Active' && status !== 'Ended')
     || !isDate(validFrom) || !(validThrough === null || isDate(validThrough)) || !isText(createdAtUtc) || !isText(createdBy)
     || !isNullableText(publishedAtUtc) || !isNullableText(publishedBy) || !Array.isArray(lines)) return null
-  const decoded = lines.map(decodeLine)
+  const decoded = lines.map(decodePriceListLine)
   if (decoded.some((line) => line === null)) return null
   const typedLines = decoded as PriceListLine[]
   if (new Set(typedLines.map((line) => line.lineId)).size !== typedLines.length
@@ -228,7 +228,7 @@ function decodeVersion(value: unknown): PriceListVersion | null {
 export function decodePriceListView(value: unknown): PriceListView | null {
   if (!isObject(value)) return null
   const { id, name, currencyCode, channel, vatBasis, version, createdAtUtc, updatedAtUtc, activeVersionNo, draftVersionNo, versions } = value
-  const scope = decodeScope(value.scope)
+  const scope = decodePriceListScope(value.scope)
   if (scope === null) return null
   if (!isText(id) || !isText(name) || !isText(currencyCode) || !isText(channel) || !isText(vatBasis)
     || !isText(version) || !VERSION.test(version) || !isText(createdAtUtc) || !isText(updatedAtUtc)
@@ -255,7 +255,7 @@ export function decodePriceListView(value: unknown): PriceListView | null {
 function decodeSummary(value: unknown): PriceListSummary | null {
   if (!isObject(value)) return null
   const { id, name, currencyCode, channel, vatBasis, version, activeVersionNo, activeValidFrom, draftVersionNo, versionCount, updatedAtUtc } = value
-  const scope = decodeScope(value.scope)
+  const scope = decodePriceListScope(value.scope)
   if (scope === null) return null
   if (!isText(id) || !isText(name) || !isText(currencyCode) || !isText(channel) || !isText(vatBasis) || !isText(version)
     || !isNullablePositiveCount(activeVersionNo) || !(activeValidFrom === null || isDate(activeValidFrom))

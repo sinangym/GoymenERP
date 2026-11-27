@@ -129,7 +129,7 @@ internal sealed partial class ProductPriceListVersionWorkInboxSourceV1(
     public const string ModuleName = "product";
     public const string KindName = "product.price-list-version.v1";
 
-    /// <summary>A draft price version is published by someone who neither created nor edited it.</summary>
+    /// <summary>ROL-D18 permits an authorized creator or editor to publish the draft price version.</summary>
     public const string PublicationRequiredRule = "product.price-list-version-publication-required";
 
     /// <summary>The version would replace an earlier published version of the same list.</summary>
@@ -236,7 +236,8 @@ internal sealed partial class ProductPriceListVersionWorkInboxSourceV1(
 
         var link = WorkInboxCompanyWideFenceV1.Link(ScreenPath, row.PriceListId);
         var label = row.Name + " v" + row.VersionNo.ToString(CultureInfo.InvariantCulture);
-        item = new WorkInboxItemV1(ModuleName, KindName, row.VersionId, label, row.CreatedAtUtc.ToUniversalTime(), link,
+        var decisionLink = "/onaylarim/" + KindName + "/" + row.VersionId.ToString("D");
+        item = new WorkInboxItemV1(ModuleName, KindName, row.VersionId, label, row.CreatedAtUtc.ToUniversalTime(), decisionLink,
             row.CreatedBy, rules, [new("price-list", row.Name, row.PriceListId, link)], excluded);
         return true;
     }

@@ -21,7 +21,7 @@ export const MASTER_DATA_INBOX_TEXT: WorkInboxModuleText = {
     'product.package-standard-approval-required': 'Paket standardı sürümü hazırlayandan farklı bir kişinin kararıyla yürürlüğe girer',
     'product.package-standard-entries': 'Sürümdeki ürün kaydı sayısı',
     'product.package-standard-customer-entries': 'Sürümdeki müşteriye özel kayıt sayısı',
-    'product.price-list-version-publication-required': 'Taslak fiyat sürümünü oluşturan veya düzenleyen dışında biri yayımlar',
+    'product.price-list-version-publication-required': 'ROL-D18: Yetkili hazırlayan veya düzenleyen de fiyat sürümünü yayımlayabilir',
     'product.price-list-next-version': 'Yayımlanınca önceki fiyat sürümünün yerine geçecek yeni sürüm',
   },
   roles: {

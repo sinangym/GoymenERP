@@ -32,5 +32,7 @@ export function priceListDetailPath(priceListId: string): string {
 }
 
 /** Company-scoped package-standard approval purpose; no Product master or price-list browse grant. */
+export const PRICE_LIST_WORK_CAPABILITY = 'price-lists.price-list-version.work-decision'
+export const PRICE_LIST_WORK_ROUTE = '/onaylarim/product.price-list-version.v1/:approvalId'
 export const PACKAGE_STANDARD_WORK_CAPABILITY = 'price-lists.package-standard-version.work-decision'
 export const PACKAGE_STANDARD_WORK_ROUTE = '/onaylarim/product.package-standard-version.v1/:approvalId'

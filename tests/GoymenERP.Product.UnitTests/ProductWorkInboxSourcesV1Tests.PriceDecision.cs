@@ -22,7 +22,7 @@ public sealed partial class ProductWorkInboxSourcesV1Tests
         Assert.NotNull(snapshot); Assert.Equal("7", snapshot.SourceVersion); Assert.True(snapshot.Pending);
         Assert.Equal((list.Id, target.VersionId, 2), (snapshot.ProductPriceListProof!.PriceListId, snapshot.ProductPriceListProof.VersionId, snapshot.ProductPriceListProof.VersionNo));
         Assert.Equal(["SENTETIK-editor"], snapshot.Item.ExcludedDeciders);
-        Assert.Equal("/fiyat-listeleri/" + list.Id, snapshot.Item.Link);
+        Assert.Equal("/onaylarim/product.price-list-version.v1/" + target.VersionId, snapshot.Item.Link);
         Assert.Contains(ProductPriceListPermissionsV1.Read, asked); Assert.Contains(ProductPriceListPermissionsV1.Publish, asked);
         Assert.DoesNotContain("productPriceListProof", JsonSerializer.Serialize(snapshot, ProductPriceListWire.Json));
     }

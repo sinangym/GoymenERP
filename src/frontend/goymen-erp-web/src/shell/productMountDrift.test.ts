@@ -1,7 +1,7 @@
 import { matchRoutes } from 'react-router'
 import { workRoutes } from '../work/workRoutes'
 import { WORK_INBOX_KINDS } from '../work/workInboxKinds'
-import { PACKAGE_STANDARD_WORK_CAPABILITY, PACKAGE_STANDARD_WORK_ROUTE } from '../product/priceLists/capabilities'
+import { PRICE_LIST_WORK_CAPABILITY, PRICE_LIST_WORK_ROUTE, PACKAGE_STANDARD_WORK_CAPABILITY, PACKAGE_STANDARD_WORK_ROUTE } from '../product/priceLists/capabilities'
 /**
  * The shell mounts exactly the capability ids the Product lane declares.
  *
@@ -116,5 +116,14 @@ it('mounts the exact company-scoped package decision beside unchanged global Pro
  expect(matchRoutes(workRoutes,'/onaylarim/product.package-standard-version.v1/cccccccc-0000-4000-8000-000000000001')?.at(-1)?.route.path).toBe('onaylarim/product.package-standard-version.v1/:approvalId')
  expect(WORK_INBOX_KINDS.filter(row=>row.kind==='product.package-standard-version.v1')).toEqual([{kind:'product.package-standard-version.v1',module:'product',capability}])
  expect(CAPABILITY_ROUTE[CAPABILITY.productItemsList]).toBe('/urun');expect(CAPABILITY_ROUTE[CAPABILITY.productItemsDetail]).toBe('/urun/:productId')
+ expect((Object.values(CAPABILITY) as string[]).filter(value=>value.startsWith('product.')).sort()).toEqual(Object.values(PRODUCT_CAPABILITY).sort())
+})
+
+it('mounts exact price publication purpose beside unchanged native and global Product routes',()=>{
+ const capability=CAPABILITY.productPriceListWorkDecision
+ expect(capability).toBe(PRICE_LIST_WORK_CAPABILITY);expect(CAPABILITY_ROUTE[capability]).toBe(PRICE_LIST_WORK_ROUTE);expect(CAPABILITY_NAV_LABEL[capability]).toBe('')
+ expect(matchRoutes(workRoutes,'/onaylarim/product.price-list-version.v1/cccccccc-0000-4000-8000-000000000001')?.at(-1)?.route.path).toBe('onaylarim/product.price-list-version.v1/:approvalId')
+ expect(WORK_INBOX_KINDS.filter(row=>row.kind==='product.price-list-version.v1')).toEqual([{kind:'product.price-list-version.v1',module:'product',capability}])
+ expect(CAPABILITY_ROUTE[CAPABILITY.productItemsList]).toBe('/urun')
  expect((Object.values(CAPABILITY) as string[]).filter(value=>value.startsWith('product.')).sort()).toEqual(Object.values(PRODUCT_CAPABILITY).sort())
 })

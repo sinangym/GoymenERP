@@ -3,7 +3,7 @@
  * for the signed-in actor's decision in the committed company, oldest first, each with the permission it waits on, its
  * duration and the owner's modelless explanation card (rule results and the records it rests on).
  *
- * The server already lists only kinds the actor may approve and never the actor's own records (maker ≠ checker). The
+ * The server already lists only kinds the actor may approve and enforces each owner's maker rule (ROL-D18 permits an authorized price-list preparer). The
  * answer is judged whole: exact members, real GUIDs, UTC instants, owner-scoped kinds and rule codes, relative links,
  * invariant decimal text, a duration whose numbers exist only when it is `Defined`, and every item belonging to a source
  * listed as `Ready` with the same module, permission and duration class. Anything else is not this contract.

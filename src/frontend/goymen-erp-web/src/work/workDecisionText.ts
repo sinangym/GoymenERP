@@ -1,4 +1,5 @@
 export const WORK_DECISION_TEXT = {
+  priceListRecord: 'Fiyat listesi kaydı', priceLineNumber: 'Satır no',
   packageProposal: 'Karar verilecek paket standardı sürümü', packageVersionId: 'Sürüm kaydı', packageSourceKind: 'Kaynak türü',
   packageSourceKinds: { Import: 'Dosyadan aktarım', Edit: 'Düzenleme' }, packageSourceLabel: 'Kaynak etiketi', packageFileName: 'Dosya adı',
   packageRecordReason: 'Hazırlama gerekçesi', packagePreparedBy: 'Hazırlayan', packagePreparedAt: 'Hazırlama zamanı (UTC)',

@@ -93,7 +93,8 @@ public sealed partial class ProductWorkInboxSourcesV1Tests
 
         Assert.Equal(draft.VersionId, item.ItemId);
         Assert.Equal(("product.price-list-version.v1", "SENTETIK Liste v2"), (item.Kind, item.DocumentLabel));
-        Assert.Equal("/fiyat-listeleri/" + list.Id.ToString("D"), item.Link);
+        Assert.Equal("/onaylarim/product.price-list-version.v1/" + item.ItemId.ToString("D"), item.Link);
+        Assert.Equal("/fiyat-listeleri/" + list.Id.ToString("D"), Assert.Single(item.References).Link);
         Assert.Equal("SENTETIK-maker", item.PreparedBy);
         Assert.Equal(["SENTETIK-editor"], item.ExcludedDeciders);
         Assert.False(item.Excludes("SENTETIK-editor"));

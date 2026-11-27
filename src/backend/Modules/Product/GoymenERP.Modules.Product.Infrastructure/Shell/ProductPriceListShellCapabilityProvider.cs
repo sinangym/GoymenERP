@@ -15,7 +15,11 @@ namespace GoymenERP.Modules.Product.Infrastructure.Shell;
 public sealed class ProductPriceListShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "PRODUCT-PRICE-LISTS";
-    public const string OwnerContractVersion = "1.1";
+    public const string OwnerContractVersion = "1.2";
+
+    public const string PriceListWorkCapabilityId = "price-lists.price-list-version.work-decision";
+    public const string PriceListWorkRoutePath = "/onaylarim/product.price-list-version.v1/:approvalId";
+    public const string PriceListWorkScreenId = "PRODUCT-PRICE-LIST-WORK-DECISION";
 
     public const string PackageStandardWorkCapabilityId = "price-lists.package-standard-version.work-decision";
     public const string PackageStandardWorkRoutePath = "/onaylarim/product.package-standard-version.v1/:approvalId";
@@ -56,6 +60,10 @@ public sealed class ProductPriceListShellCapabilityProvider : IShellCapabilityPr
             ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
             ShellCapabilityScopeRequirement.CompanyWide, [ProductPriceListPermissionsV1.Read, ProductPriceListPermissionsV1.Publish],
             ImplementationAvailable: true, ParentCapabilityId: DetailCapabilityId),
+        new ShellCapabilityDeclaration(PriceListWorkCapabilityId, PriceListWorkCapabilityId,
+            PriceListWorkRoutePath, PriceListWorkScreenId,
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide, [ProductPriceListPermissionsV1.Read, ProductPriceListPermissionsV1.Publish], ImplementationAvailable: true),
         new ShellCapabilityDeclaration(PackageStandardWorkCapabilityId, PackageStandardWorkCapabilityId,
             PackageStandardWorkRoutePath, PackageStandardWorkScreenId,
             ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
