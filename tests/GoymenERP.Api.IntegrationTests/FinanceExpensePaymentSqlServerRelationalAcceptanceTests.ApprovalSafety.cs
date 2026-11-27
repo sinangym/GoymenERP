@@ -33,10 +33,10 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
                 var staged = scope.Db.ChangeTracker.Entries<ExpensePaymentRow>().Any(e => e.Entity.Id == id && e.Entity.Version == 2);
                 if (staged && scope.Writer.HasPendingDrafts) sawPending = true;
                 if (save.Saved) savedFences++;
-                // Save post-fence (1), wrapper post-native (2), immediately before Commit (3).
+                // Save post-fence (1), receipt before/after Commands (2/3), wrapper post-native (4), immediately before Commit (5).
                 var reached = phase == "before-save" ? staged && scope.Writer.HasPendingDrafts
                     : phase == "after-audit" ? staged && sawPending && !scope.Writer.HasPendingDrafts
-                    : phase == "precommit" ? savedFences >= 3 : save.Saved;
+                    : phase == "precommit" ? savedFences >= 5 : save.Saved;
                 if (!deny || !reached) return PermissionDecision.Allowed;
                 observed = true;
                 if (phase == "actor") { scope.User.Actor = "SENTETIK-other"; return PermissionDecision.Allowed; }
@@ -46,7 +46,7 @@ public sealed partial class FinanceExpensePaymentSqlServerRelationalAcceptanceTe
             };
             var key = "expense-late-" + id;
             Assert.Equal(CommandOutcome.Denied, (await scope.Approve(id, key)).Outcome); Assert.True(observed);
-            if (phase == "precommit") Assert.Equal(3, savedFences);
+            if (phase == "precommit") Assert.Equal(5, savedFences);
             if (phase is "before-save" or "after-audit") Assert.False(save.Saved);
             scope.AssertClean(); await ApprovalSafetyDurable(run, id, false, 0);
             deny = false; scope.User.Actor = Approver; scope.User.Member = true; scope.Company.Set(CompanyA); save.Saved = false;

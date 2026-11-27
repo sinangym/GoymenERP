@@ -19,9 +19,10 @@ namespace GoymenERP.Modules.Finance.Infrastructure.WorkInbox;
 /// the actual value and nothing else. The treasury account is a bank or a cash account as the payment's source kind says.
 /// </para>
 /// </summary>
-internal sealed class FinanceExpensePaymentWorkInboxSourceV1(
+internal sealed partial class FinanceExpensePaymentWorkInboxSourceV1(
     FinanceDbContext dbContext,
-    FinanceWorkInboxFence fence) : IWorkInboxSourceV1
+    FinanceWorkInboxFence fence,
+    IExpensePaymentService? owner = null) : IWorkInboxSourceV1
 {
     public const string ModuleName = "finance";
     public const string KindName = "finance.expense-payment.v1";

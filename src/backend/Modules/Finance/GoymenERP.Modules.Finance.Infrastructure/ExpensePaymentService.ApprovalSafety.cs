@@ -37,6 +37,8 @@ public sealed partial class ExpensePaymentService
                 // Exact native authority, maker/reviser, version, cash-passivation, attempt and Audit behavior.
                 var result = await ApproveAsync(context, metadata, request, token);
                 if (result.Outcome is CommandOutcome.Denied or CommandOutcome.Unavailable) throw new ExpenseApprovalRefusal(result);
+                if (result.Outcome == CommandOutcome.Succeeded && (state.Saved || result.IsReplay))
+                    result = result with { DecisionReceipt = await ReadDecisionReceiptAsync(context, metadata, request, result, token) };
                 await RequireFence(); RequireFlushed();
                 if (result.Outcome == CommandOutcome.Succeeded && !result.IsReplay && !state.Saved)
                     throw new InvalidOperationException("Expense approval has no saved native command receipt.");
@@ -116,8 +118,9 @@ public sealed partial class ExpensePaymentService
     private sealed class ExpenseApprovalRace : Exception;
 }
 
-internal sealed class GuardedExpensePaymentService(ExpensePaymentService core) : IExpensePaymentService
+internal sealed class GuardedExpensePaymentService(ExpensePaymentService core) : IExpensePaymentService, IExpensePaymentDecisionReadV1
 {
+    public Task<ReadResult<ExpensePaymentDecisionDetailV1>> ReadDecisionAsync(FinanceContext c, Guid id, Func<CancellationToken, Task> fence, CancellationToken t) => core.ReadDecisionAsync(c, id, fence, t);
     public Task<ExpensePaymentCommandResult> ApproveAsync(FinanceContext c, CommandMetadata m, ApproveExpensePaymentRequest r, CancellationToken t) => core.RunOwnedApprovalAsync(c, m, r, t);
     public Task<ExpensePaymentCommandResult> DraftSaveAsync(FinanceContext c, CommandMetadata m, ExpensePaymentDraftSaveRequest r, CancellationToken t) => core.DraftSaveAsync(c, m, r, t);
     public Task<ExpensePaymentCommandResult> RecordAsync(FinanceContext c, CommandMetadata m, RecordExpensePaymentRequest r, CancellationToken t) => core.RecordAsync(c, m, r, t);

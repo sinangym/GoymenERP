@@ -82,7 +82,10 @@ public sealed record ExpensePaymentCommandResult(
     ExpensePaymentView? Resource,
     bool IsReplay,
     string OriginalCorrelationId,
-    IReadOnlyList<ValidationIssue> Issues);
+    IReadOnlyList<ValidationIssue> Issues)
+{
+    [JsonIgnore] public ExpensePaymentDecisionReceiptV1? DecisionReceipt { get; init; }
+}
 
 /// <summary>
 /// One expense item. <paramref name="Code"/> is a stable technical key the client turns into its localized label;
