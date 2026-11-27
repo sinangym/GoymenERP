@@ -21,7 +21,7 @@ const uuid = (value: unknown): value is string => typeof value === 'string' && v
 const same = (left: string, right: string) => left.toLowerCase() === right.toLowerCase()
 const version = (value: string) => value === value.trim() && isPositiveInt64Text(value)
 const exact = (value: unknown, keys: readonly string[]): value is Record<string, unknown> => typeof value === 'object'
-  && value !== null && !Array.isArray(value) && hasExactKeys(value, keys)
+  && value !== null && !Array.isArray(value) && hasExactKeys(value as Record<string, unknown>, keys)
 
 // Only the existing owner's closed, no-price/no-people/no-free-text surface is accepted. Native row
 // version and the released source digest are distinct; neither is computed from the other here.

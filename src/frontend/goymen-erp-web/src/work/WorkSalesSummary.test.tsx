@@ -65,7 +65,7 @@ it.each([
   expect(screen.queryByRole('button', { name: T.request })).toBeNull(); expect(calls.some(call => call.url.endsWith('/ai/ask'))).toBe(false)
 })
 
-it.each([[], ['sales.order-drafts.approve'], [AI_PANEL_CAPABILITY], ['sales.drafts.detail']])('never treats approval or partial access as Sales read authority %j', async caps => {
+it.each([{ caps: [] }, { caps: ['sales.order-drafts.approve'] }, { caps: [AI_PANEL_CAPABILITY] }, { caps: ['sales.drafts.detail'] }])('never treats approval or partial access as Sales read authority %j', async ({ caps }) => {
   const calls = install({ capabilities: caps }); mount()
   await waitFor(() => expect(calls.some(call => call.url.endsWith('/shell/capabilities'))).toBe(true))
   expect(calls.some(call => call.url.endsWith('/ai/capabilities') || call.url.endsWith('/ai/ask'))).toBe(false)
