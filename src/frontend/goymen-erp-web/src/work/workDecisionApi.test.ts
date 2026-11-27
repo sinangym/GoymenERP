@@ -83,3 +83,36 @@ it('accepts only the native current Rejected projection for a replayed request a
  fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,kind:'sales.invoice.v1'}),{status:200,headers}))
  expect((await sendWorkDecision(company,'sales.invoice.v1',id,approve,'original-key')).type).toBe('unknown')
 })
+
+it.each(['Finalized', 'OfficiallyCancelled'])('accepts ordinary invoice approval replay at native current %s only with matching receipt scope and correlation', async state => {
+ const invoiceKind='sales.invoice.v1'
+ const body={companyId:company,kind:invoiceKind,itemId:id,state,replayed:true,originalCorrelationId:'original'}
+ const headers={'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'}
+ const fetch=vi.fn(async()=>new Response(JSON.stringify(body),{status:200,headers}))
+ vi.stubGlobal('fetch',fetch)
+ expect((await sendWorkDecision(company,invoiceKind,id,request,'original-key')).type).toBe('applied')
+ for(const delta of [{companyId:id},{itemId:company},{kind:'sales.subcontract-invoice.v1'},{replayed:false},{originalCorrelationId:'other'},{extra:true},
+  ...['Draft','PendingApproval','Rejected','Cancelled','Matched','Unknown'].map(state=>({state}))]) {
+  fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,...delta}),{status:200,headers}))
+  expect((await sendWorkDecision(company,invoiceKind,id,request,'original-key')).type).toBe('unknown')
+ }
+ fetch.mockImplementation(async()=>new Response(JSON.stringify({...body,replayed:false}),{status:200}))
+ expect((await sendWorkDecision(company,invoiceKind,id,request,'original-key')).type).toBe('unknown')
+ const invalidReceiptHeaders: Record<string,string>[]=[{}, {'Idempotency-Replayed':'true'}, {...headers,'Idempotency-Original-Correlation-Id':'other'}]
+ for(const invalidHeaders of invalidReceiptHeaders) {
+  fetch.mockImplementation(async()=>new Response(JSON.stringify(body),{status:200,headers:invalidHeaders}))
+  expect((await sendWorkDecision(company,invoiceKind,id,request,'original-key')).type).toBe('unknown')
+ }
+ fetch.mockImplementation(async()=>new Response(JSON.stringify(body),{status:200,headers}))
+ expect((await sendWorkDecision(company,invoiceKind,id,{...request,approve:false,reason:'Ret'},'original-key')).type).toBe('unknown')
+})
+
+it('keeps subcontract immutable approval and other owner results strict when ordinary invoice current state support is added', async () => {
+ for(const kind of ['sales.subcontract-invoice.v1','sales.order-draft.v1','purchasing.request.v1','finance.cash-account.v1'] as const) {
+  for(const state of ['Finalized','OfficiallyCancelled']) {
+   vi.stubGlobal('fetch',vi.fn(async()=>new Response(JSON.stringify({companyId:company,kind,itemId:id,state,replayed:true,originalCorrelationId:'original'}),
+    {status:200,headers:{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'}})))
+   expect((await sendWorkDecision(company,kind,id,request,'original-key')).type).toBe('unknown')
+  }
+ }
+})

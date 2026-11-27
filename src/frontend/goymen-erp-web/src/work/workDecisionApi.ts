@@ -54,8 +54,13 @@ export async function sendWorkDecision(company: string, kind: WorkDecisionKind, 
     // withdrawal/draft/submission cannot follow a recorded approval, and rejection is terminal.
     const currentPurchaseRejection = kind === 'purchasing.request.v1' && request.approve
       && record(body) && body.replayed === true && body.state === 'Rejected'
+    // Ordinary invoice receipts read the current invoice. Matching keeps Approved; only
+    // finalization and proved official cancellation can follow its recorded approval.
+    // Subcontract receipts reconstruct their immutable lifecycle outcome instead.
+    const currentInvoiceApproval = kind === 'sales.invoice.v1' && request.approve
+      && record(body) && body.replayed === true && (body.state === 'Finalized' || body.state === 'OfficiallyCancelled')
     return record(body) && hasExactKeys(body, ['companyId', 'kind', 'itemId', 'state', 'replayed', 'originalCorrelationId'])
-      && same(body.companyId, company) && body.kind === kind && same(body.itemId, id) && (body.state === state || currentPurchaseRejection)
+      && same(body.companyId, company) && body.kind === kind && same(body.itemId, id) && (body.state === state || currentPurchaseRejection || currentInvoiceApproval)
       && typeof body.replayed === 'boolean' && text(body.originalCorrelationId) && replayHeadersAgree(response.headers, body.replayed, body.originalCorrelationId)
       ? { type: 'applied', data: body as unknown as WorkDecisionResult, replayed: body.replayed } : { type: 'unknown', reason: 'unexpected' }
   }
