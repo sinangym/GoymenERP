@@ -1080,10 +1080,10 @@
       "sources": [
         {
           "path": "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/NormalJournalDraftLifecycleV1.cs",
-          "line": 166,
+          "line": 170,
           "anchor": "Task<AccountingApiResult<NormalJournalDraftViewV1>> ApproveAsync(",
-          "sha256": "a54ea5553bc3bb0437dded9902e0497d89745dd0fe9366344262aa4a33e984b7",
-          "git_blob": "c06bdbb4a55bb26e8c1a7fb7b9df7d535bfed7c9"
+          "sha256": "96405ea66eb360d6131b824b2d78c099caf440ca2cc5460f2fa1a9499476cdf3",
+          "git_blob": "7a9999bc7050f3086acebd53ec05ea148549fa45"
         }
       ],
       "tests": [
@@ -1095,7 +1095,7 @@
           "git_blob": "ab6d10d190a7e08aec808bc43d3fbf9eecc40234"
         }
       ],
-      "source_commit": "39a0f3e5552cb48d2f788bc08d76da29ff32390f",
+      "source_commit": "a1c45b30fdb0d74b38e21007d655c36c9209d61a",
       "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
       "historical_ci_url": null,
@@ -1140,12 +1140,47 @@
         "historical_ci_url": null
       },
       "local_validation": {
-        "source_commit": "90df96db2129b759f4acd869f027ecd982b861c3",
-        "accounting_unit": 808,
+        "source_commit": "21d1fecbbe6d5de2ce49b9691975dd08dd73110f",
+        "accounting_unit": 859,
         "skipped": 0,
-        "composition_source_commit": "39a0f3e5552cb48d2f788bc08d76da29ff32390f",
-        "composition": "Included in1199 controlled host tests; SQL connection deliberately not opened.",
-        "sql": "8 native guard SQL Fact sources compiled but NOT_RUN; no business acceptance."
+        "composition_source_commit": "21d1fecbbe6d5de2ce49b9691975dd08dd73110f",
+        "composition": "Included in1262 controlled host tests; actualSQL not opened. Original command receipt, lossless human view and explicit PeriodId Work source-paired; not runtime acceptance.",
+        "frontend_source_commit": "7c944b060422942bdc5a5b40e712ddf3e5517853",
+        "frontend": "9actualfiles1144PASS0skip; fullTSC0;20filelint0errors0warnings. Separate-head evidence.",
+        "period_prerequisite_source_commit": "a1c45b30fdb0d74b38e21007d655c36c9209d61a",
+        "period_prerequisite": "Accounting867/Finance2518/controlledHost1262PASS0skip at a1c45; API refresh references=false0errors0warnings, not a full all-reference build. Native period safety only, no owner human read/Work/UI.",
+        "sql": "Accounting160 SQL source names compiled; actualSQL NOT_RUN. No historical CI result transferred to this source."
+      },
+      "historical_source_checkpoint_39a": {
+        "source_commit": "39a0f3e5552cb48d2f788bc08d76da29ff32390f",
+        "sources": [
+          {
+            "path": "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Application/NormalJournalDraftLifecycleV1.cs",
+            "line": 166,
+            "anchor": "Task<AccountingApiResult<NormalJournalDraftViewV1>> ApproveAsync(",
+            "sha256": "a54ea5553bc3bb0437dded9902e0497d89745dd0fe9366344262aa4a33e984b7",
+            "git_blob": "c06bdbb4a55bb26e8c1a7fb7b9df7d535bfed7c9"
+          }
+        ],
+        "tests": [
+          {
+            "path": "tests/GoymenERP.Accounting.UnitTests/NormalJournalDraftLifecycleV1Tests.cs",
+            "line": 16,
+            "anchor": "public async Task Create_only_authority_never_approves_a_normal_draft()",
+            "sha256": "e8619e01d4d9205138a304a60ca6b6bd1c683cdd723e10c92de7617795dfb212",
+            "git_blob": "ab6d10d190a7e08aec808bc43d3fbf9eecc40234"
+          }
+        ],
+        "historical_evidence": "SOURCE_AND_TEST_ONLY",
+        "historical_ci_url": null,
+        "local_validation": {
+          "source_commit": "90df96db2129b759f4acd869f027ecd982b861c3",
+          "accounting_unit": 808,
+          "skipped": 0,
+          "composition_source_commit": "39a0f3e5552cb48d2f788bc08d76da29ff32390f",
+          "composition": "Included in1199 controlled host tests; SQL connection deliberately not opened.",
+          "sql": "8 native guard SQL Fact sources compiled but NOT_RUN; no business acceptance."
+        }
       }
     },
     {

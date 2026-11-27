@@ -1560,14 +1560,21 @@
         "tests/GoymenERP.Api.IntegrationTests/AccountingShellRegistrationTests.cs:113",
         "tests/GoymenERP.Api.IntegrationTests/AccountingShellRegistrationTests.cs:73",
         "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:28",
-        "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:45"
+        "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:45",
+        "tests/GoymenERP.Accounting.UnitTests/NormalJournalDraftLifecycleV1Tests.PeriodApprovalSafety.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AccountingSqlServerRelationalAcceptanceTests.PeriodApprovalSafety.cs"
       ],
       "inbox_read_semantics": "NOT_VERIFIED",
       "owner_decision_semantics": "NOT_VERIFIED",
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Native period approval/reopening owned safety140498330/fdff4a53b/901576dbb integrated. Existing maker/period/carry policy unchanged; fresh late Finance carry-read fences preserved. Native prerequisite only; owner human read/typed original receipt/Work source/purpose/UI absent. Accounting867 and Finance2518 at a1c45 PASS0skip; controlledHost1262PASS0skip at the same a1c45 head. ActualSQL NOT_RUN; source tests do not establish business acceptance.",
+      "latest_source_evidence": {
+        "source_commit": "a1c45b30fdb0d74b38e21007d655c36c9209d61a",
+        "scope": "Native safety prerequisite only",
+        "sql": "NOT_RUN"
+      }
     },
     {
       "flow": 48,
@@ -1589,14 +1596,21 @@
         "tests/GoymenERP.Api.IntegrationTests/AccountingShellRegistrationTests.cs:117",
         "tests/GoymenERP.Api.IntegrationTests/AccountingShellRegistrationTests.cs:74",
         "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:30",
-        "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:47"
+        "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:47",
+        "tests/GoymenERP.Accounting.UnitTests/NormalJournalDraftLifecycleV1Tests.PeriodApprovalSafety.cs",
+        "tests/GoymenERP.Api.IntegrationTests/AccountingSqlServerRelationalAcceptanceTests.PeriodApprovalSafety.cs"
       ],
       "inbox_read_semantics": "NOT_VERIFIED",
       "owner_decision_semantics": "NOT_VERIFIED",
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Native period approval/reopening owned safety140498330/fdff4a53b/901576dbb integrated. Existing maker/period/carry policy unchanged; fresh late Finance carry-read fences preserved. Native prerequisite only; owner human read/typed original receipt/Work source/purpose/UI absent. Accounting867 and Finance2518 at a1c45 PASS0skip; controlledHost1262PASS0skip at the same a1c45 head. ActualSQL NOT_RUN; source tests do not establish business acceptance.",
+      "latest_source_evidence": {
+        "source_commit": "a1c45b30fdb0d74b38e21007d655c36c9209d61a",
+        "scope": "Native safety prerequisite only",
+        "sql": "NOT_RUN"
+      }
     },
     {
       "flow": 49,
@@ -1610,19 +1624,32 @@
       "approver_proposal": "MUHM, GM",
       "duration_cell": "2 iş günü",
       "decision_note": "ÖNERİ; KLN-D17.",
-      "candidate_inbox_sources": [],
+      "candidate_inbox_sources": [
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingNormalJournalDraftWorkInboxSourceV1.cs",
+        "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingNormalJournalDraftWorkInboxSourceV1.Decision.cs"
+      ],
       "candidate_tests": [
         "tests/GoymenERP.Api.IntegrationTests/AccountingPermissionRegistrationTests.cs:21",
         "tests/GoymenERP.Finance.UnitTests/FinanceShellCapabilityProviderTests.cs:41",
         "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:34",
-        "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:51"
+        "tests/GoymenERP.Identity.UnitTests/AccountingPermissionRegistrationTests.cs:51",
+        "tests/GoymenERP.Accounting.UnitTests/NormalJournalDraftLifecycleV1Tests.DecisionReceipt.cs",
+        "tests/GoymenERP.Accounting.UnitTests/AccountingNormalJournalDraftWorkInboxSourceV1.DecisionTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/WorkNormalJournalDraftDecisionHostTests.cs",
+        "src/frontend/goymen-erp-web/src/work/WorkDecisionPage.test.tsx"
       ],
       "inbox_read_semantics": "NOT_VERIFIED",
       "owner_decision_semantics": "NOT_VERIFIED",
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native normal-journal whole approval bound to guarded AccountingStore with same scoped real Audit writer. Accounting808 at90df and real-module composition included in controlledHost1199 at39a.8 SQL sources compiled, actualSQLNOT_RUN. New owner-read/receipt/Work adapter branches not yet integrated; this is a native prerequisite, not runtime flow acceptance."
+      "limitation": "Flow49 source-paired normal-journal owner read/private genuine receipt/explicit PeriodId/strict lossless human preview and native owned approve.42native/42frontend/0staged. Accounting859/Host1262 at21d; final7c9-file UI1144 plus TSC/lint clean. No new role/grant; actualSQL/normalHTTP/browser/fullCI/pins/two K3/business acceptance pending; semantic/runtime flags unchanged.",
+      "latest_source_evidence": {
+        "source_commit": "a1c45b30fdb0d74b38e21007d655c36c9209d61a",
+        "publication_source_commit": "21d1fecbbe6d5de2ce49b9691975dd08dd73110f",
+        "ui_source_commit": "7c944b060422942bdc5a5b40e712ddf3e5517853",
+        "runtime_acceptance": "NOT_RUN"
+      }
     },
     {
       "flow": 50,
@@ -2021,11 +2048,12 @@
     }
   ],
   "closure": "For each flow verify real inbox listing, owner decision, company/scope, maker-checker exceptions, expected version, replay and audit. Do not replace owner rules with proposal cells.",
-  "source_extension": "At0046bc8947740b963b7d7a88885de6b8dab97b87:41 native/39 paired frontend/2 staged CreditMovement/CashExchangeBookValue; no unknown frontend kind. All64 semanticsNOT_VERIFIED/runtimeNOT_RUN;verified_runtime_flows0;41packages/50references unchanged.",
+  "source_extension": "Ata1c45b30fdb0d74b38e21007d655c36c9209d61a:42 native/42 paired frontend/0 staged, exact source sets equal including Flow49 normal-journal. Flow47/48 native safety prerequisites do not add a Work kind. Gerçek SQL/normal HTTP/tarayıcı/tam CI/pinler/iki bağımsız exact-head K3 ve işletme kabulü bekler. 64 semantik NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows=0; 41 paket/50 referans korunur.",
   "historical_source_extension": "Atcc379ff28f74d5810ed51ad537ebece821440d72 exact source sets match29native/29paired frontend kinds, including Product package-standard; staged0. Native Product Publish safety is not a30th purpose. verified_runtime_flows stays0; all64 actualSQL/HTTP/browser/CI/K3 acceptances remain NOT_RUN. Earlier exact-head evidence stays separate; new Node batch751PASS/1FAIL is not752PASS.",
   "historical_source_extensions": [
     "Atb1cacee89f805a05959b5b79af034270b80b8103 source-derived sets:30native/29paired frontend; only product.price-list-version.v1 staged, no unknown frontend kind. Historicalcc379 exact29/29 remains valid only at that head. verified_runtime_flows=0; all64 semantics/runtime remain NOT_VERIFIED/NOT_RUN.",
-    "At43ebf5ec240e23f7e3c56443e5a2b10c68e2adf4 live WorkDecisionRegistrationV1.Kinds and WORK_DECISION_KINDS derive31native/30paired; only finance.party-credit-limit.v1 staged, no unknown frontend kind. Price-list purpose is now paired. Historical b1 30native/29paired/1staged and cc379 29/29 remain exact-head records. verified_runtime_flows=0; all64 semantics/runtime stay NOT_VERIFIED/NOT_RUN;41packages/50references unchanged. Corrected checkpointc42ed290f5c20a59065f79b70718e98adae926b3 retains31/30/1; staged constant is not a mounted capability."
+    "At43ebf5ec240e23f7e3c56443e5a2b10c68e2adf4 live WorkDecisionRegistrationV1.Kinds and WORK_DECISION_KINDS derive31native/30paired; only finance.party-credit-limit.v1 staged, no unknown frontend kind. Price-list purpose is now paired. Historical b1 30native/29paired/1staged and cc379 29/29 remain exact-head records. verified_runtime_flows=0; all64 semantics/runtime stay NOT_VERIFIED/NOT_RUN;41packages/50references unchanged. Corrected checkpointc42ed290f5c20a59065f79b70718e98adae926b3 retains31/30/1; staged constant is not a mounted capability.",
+    "At0046bc8947740b963b7d7a88885de6b8dab97b87:41 native/39 paired frontend/2 staged CreditMovement/CashExchangeBookValue; no unknown frontend kind. All64 semanticsNOT_VERIFIED/runtimeNOT_RUN;verified_runtime_flows0;41packages/50references unchanged."
   ],
   "historical_checkpoint_c42": {
     "source_commit": "c42ed290f5c20a59065f79b70718e98adae926b3",
@@ -2326,5 +2354,124 @@
     "peers": "Full bounded independent owner/source/UI/publication/guard/DI and fixture delta reads completed; no reported open P0/P1/P2 within these scopes. These are not the two final K3 reviews.",
     "sql": "Finance417 and Accounting154 unique SQL source names, including8 new normal approval facts. Sources compiled; actual SQL NOT_RUN. Normal guard added no schema migration.",
     "limits": "ActualSQL/normalHTTP/browser/fullCI/pins/two exact-head K3 and business acceptance remain pending; all64 semantic flags NOT_VERIFIED/runtimeNOT_RUN, verified_runtime_flows0. Own branches with new owner work are not counted as integrated."
+  },
+  "normal_unordered_and_period_checkpoint": {
+    "source_commit": "a1c45b30fdb0d74b38e21007d655c36c9209d61a",
+    "source_kinds": {
+      "backend": 42,
+      "paired_frontend": 42,
+      "staged": [],
+      "scope": "Kinds, not the64 approval-flow rows"
+    },
+    "checks": {
+      "migration_and_staged_host": {
+        "source_commit": "78a10a1d89b56681fcf19c98a4adc09bac5f3d0e",
+        "purchasing_unit": {
+          "source_commit": "78a10a1d89b56681fcf19c98a4adc09bac5f3d0e",
+          "passed": 1382,
+          "failed": 0,
+          "skipped": 0,
+          "seconds": 36.1683518
+        },
+        "accounting_unit": {
+          "source_commit": "78a10a1d89b56681fcf19c98a4adc09bac5f3d0e",
+          "passed": 859,
+          "failed": 0,
+          "skipped": 0,
+          "seconds": 10.2556923
+        },
+        "controlled_host": {
+          "source_commit": "78a10a1d89b56681fcf19c98a4adc09bac5f3d0e",
+          "passed": 1262,
+          "failed": 0,
+          "skipped": 0,
+          "seconds": 237.7137254
+        }
+      },
+      "published_inventory_fixed": {
+        "source_commit": "21d1fecbbe6d5de2ce49b9691975dd08dd73110f",
+        "accounting_unit": {
+          "source_commit": "21d1fecbbe6d5de2ce49b9691975dd08dd73110f",
+          "passed": 859,
+          "failed": 0,
+          "skipped": 0,
+          "seconds": 9.6975685
+        },
+        "controlled_host": {
+          "source_commit": "21d1fecbbe6d5de2ce49b9691975dd08dd73110f",
+          "passed": 1262,
+          "failed": 0,
+          "skipped": 0,
+          "seconds": 66.841563
+        }
+      },
+      "master_and_final_frontend": {
+        "source_commit": "7c944b060422942bdc5a5b40e712ddf3e5517853",
+        "api_full": {
+          "exit": 0,
+          "errors": 0,
+          "warnings": 0,
+          "seconds": 170.6709321,
+          "mode": "Release all references; OpenAPI generation disabled"
+        },
+        "purchasing_unit": {
+          "source_commit": "7c944b060422942bdc5a5b40e712ddf3e5517853",
+          "passed": 1429,
+          "failed": 0,
+          "skipped": 0,
+          "seconds": 35.3712203
+        },
+        "frontend": {
+          "test_files": 9,
+          "passed": 1144,
+          "failed": 0,
+          "skipped": 0,
+          "seconds": 89.0675085,
+          "tsc_exit": 0,
+          "tsc_seconds": 49.8041307,
+          "lint_exit": 0,
+          "lint_files": 20,
+          "lint_errors": 0,
+          "lint_warnings": 0,
+          "lint_seconds": 0.212485
+        }
+      },
+      "period_native_prerequisite": {
+        "source_commit": "a1c45b30fdb0d74b38e21007d655c36c9209d61a",
+        "accounting_unit": {
+          "source_commit": "a1c45b30fdb0d74b38e21007d655c36c9209d61a",
+          "passed": 867,
+          "failed": 0,
+          "skipped": 0,
+          "seconds": 33.2745552
+        },
+        "finance_unit": {
+          "source_commit": "a1c45b30fdb0d74b38e21007d655c36c9209d61a",
+          "passed": 2518,
+          "failed": 0,
+          "skipped": 0,
+          "seconds": 43.1463415
+        },
+        "api_refresh": {
+          "exit": 0,
+          "seconds": 21.7165508,
+          "mode": "Warm refresh, not a new all-reference build",
+          "errors": 0,
+          "warnings": 0
+        },
+        "controlled_host": {
+          "source_commit": "a1c45b30fdb0d74b38e21007d655c36c9209d61a",
+          "passed": 1262,
+          "failed": 0,
+          "skipped": 0,
+          "seconds": 74.0234132,
+          "scope": "Complete integration-source compiled; controlled host/native DI/helper tests, not actual SQL/HTTP/browser"
+        }
+      },
+      "original_failures": "61fdec8ff55355f48b913e65f07387455b5edf05 Accounting858PASS/1FAIL/0skip: exact ScreenID inventory omitted the new standalone route; Host NOT_RUN. Test-only21d fixes exact inventory; same assertions retained. UI21d9files1144PASS0skip with TSC0 and lint0/3warnings. Decoder/render split and strict captured-header fixture2096 remove these warnings; final7c9files1144PASS0skip/lint20files0errors0warnings is a separate-head run. Original logs retained; previous39a/90df/2985 results remain historical."
+    },
+    "sql": "Accounting160/Finance418/Purchasing203 unique SQL source names. Source compilation is not actual SQL; all actual SQL NOT_RUN.",
+    "limits": "Gerçek SQL/normal HTTP/tarayıcı/tam CI/pinler/iki bağımsız exact-head K3 ve işletme kabulü bekler. 64 semantik NOT_VERIFIED/runtime NOT_RUN; verified_runtime_flows=0; 41 paket/50 referans korunur.",
+    "reference": "UYGULAMA_PAKETLERI_2026-11-26.json -> T2/WP8.execution.normal_unordered_and_period_checkpoint"
   }
 }
