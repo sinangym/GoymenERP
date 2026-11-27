@@ -269,7 +269,17 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyTaxIdent
         return result;
     }
 
-    public async Task<CounterpartyCommandExecution> DecideTaxIdentityChangeAsync(
+    public Task<CounterpartyCommandExecution> DecideTaxIdentityChangeAsync(
+        Guid partyId, DecideCounterpartyTaxIdentityChange command,
+        CounterpartyCommandMetadata metadata, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        return RunIdentityDecisionAsync(DecideTaxIdentityChangeCommandName, CounterpartyTaxIdentityPermissionsV1.Approve,
+            partyId, command.ExpectedVersion, metadata,
+            token => DecideTaxIdentityChangeCoreAsync(partyId, command, metadata, token), cancellationToken);
+    }
+
+    private async Task<CounterpartyCommandExecution> DecideTaxIdentityChangeCoreAsync(
         Guid partyId, DecideCounterpartyTaxIdentityChange command,
         CounterpartyCommandMetadata metadata, CancellationToken cancellationToken)
     {

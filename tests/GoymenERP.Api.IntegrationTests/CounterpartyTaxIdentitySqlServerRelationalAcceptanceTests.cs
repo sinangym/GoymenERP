@@ -26,7 +26,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// Actors: the group administrator is the maker (it ALSO holds approve, so its refusal is the maker-checker rule, not a
 /// missing grant); company-a-user / company-b-user are the checkers of their companies.
 /// </summary>
-public sealed class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
+public sealed partial class CounterpartyTaxIdentitySqlServerRelationalAcceptanceTests
 {
     private const string Vkn = "1234567890";
     private const string OtherVkn = "9876543217";

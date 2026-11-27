@@ -25,7 +25,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// the active-company account as the existence fence; and the forward-fix migration guard. Both permissions are granted
 /// here only on the disposable database; no shipped role carries them.
 /// </summary>
-public sealed class CounterpartyLegalNameSqlServerRelationalAcceptanceTests
+public sealed partial class CounterpartyLegalNameSqlServerRelationalAcceptanceTests
 {
     private const string ProposeCommand = "counterparty.party.legal-name.change-request.v1";
     private const string DecideCommand = "counterparty.party.legal-name.change-decision.v1";

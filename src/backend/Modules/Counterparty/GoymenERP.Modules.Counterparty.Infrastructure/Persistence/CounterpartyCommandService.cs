@@ -30,7 +30,8 @@ internal sealed partial class CounterpartyCommandService(
     TimeProvider timeProvider,
     ISettingsEInvoiceScenarioPolicyProviderV1? eInvoiceScenarioPolicy = null,
     IUserDirectoryReadPortV1? userDirectory = null,
-    ICompanyLifecycleReadPortV1? companyLifecycle = null)
+    ICompanyLifecycleReadPortV1? companyLifecycle = null,
+    IAuditTransactionWriterV1? identityDecisionAuditWriter = null)
     : ICounterpartyCommandService, ICounterpartyContactInformationService
 {
     private const int CommandExecutionSchemaVersion = 1;
@@ -403,6 +404,13 @@ internal sealed partial class CounterpartyCommandService(
         CancellationToken cancellationToken,
         Func<CancellationToken, Task>? beforeSave = null)
     {
+        if (identityDecision is { } decision)
+        {
+            if (decision.CommandName != commandName)
+                throw new InvalidOperationException("An identity decision cannot write another command's receipt.");
+            decision.KeyHash = idempotencyKeyHash;
+            decision.RequestHash = requestHash;
+        }
         dbContext.CommandExecutions.Add(CommandExecution.Complete(new CommandExecutionData(
             Guid.NewGuid(),
             metadata.CompanyId,
@@ -419,19 +427,25 @@ internal sealed partial class CounterpartyCommandService(
 
         try
         {
+            if (identityDecision is { } savingDecision) await savingDecision.Fence(cancellationToken);
             if (beforeSave is not null)
             {
                 await beforeSave(cancellationToken);
             }
 
             await dbContext.SaveChangesAsync(cancellationToken);
+            if (identityDecision is { } savedDecision)
+            {
+                savedDecision.ReceiptProven = true;
+                await savedDecision.Fence(cancellationToken);
+            }
             return new CounterpartyCommandExecution(
                 response,
                 false,
                 metadata.CorrelationId);
         }
         catch (DbUpdateException exception) when (
-            concurrencyContext is not null
+            identityDecision is null && concurrencyContext is not null
             && (exception is DbUpdateConcurrencyException || IsDatedHistoryRace(exception)))
         {
             dbContext.ChangeTracker.Clear();
@@ -468,7 +482,7 @@ internal sealed partial class CounterpartyCommandService(
                 cancellationToken: cancellationToken,
                 beforeSave: beforeSave);
         }
-        catch (DbUpdateException)
+        catch (DbUpdateException) when (identityDecision is null)
         {
             dbContext.ChangeTracker.Clear();
             var winner = await FindCommandExecutionAsync(
