@@ -116,10 +116,12 @@ public sealed class FinancePeriodCarryForwardSession : IAsyncDisposable
         var row = await db.PeriodCarryVouchers.AsNoTracking().SingleOrDefaultAsync(x => x.Id == reversal.VoucherId
             && x.ClosureId == reversal.ClosureId, cancellationToken)
             ?? throw new InvalidOperationException("The Finance carry voucher was not found.");
+        await FenceAsync(cancellationToken);
         if (Hash(row.SourceJson + "|" + row.LinesJson) != row.SourceHash)
             throw new InvalidOperationException("The immutable carry source is inconsistent.");
         if (await db.PeriodCarryReversals.AnyAsync(x => x.VoucherId == row.Id || x.Id == reversal.Id, cancellationToken))
             throw new InvalidOperationException("The Finance carry voucher was already reversed.");
+        await FenceAsync(cancellationToken);
         db.PeriodCarryReversals.Add(new FinancePeriodCarryReversalRow { Id = reversal.Id, CompanyId = companyId,
             ClosureId = row.ClosureId, VoucherId = row.Id, RecordedBy = reversal.ActorId,
             RecordedAtUtc = reversal.RecordedAtUtc, Reason = reversal.Reason, SourceHash = row.SourceHash });
