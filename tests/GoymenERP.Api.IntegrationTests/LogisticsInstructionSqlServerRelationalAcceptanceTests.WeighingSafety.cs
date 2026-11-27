@@ -21,7 +21,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             var note = await KilogramNoteAsync(run);
             await using var scope = KilogramStore(run, CompanyA, interceptAudit);
             var source = (await scope.Store.ReadSourceAsync(note))!;
-            var record = KilogramRecord(run, source);
+            var record = approve ? WeighingSafetyPendingRecord(run, source) : KilogramRecord(run, source);
             if (approve) await scope.Store.StoreAsync(run.Envelope("weigh-seed"), Hash("seed"), record, source, _ => Task.CompletedTask);
             var envelope = run.Envelope("weigh-retry") with { ActorId = approve ? "SENTETIK-independent-checker" : run.Envelope("unused").ActorId };
             var hash = Hash("weigh-retry"); var observed = false;
@@ -57,12 +57,15 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             await using (var seed = KilogramStore(run, CompanyA))
             {
                 var source = (await seed.Store.ReadSourceAsync(note))!;
-                await seed.Store.StoreAsync(run.Envelope("weigh-entry-seed"), Hash("seed"), KilogramRecord(run, source), source, _ => Task.CompletedTask);
+                var record = approve ? WeighingSafetyPendingRecord(run, source) : KilogramRecord(run, source);
+                await seed.Store.StoreAsync(run.Envelope("weigh-entry-seed"), Hash("seed"), record, source, _ => Task.CompletedTask);
             }
             foreach (var boundary in new[] { "missing-writer", "borrowed", "dirty", "audit", "ambient" })
             {
                 await using var scope = KilogramStore(run, CompanyA);
-                var source = (await scope.Store.ReadSourceAsync(note))!; var record = KilogramRecord(run, source);
+                var source = (await scope.Store.ReadSourceAsync(note))!;
+                var record = approve ? (await scope.Store.FindByDispatchNoteAsync(note))! : KilogramRecord(run, source);
+                if (approve) Assert.Equal(WeighingDifferenceRecordStatus.PendingApproval, record.Status);
                 var store = boundary == "missing-writer"
                     ? new LogisticsWeighingDifferenceStore(scope.Context, scope.Company, scope.Collector, TimeProvider.System) : scope.Store;
                 await using var borrowed = boundary == "borrowed" ? await scope.Context.Database.BeginTransactionAsync() : null;
@@ -112,7 +115,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
     {
         await using var run = await Run.StartAsync(); var note = await KilogramNoteAsync(run);
         await using var scope = KilogramStore(run, CompanyA);
-        var source = (await scope.Store.ReadSourceAsync(note))!; var record = KilogramRecord(run, source);
+        var source = (await scope.Store.ReadSourceAsync(note))!; var record = WeighingSafetyPendingRecord(run, source);
         await scope.Store.StoreAsync(run.Envelope("weigh-record"), Hash("record"), record, source, _ => Task.CompletedTask);
         var envelope = run.Envelope("weigh-approve") with { ActorId = "SENTETIK-independent-checker" };
         var original = await scope.Store.MutateAsync(envelope, Hash("approve"), LogisticsWeighingDifferenceCommandsV1.Approve,
@@ -129,6 +132,24 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         Assert.Equal(LogisticsWriteOutcome.Replayed, replay.Outcome); Assert.Equal(original.Record.Version, replay.Record.Version);
         Assert.Equal(original.OriginalCorrelationId, replay.OriginalCorrelationId); Assert.True(fences > 0);
         Assert.Equal(2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM logistics.WeighingDifferenceAttempts WHERE RecordId=@id", ("@id", record.RecordId)));
+    }
+
+    // Safety tests need an actual pending approval. The existing KilogramRecord intentionally covers
+    // its 0.001 kg difference with 1 kg free stock and must retain its NoExcess/Recorded semantics.
+    private static WeighingDifferenceRecord WeighingSafetyPendingRecord(Run run, WeighingDifferenceSourceV1 source)
+    {
+        var original = KilogramRecord(run, source);
+        var evaluation = WeighingDifferenceCalculator.Evaluate(source.Lines.Select(line => new WeighingDifferenceNoteLine(
+            line.LineNo, line.ShipmentId, line.ProductId, Kg(line.Quantity))).ToArray(),
+            [new(source.Lines[0].ProductId, Kg(5.001m), Kg(0m))], WeighingDifferencePolicy.Unreadable);
+        var record = WeighingDifferenceRecord.Create(CompanyA, original.RecordId, source.DispatchNoteId, source.InstructionId,
+            evaluation, source.EnteredBy.Append(run.Actor), source.EnteredByComplete, run.Actor, original.RecordedAtUtc,
+            original.KilogramAllocation);
+        Assert.Equal(0.001m, record.Evaluation.TotalExcessKg.Value);
+        Assert.Equal(WeighingDifferenceDecision.ApprovalRequired, record.Evaluation.Decision);
+        Assert.Equal(WeighingDifferenceRecordStatus.PendingApproval, record.Status);
+        Assert.True(record.EnteredByComplete);
+        return record;
     }
 
     private static AuditEventDraft WeighingCallerDraft(Run run) => new(CompanyA, "logistics.weighing-difference.recorded.v1",
