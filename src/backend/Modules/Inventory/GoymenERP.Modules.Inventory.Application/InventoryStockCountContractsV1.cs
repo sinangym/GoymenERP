@@ -105,7 +105,8 @@ public sealed record InventoryStockCountViewV1(
 public sealed record InventoryStockCountResultV1(
     InventoryStockCountViewV1 Count,
     bool IsReplay,
-    string OriginalCorrelationId);
+    string OriginalCorrelationId,
+    [property: JsonIgnore] bool CommandReceiptProven = false);
 
 /// <summary>The newest counts of one label, newest first.</summary>
 public sealed record InventoryLabelStockCountsV1(

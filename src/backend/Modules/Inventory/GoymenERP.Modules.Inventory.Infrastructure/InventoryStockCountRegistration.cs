@@ -1,6 +1,8 @@
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
+using GoymenERP.BuildingBlocks.Work;
 
 namespace GoymenERP.Modules.Inventory.Infrastructure;
 
@@ -19,6 +21,8 @@ public static class InventoryStockCountRegistration
         services.AddScoped<IInventoryStockCountReaderV1>(provider => provider.GetRequiredService<InventoryStore>());
         services.AddScoped<IInventoryStockCountCommandV1, InventoryStockCountCommandService>();
         services.AddScoped<IInventoryStockCountQueryV1, InventoryStockCountQueryService>();
+        services.TryAddScoped<WorkInbox.InventoryWorkInboxFence>();
+        services.AddScoped<IWorkInboxSourceV1, WorkInbox.InventoryStockCountWorkInboxSourceV1>();
         return services;
     }
 }

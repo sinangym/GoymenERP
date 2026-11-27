@@ -370,7 +370,7 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
             after: JsonSerializer.Serialize(view, Json), reason);
 
         await SaveStockCountAsync(freshAuthorityFence, cancellationToken);
-        return new(view, false, decision.CorrelationId);
+        return new(view, false, decision.CorrelationId, CommandReceiptProven: true);
     }
 
     public async Task<InventoryLabelStockCountsV1?> ReadStockCountsAsync(
@@ -470,7 +470,7 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
 
         var stored = JsonSerializer.Deserialize<StockCountCommandResult>(prior.ResultJson, Json)
             ?? throw StockCountError(503, InventoryStockCountCodesV1.Unavailable);
-        return new(stored.Count, true, prior.CorrelationId);
+        return new(stored.Count, true, prior.CorrelationId, CommandReceiptProven: command == DecideStockCountCommand);
     }
 
     /// <summary>The same count id: the same content is the stored count again; other content is a conflict.</summary>
@@ -678,7 +678,7 @@ public sealed partial class InventoryStore : IInventoryStockCountWriterV1, IInve
         && balance.ProductId == line.ProductId
         && balance.Block == line.Block;
 
-    private static InventoryStockCountViewV1 StockCountView(StockCountRow row, StockCountDecisionRow? decision,
+    internal static InventoryStockCountViewV1 StockCountView(StockCountRow row, StockCountDecisionRow? decision,
         string? costStatus = null)
     {
         var difference = row.CountedKg - row.BookKg;

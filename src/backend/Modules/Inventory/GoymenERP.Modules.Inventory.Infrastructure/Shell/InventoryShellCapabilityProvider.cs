@@ -12,7 +12,7 @@ namespace GoymenERP.Modules.Inventory.Infrastructure.Shell;
 public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "INVENTORY";
-    public const string OwnerContractVersion = "1.18";
+    public const string OwnerContractVersion = "1.19";
     // STK-S8: actual Settings/departure owners are registered by the host; their unavailable/legacy fences still apply.
     // 1.8 / STK-S18: future supply allocation read route and separately granted write control; no grant is added.
     public const string FutureAllocationReadCapabilityId = InventoryPermissionManifestV1.FutureAllocationRead;
@@ -243,6 +243,10 @@ public sealed class InventoryShellCapabilityProvider : IShellCapabilityProvider
             "/onaylarim/inventory.opening-cost.v1/:approvalId", "W-INV-OPENING-COST-01",
             ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
             ShellCapabilityScopeRequirement.CompanyWide, [ErpPermissions.InventoryOpeningCostApprove], ImplementationAvailable: true),
+        new("inventory.stock-count.work-decision", "inventory.stock-count-work-decision",
+            "/onaylarim/inventory.stock-count.v1/:approvalId", "W-INV-STOCK-COUNT-01",
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide, [ErpPermissions.InventoryStockCountApprove], ImplementationAvailable: false),
         ];
     }
 }
