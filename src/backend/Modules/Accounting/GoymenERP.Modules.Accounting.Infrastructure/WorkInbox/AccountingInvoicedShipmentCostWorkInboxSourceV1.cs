@@ -9,7 +9,8 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.WorkInbox;
 /// </summary>
 internal sealed class AccountingInvoicedShipmentCostWorkInboxSourceV1(
     AccountingDbContext dbContext,
-    AccountingWorkInboxFence fence) : AccountingInventoryCostWorkInboxSourceBaseV1(dbContext, fence)
+    AccountingWorkInboxFence fence,
+    IAccountingInventoryCostDecisionReadV1? decisionReader = null) : AccountingInventoryCostWorkInboxSourceBaseV1(dbContext, fence, decisionReader)
 {
     public const string KindName = "accounting.invoiced-shipment-cost.v1";
     public const string ScreenPath = "/muhasebe/sevk-smm-onay";

@@ -9,8 +9,16 @@ public sealed partial class AccountingInventoryCostStoreV1
         Func<CancellationToken, Task> freshFence, CancellationToken token = default) =>
         posting.RunInventoryCostApprovalAsync(this, db, audit, auditWriter, attempt, freshFence, token);
     private bool IsOwnedApproval => posting.IsOwnedInventoryCostApproval(this, db, audit, auditWriter);
-    private Task ApprovalReadFence(CancellationToken token) => IsOwnedApproval
-        ? posting.ReadOwnedInventoryCostApprovalAsync(this, db, audit, auditWriter, token) : Task.CompletedTask;
+    private async Task ApprovalReadFence(CancellationToken token)
+    {
+        if (decisionReadFence is not null)
+        {
+            // A reentrant command cannot borrow a read callback captured outside its exact native ownership.
+            if (decisionReadOwnedAtEntry != IsOwnedApproval) throw Refuse("inventory_cost_source_unavailable");
+            await decisionReadFence(token);
+        }
+        else if (IsOwnedApproval) await posting.ReadOwnedInventoryCostApprovalAsync(this, db, audit, auditWriter, token);
+    }
     private async Task<T> ApprovalRead<T>(Func<Task<T>> read, CancellationToken token)
     {
         await ApprovalReadFence(token);

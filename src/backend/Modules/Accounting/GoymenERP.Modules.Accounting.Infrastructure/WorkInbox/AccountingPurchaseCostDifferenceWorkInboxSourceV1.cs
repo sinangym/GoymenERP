@@ -9,7 +9,8 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.WorkInbox;
 /// </summary>
 internal sealed class AccountingPurchaseCostDifferenceWorkInboxSourceV1(
     AccountingDbContext dbContext,
-    AccountingWorkInboxFence fence) : AccountingInventoryCostWorkInboxSourceBaseV1(dbContext, fence)
+    AccountingWorkInboxFence fence,
+    IAccountingInventoryCostDecisionReadV1? decisionReader = null) : AccountingInventoryCostWorkInboxSourceBaseV1(dbContext, fence, decisionReader)
 {
     public const string KindName = "accounting.purchase-cost-difference.v1";
     public const string ScreenPath = "/muhasebe/alis-maliyet-farki-onay";

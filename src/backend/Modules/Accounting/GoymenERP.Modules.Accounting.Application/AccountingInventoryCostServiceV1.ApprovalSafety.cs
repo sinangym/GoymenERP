@@ -12,9 +12,13 @@ public sealed partial class AccountingInventoryCostServiceV1
             return Task.FromResult(Denied<AccountingInventoryCostProposalV1>());
         token.ThrowIfCancellationRequested();
         var captured = new ApprovalCapture(companyId, actor, actorText, Permission(kind, true));
-        return store.RunApprovalAsync(replayOnly => Run("approve", captured.Permission, new { id, kind, version }, key,
-            (userId, fence, metadata) => store.ApproveAsync(id, kind, version, userId, fence, metadata, token),
-            token, captured, replayOnly), ct => ApprovalFenceAsync(captured, ct), token);
+        return store.RunApprovalAsync(async replayOnly =>
+        {
+            var answer = await Run("approve", captured.Permission, new { id, kind, version }, key,
+                (userId, fence, metadata) => store.ApproveAsync(id, kind, version, userId, fence, metadata, token),
+                token, captured, replayOnly);
+            return await AttachInventoryCostReceiptAsync(answer, id, kind, version, key, captured, token);
+        }, ct => ApprovalFenceAsync(captured, ct), token);
     }
     private async Task ApprovalFenceAsync(ApprovalCapture captured, CancellationToken token)
     {

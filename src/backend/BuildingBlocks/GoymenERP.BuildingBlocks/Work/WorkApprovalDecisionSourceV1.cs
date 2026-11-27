@@ -64,8 +64,8 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
     [JsonIgnore] public WorkPostingAccountMappingProofV1? PostingAccountMappingProof { get; init; }
 
     [JsonIgnore] public WorkManufacturingCostDifferenceProofV1? ManufacturingCostDifferenceProof { get; init; }
-
     [JsonIgnore] public WorkInvoiceLineCogsProofV1? InvoiceLineCogsProof { get; init; }
+    [JsonIgnore] public WorkInventoryCostProofV1? InventoryCostProof { get; init; }
 }
 
 /// <summary>Private mapping identity; a genuine original receipt binds complete rows and prepared plan facts.</summary>

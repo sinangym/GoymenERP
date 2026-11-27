@@ -18,9 +18,10 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.WorkInbox;
 /// the stored prepared signed TL amount as the actual value; no threshold exists.
 /// </para>
 /// </summary>
-internal abstract class AccountingInventoryCostWorkInboxSourceBaseV1(
+internal abstract partial class AccountingInventoryCostWorkInboxSourceBaseV1(
     AccountingDbContext dbContext,
-    AccountingWorkInboxFence fence) : IWorkInboxSourceV1
+    AccountingWorkInboxFence fence,
+    IAccountingInventoryCostDecisionReadV1? decisionReader = null) : IWorkInboxSourceV1
 {
     public const string ModuleName = "accounting";
 
@@ -63,7 +64,8 @@ internal abstract class AccountingInventoryCostWorkInboxSourceBaseV1(
                             && (!checksCancellation
                                 || !cancellations.Any(cancellation => cancellation.SourceDocumentId == source.AdmissionId))
                         orderby row.RecordedAtUtc, row.Id
-                        select new Pending(row, source.InvoiceId))
+                        select new Pending(row.Id, row.EventId, row.Version, row.PreparedBy, row.PeriodId, row.ApprovedBy, row.JournalId,
+                            row.RecordedAtUtc, row.ViewJson, source.InvoiceId))
                     .Take(maxCount + 1)
                     .ToListAsync(token);
             },
@@ -73,7 +75,7 @@ internal abstract class AccountingInventoryCostWorkInboxSourceBaseV1(
 
     private WorkInboxItemV1? Item(Pending pending)
     {
-        var row = pending.Row;
+        var row = pending;
         if (row.Id == Guid.Empty || row.EventId == Guid.Empty || pending.InvoiceId == Guid.Empty
             || row.PreparedBy is not { } preparedBy || preparedBy == Guid.Empty
             || row.PeriodId is not { } period || period == Guid.Empty
@@ -83,21 +85,15 @@ internal abstract class AccountingInventoryCostWorkInboxSourceBaseV1(
             return null;
         }
 
-        return new WorkInboxItemV1(ModuleName, Kind, row.Id, AccountingWorkInboxFence.Label(invoiceNumber, row.Id),
-            row.RecordedAtUtc.ToUniversalTime(), ScreenLink, AccountingWorkInboxFence.Actor(preparedBy),
-            [new WorkApprovalRuleResultV1(RuleCode, null, WorkInboxRulesV1.Decimal(amount), null, TlUnit)],
-            [
-                new WorkApprovalReferenceV1("invoice", AccountingWorkInboxFence.Label(invoiceNumber, pending.InvoiceId),
-                    pending.InvoiceId, null),
-                new WorkApprovalReferenceV1("period", AccountingWorkInboxFence.ShortReference(period), period, null),
-            ]);
+        return AccountingInventoryCostDecisionBindingV1.Item(CostKind, row.Id, pending.InvoiceId, invoiceNumber,
+            period, preparedBy, row.RecordedAtUtc, amount);
     }
 
     /// <summary>
     /// The stored version view must name the same proposal, invoice, preparer and period as its row (the owner refuses a
     /// view that does not, <c>inventory_cost_source_unavailable</c>); the label and amount come from it.
     /// </summary>
-    private static bool TryView(AccountingInventoryCostProposalRow row, Guid invoiceId, Guid preparedBy, Guid period,
+    private static bool TryView(Pending row, Guid invoiceId, Guid preparedBy, Guid period,
         out string? invoiceNumber, out decimal amount)
     {
         invoiceNumber = null;
@@ -142,5 +138,7 @@ internal abstract class AccountingInventoryCostWorkInboxSourceBaseV1(
         element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
         && value.TryGetGuid(out var actual) && actual == expected;
 
-    private sealed record Pending(AccountingInventoryCostProposalRow Row, Guid InvoiceId);
+    // Bounded existing ViewJson projection: no additional SourceJson, account-plan or component reads.
+    private sealed record Pending(Guid Id, Guid EventId, long Version, Guid? PreparedBy, Guid? PeriodId,
+        Guid? ApprovedBy, Guid? JournalId, DateTimeOffset RecordedAtUtc, string ViewJson, Guid InvoiceId);
 }

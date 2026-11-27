@@ -80,10 +80,12 @@ public sealed partial class AccountingInvoiceLineCogsSqlServerRelationalAcceptan
                 var staged = owner.Db.ChangeTracker.Entries<AccountingInventoryCostProposalRow>().Any(x => x.Entity.Id == setup.Id && x.Entity.Status == 3);
                 if (staged && owner.Writer.HasPendingDrafts) sawPending = true;
                 if (save.SavedProposal) savedFences++;
-                // Final proposal save: post-save1, Atomic release2, service3, runner4, final precommit5.
+                // Final proposal save: post-save1, Atomic release2, service3; receipt command fences4/5;
+                // exact result query6/7; result ReadStored8..11; prepared query12/13 + ReadStored14..17;
+                // source18/19; original journal20/21; read release22; receipt release23; runner24; final precommit25.
                 var fire = phase switch { "before-audit" => staged && owner.Writer.HasPendingDrafts,
                     "after-audit" => staged && sawPending && !owner.Writer.HasPendingDrafts && !save.SavedProposal,
-                    "precommit" => savedFences == 5, "postcommit" => tx.Commits == 1, _ => save.SavedProposal };
+                    "precommit" => savedFences == 25, "postcommit" => tx.Commits == 1, _ => save.SavedProposal };
                 if (!fire) return true; triggered = true;
                 if (phase == "actor") owner.User.Actor = Maker;
                 if (phase == "member") owner.User.Member = false;
