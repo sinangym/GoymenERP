@@ -17,7 +17,8 @@ internal sealed partial class FinanceExpensePaymentWorkInboxSourceV1 : IWorkAppr
         if (answer.Outcome != ReadOutcome.Found || answer.Resource is not { } detail || detail.Payment is not { } view
             || view.CompanyId != context.CompanyId || view.Id != itemId || !ExpensePaymentService.ValidDecisionPayment(view)
             || detail.Revisers is null || detail.DraftFactsDigest != ExpensePaymentService.DraftFactsDigest(view)
-            || DecisionItem(detail) is not { } item || item.Excludes(context.UserId)) throw new InvalidOperationException("Expense payment decision facts unavailable.");
+            || DecisionItem(detail) is not { } item) throw new InvalidOperationException("Expense payment decision facts unavailable.");
+        if (item.Excludes(context.UserId)) throw new UnauthorizedAccessException();
         return new(context.CompanyId, item, view.Version, view.Status == ExpensePaymentStatus.Draft,
             ExpensePaymentProof: new(context.CompanyId, itemId, view.PreparedBy, view.PreparedAtUtc, view.Status.ToString(),
                 detail.DraftFactsDigest, ExpensePaymentService.DecisionPreviewDigest(detail)));

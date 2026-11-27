@@ -119,6 +119,24 @@ public sealed partial class ExpensePaymentServiceTests
     }
 
     [Theory]
+    [InlineData("maker")] [InlineData("editor")]
+    public async Task Expense_source_defensively_refuses_valid_Found_maker_or_reviser_as_unauthorized_not_malformed(string actor)
+    {
+        await using var run = await Run.StartAsync(); var id = await DecisionDraft(run);
+        await using (var editor = run.Scope("editor", new AllowAll(), new UnavailableTreasuryBalanceGuard()))
+            Assert.Equal(CommandOutcome.Succeeded, (await editor.Service.DraftSaveAsync(editor.Context, Key("purpose-source-editor"), Draft() with { PaymentId = id, ExpectedVersion = "1" }, default)).Outcome);
+        await using var db = run.Context(); var company = new ApprovalCompany(Company); var user = new ApprovalUser();
+        var core = ApprovalCore(db, company, user, new DecisionReadPermission(), null);
+        var read = await core.ReadDecisionAsync(new(Company, "checker", "source-defense", null), id, _ => Task.CompletedTask, default);
+        Assert.Equal(ReadOutcome.Found, read.Outcome);
+        var owner = new FoundDecisionOwner(read.Resource!); user.Actor = actor;
+        var source = new FinanceExpensePaymentWorkInboxSourceV1(db,
+            new(company, user, new FinancePartyCreditLimitWorkInboxSourceV1Tests.FixedAuthority(true, true)), owner);
+        await Assert.ThrowsAsync<UnauthorizedAccessException>(() => source.ReadDecisionAsync(new(Company, actor, "source-defense", null), id, default));
+        Assert.Equal(1, owner.Reads); Assert.Equal(0, owner.Commands); Assert.False(db.ChangeTracker.HasChanges());
+    }
+
+    [Theory]
     [InlineData(3, "permission")] [InlineData(5, "actor")] [InlineData(7, "company")] [InlineData(9, "consumer")]
     public async Task Expense_human_preview_stops_at_each_late_owner_read_boundary_without_releasing_facts(int at, string fault)
     {
@@ -162,6 +180,22 @@ public sealed partial class ExpensePaymentServiceTests
         var result = await maker.Service.DraftSaveAsync(maker.Context, Key("purpose-draft"), cash ? CashDraft() : Draft(), default);
         Assert.Equal(CommandOutcome.Succeeded, result.Outcome); return result.Resource!.Id;
     }
+    // Controlled owner reply tests the source's additional authority guard, not an HTTP or native decision success.
+    private sealed class FoundDecisionOwner(ExpensePaymentDecisionDetailV1 detail) : IExpensePaymentService, IExpensePaymentDecisionReadV1
+    {
+        public int Reads, Commands;
+        public async Task<ReadResult<ExpensePaymentDecisionDetailV1>> ReadDecisionAsync(FinanceContext c, Guid id, Func<CancellationToken, Task> fence, CancellationToken t)
+        { await fence(t); Reads++; await fence(t); return new(ReadOutcome.Found, detail); }
+        private Task<ExpensePaymentCommandResult> UnexpectedCommand() { Commands++; throw new NotSupportedException(); }
+        public Task<ExpensePaymentCommandResult> DraftSaveAsync(FinanceContext c, CommandMetadata m, ExpensePaymentDraftSaveRequest r, CancellationToken t) => UnexpectedCommand();
+        public Task<ExpensePaymentCommandResult> ApproveAsync(FinanceContext c, CommandMetadata m, ApproveExpensePaymentRequest r, CancellationToken t) => UnexpectedCommand();
+        public Task<ExpensePaymentCommandResult> RecordAsync(FinanceContext c, CommandMetadata m, RecordExpensePaymentRequest r, CancellationToken t) => UnexpectedCommand();
+        public Task<ReadResult<ExpensePaymentPage>> ListAuthorizedAsync(FinanceContext c, string? cursor, CancellationToken t) => throw new NotSupportedException();
+        public Task<ReadResult<ExpensePaymentView>> DetailAuthorizedAsync(FinanceContext c, Guid id, CancellationToken t) => throw new NotSupportedException();
+        public Task<ReadResult<ExpenseItemCatalogView>> ExpenseItemsAuthorizedAsync(FinanceContext c, CancellationToken t) => throw new NotSupportedException();
+        public Task<ReadResult<ExpensePaymentDraftContextView>> DraftContextAuthorizedAsync(FinanceContext c, ExpensePaymentSourceKind kind, Guid id, DateOnly day, CancellationToken t) => throw new NotSupportedException();
+    }
+
     private sealed class DecisionReadPermission : IFinancePermissionPort
     {
         public bool Allowed = true; public List<(FinanceContext Context, FinanceAction Action)> Calls { get; } = [];
