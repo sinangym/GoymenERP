@@ -385,6 +385,7 @@ export function decodeWorkDecisionPreview(value: unknown, company: string, kind:
       || [value.rules[0].threshold,value.rules[0].actual,value.rules[0].deviation,value.rules[0].unit].some(field => field !== null)) return null
   }
   if (kind === 'finance.official-sales-invoice.v1') {
+    const references: readonly unknown[] = value.references
     const raw = value.officialSalesInvoice
     if (!record(raw) || !dispatchGuid(raw.companyId)) return null
     const invoice = decodeOfficialInvoice(raw, raw.companyId, isWorkPackageEffectiveDate)
@@ -399,8 +400,8 @@ export function decodeWorkDecisionPreview(value: unknown, company: string, kind:
       || [invoice.approvedAtUtc,invoice.rejectedAtUtc,invoice.withdrawnAtUtc].some(at => at !== null && !officialSalesUtc(at))
       || invoice.rejectionReason !== null && (!canonicalOwnerText(invoice.rejectionReason,1000))
       || invoice.invoiceDate != null && !isWorkPackageEffectiveDate(invoice.invoiceDate)
-      || !validOfficialSalesDynamicFacts(invoice) || value.references.length !== 3
-      || [['customer',invoice.customerPartyId],['currency',invoice.currencyId],['pdf-document',invoice.pdfDocumentId]].some(([role,target]) => value.references.filter(ref=>record(ref)&&ref.role===role&&same(ref.recordId,target!)).length!==1)
+      || !validOfficialSalesDynamicFacts(invoice) || references.length !== 3
+      || [['customer',invoice.customerPartyId],['currency',invoice.currencyId],['pdf-document',invoice.pdfDocumentId]].some(([role,target]) => references.filter(ref=>record(ref)&&ref.role===role&&same(ref.recordId,target!)).length!==1)
       || value.rules.length !== 1 || !record(value.rules[0]) || value.rules[0].ruleCode !== 'finance.official-sales-invoice-approval-required'
       || value.rules[0].threshold !== null || value.rules[0].deviation !== null || value.rules[0].unit !== null
       || !exactNativeClrAmount(value.rules[0].actual,true) || value.rules[0].actual !== exactAmountIdentity(invoice.payableAmount)) return null
