@@ -952,7 +952,8 @@
         "tests/GoymenERP.Work.UnitTests/WorkApprovalRuleServiceTests.cs:178",
         "tests/GoymenERP.Work.UnitTests/WorkApprovalRuleServiceTests.cs:217",
         "tests/GoymenERP.Work.UnitTests/WorkApprovalRuleServiceTests.cs:240",
-        "tests/GoymenERP.Work.UnitTests/WorkApprovalRuleServiceTests.cs:76"
+        "tests/GoymenERP.Work.UnitTests/WorkApprovalRuleServiceTests.cs:76",
+        "tests/GoymenERP.Api.IntegrationTests/WorkManualBankPaymentDecisionHostTests.cs"
       ],
       "inbox_read_semantics": "NOT_VERIFIED",
       "owner_decision_semantics": "NOT_VERIFIED",
@@ -1866,5 +1867,5 @@
     }
   ],
   "closure": "For each flow verify real inbox listing, owner decision, company/scope, maker-checker exceptions, expected version, replay and audit. Do not replace owner rules with proposal cells.",
-  "source_extension": "WP3 ROL-D27 role proposal shifts navigation rows only; all 64 runtime acceptances remain NOT_RUN."
+  "source_extension": "27 paired WP8 source kinds. Native manual and IBAN approval safety source compiled; Finance2026pass/skip0 at522. IBAN Work purpose/UI not yet published. All64 runtime acceptances remain NOT_RUN; actual SQL/browser/CI/K3 pending."
 }

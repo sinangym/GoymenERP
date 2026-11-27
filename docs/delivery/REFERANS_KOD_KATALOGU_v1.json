@@ -24,10 +24,17 @@
       "sources": [
         {
           "path": "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyCommandService.cs",
-          "line": 45,
+          "line": 46,
           "anchor": "public async Task<CounterpartyCommandExecution> CreateAsync(",
-          "sha256": "59c4c1b70f0cc01ea104269687d31e791431f401ebacb6c92f2eb31c4c7e7216",
-          "git_blob": "6ea6ce69a843a1de0a0fb764278389c9427ba70b"
+          "sha256": "7e26f619ba7b023abd0d64d7c2377d7918aa8fb8ac15e19de87ed67240768332",
+          "git_blob": "345fad49ddf45440c953488db8d5a119ba117188"
+        },
+        {
+          "path": "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyCommandService.CreateWithTaxIdentity.cs",
+          "anchor": "private async Task<CounterpartyCommandExecution> CreateWithTaxIdentityAsync(",
+          "line": 21,
+          "sha256": "d6f10e978b809ca08bcaa6bd009b2df54d733c0e2fa5b81bcc3ac5173a5d8971",
+          "git_blob": "f07652df53d564c3628ad403382878732672add3"
         }
       ],
       "tests": [
@@ -37,9 +44,16 @@
           "anchor": "public async Task SameIdempotencyKey_InDifferentCompanies_IsIndependent()",
           "sha256": "d7bd508e3afa6ad7a16284231c7242582fb97496c7226f76e526fe9334081f66",
           "git_blob": "7e8e61b7a71a2d1230778f8bf2dc5623bad3b156"
+        },
+        {
+          "path": "tests/GoymenERP.Api.IntegrationTests/CounterpartyAtomicCreateTaxIdentitySqlServerRelationalAcceptanceTests.cs",
+          "anchor": "public async Task Atomic_create_records_initial_tax_and_two_audits_with_a_private_receipt_and_replays_after_later_changes()",
+          "line": 29,
+          "sha256": "1a5903f01e4bb2d80471a3a29d75cfcdb4e415984a6724f0524da3aee3688cc3",
+          "git_blob": "fafe08cbaa3a5eb8e023747eaa0dfab129fe978f"
         }
       ],
-      "source_commit": "cdc4aac0c0a214fa8e2cade1b46764b1575ee8b4",
+      "source_commit": "f7aafd03c10c14d11b7c0c866f4df1d174337009",
       "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
       "historical_ci_url": null,
@@ -63,7 +77,9 @@
         "SAT-D119",
         "SAT-D57"
       ],
-      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı.",
+      "previous_source_commit": "cdc4aac0c0a214fa8e2cade1b46764b1575ee8b4",
+      "local_verification": "Atomic source75c7/1bde fully source-reviewed. API and complete integration-source builds0errors/0warnings atf7; targeted98:97pass/1normal-host deferred-shell-pin failure, including2new pure projector passes. Counterparty403/403 passed at522,skip0.7atomicSQL source Facts compiled but actualSQL/browser/CI/K3 NOT_RUN."
     },
     {
       "id": "REF-CATALOG-01",
@@ -1780,8 +1796,8 @@
           "path": "src/frontend/goymen-erp-web/src/identity/RoleSelectionPreview.tsx",
           "line": 16,
           "anchor": "export function RoleSelectionPreview(",
-          "sha256": "926c31a31992c0136df604564061eff6b8757062671278f3ef4940826b1f08f8",
-          "git_blob": "5d942c873c6876e203c3242d3bfa2d4e4c0fd31b"
+          "sha256": "f3e962f3615e13f213b80a21d688df53dd35bc5707db8bb3152a992af5076fa2",
+          "git_blob": "7af903697c83a6a2b4a103645ed11af05f5f7edd"
         },
         {
           "path": "src/frontend/goymen-erp-web/src/identity/IdentityUserManagementPage.tsx",
@@ -1796,18 +1812,18 @@
           "path": "src/frontend/goymen-erp-web/src/identity/AccessGrantPanel.test.tsx",
           "line": 21,
           "anchor": "it('uses the server critical flag to open a request instead of directly assigning a role', async () => {",
-          "sha256": "b4c762cfb1797053b6400e093fc7e2e80574323835f1d069db91fd44d48a9063",
-          "git_blob": "83b02798202e0a28c80380688f2a1265c41da97e"
+          "sha256": "26fff7f77e4b9b48826d862902a7bc19fe915052d8357ca6b3c9f4f944b360c9",
+          "git_blob": "db053fa369cf660fb996469a0329309be0ab7bb7"
         },
         {
           "path": "src/frontend/goymen-erp-web/src/identity/IdentityUserManagementRoleSelection.test.tsx",
           "line": 45,
           "anchor": "requires separate human commands for the first normal role",
-          "sha256": "428bd72955497c598b18c79b2c5ddc778670c09d782852f27e3ee3a1e82f7454",
-          "git_blob": "c9affb23a42e6859360ca675016f22551baebdb7"
+          "sha256": "adeb9e0f5187619cf745511a43aa49d059dae70c3570c2281f0c05231f6971b0",
+          "git_blob": "cfad89d7d36dd94649cf92648bcfba2202583dc3"
         }
       ],
-      "source_commit": "6a8480eff9f1fb6240cba422de0120e4cb00d6ce",
+      "source_commit": "f7aafd03c10c14d11b7c0c866f4df1d174337009",
       "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
       "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
@@ -1828,9 +1844,9 @@
         "AGENTS.md: Mimari değişmezler; owner iş kararını ayrıca seç"
       ],
       "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı.",
-      "previous_source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "previous_source_commit": "6a8480eff9f1fb6240cba422de0120e4cb00d6ce",
       "previous_historical_evidence": "HISTORICAL_CI_TREE_MATCH",
-      "local_verification": "Agent1edea19c9:35/35 scoped frontend pass, skip0; tsc/lint exit0. Six integrated file blobs equal that source. This is not SQL/browser/full CI/K3 or effective grant acceptance."
+      "local_verification": "C3 agent9357:5 complete files80/80 passed,skip0; tsc failed unused test parameter. Agent377 test-only callback fix:full panel22/22 passed,skip0; fulltsc/lint exit0. Other4 unchanged files58pass are separate-head proof. Integrated frontend blobs match377. Not native HTTP/SQL/browser/CI/K3 or effective grant acceptance."
     },
     {
       "id": "REF-MIGRATION-01",

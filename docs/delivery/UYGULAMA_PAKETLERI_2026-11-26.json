@@ -275,7 +275,7 @@
       "group": "FIRST_USE",
       "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
       "priority": "P0",
-      "risk": "K2",
+      "risk": "K3",
       "scope": "Mevcut arama ve CreateAsync akışını alış/satış formuna bağla; yetkisiz kullanıcı yalnız talep/taslak hazırlar. Yeni Party modeli açma.",
       "exclusions": [
         "Rol/grant/Critical/production/provider/secret aktivasyonu",
@@ -297,7 +297,8 @@
         "Cari owner CreateAsync ve şirket hesabı idempotency mevcut.",
         "Native CreateAsync already creates the party and active current-company account atomically; no second create/link service was added.",
         "Ready Sales, Purchasing and manual bank-payment entry points now reuse the existing native Cari form. Exact account selection requires the current owner eligibility query, not a fabricated account or mutation response alone.",
-        "The native create DTO has no VKN/TCKN field; tax identity and legal duplicate acceptance are not complete. No creation-request service/DTO or independent incoming-document/receipt-start entry was found; those remain gaps, not implemented placeholders."
+        "Optional native TaxIdentityNumber now composes existing party/account create, initial identity history, actual Audit and the original receipt in one owned transaction. Omitted/null retains exact old four-field/schema1 behavior. Non-null uses a strict private schema2 hash proof, no tax number in the public create response.",
+        "AT-009 and the dated 31 October EK17 decision keep duplicate identity as a warning, not a newly invented hard rejection. The pre-create owner probe and atomic command require their existing current permissions; no new grant or auto-merge."
       ],
       "decisions": [
         "YOL-D2",
@@ -320,12 +321,12 @@
         "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı."
       ],
       "business_acceptance": [
-        "Aynı VKN/unvanda mükerrer yaratma yok; yetki yoksa mevcut yetkiliye talep; eksik kimlikle resmi işlem veya ödeme açılmaz.",
+        "Mükerrer cari için mevcut AT-009/EK17 uyarısı ve insan teyidi korunur; mevcut cariyi normal yetkili seçim yoluyla kullanma desteklenir. Bu paket yeni sert VKN/unvan tekilliği veya otomatik merge getirmez. Yetki yoksa mevcut yetkiliye talep; eksik kimlikle resmi işlem veya ödeme açılmaz.",
         "Alış, satış, finans ve gelen belge giriş noktaları mevcut owner servisini kullanır; yetkisiz kullanıcı aktif kart yaratmaz."
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Complete tax-identity/duplicate and unauthorized-request integration through real owner contracts; connect remaining entry points when their upstream workflow exists. Real authorized browser and train acceptance pending.",
+      "next_action": "Validate native optional-tax source and bind the existing create form to the owner probe and single atomic command; preserve warning-only duplicate policy, legacy body and unknown original-key replay. Remaining request/entry/browser/train acceptance stay open.",
       "planned_owner": "Claude ekran; Codex mevcut owner sözleşmesi",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -335,6 +336,14 @@
         "tests/GoymenERP.Api.IntegrationTests/CounterpartyCompanyScopedIdempotencySqlServerRelationalAcceptanceTests.cs"
       ],
       "change_files": [
+        "src/backend/GoymenERP.Api/Contracts/CounterpartyMutationView.cs",
+        "src/backend/GoymenERP.Api/Endpoints/CounterpartyEndpoints.TaxIdentity.cs",
+        "src/backend/GoymenERP.Api/Endpoints/CounterpartyEndpoints.cs",
+        "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Application/Contracts/CounterpartyTaxIdentity.cs",
+        "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Application/Contracts/ICounterpartyCommandService.cs",
+        "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyCommandService.CreateWithTaxIdentity.cs",
+        "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyCommandService.TaxIdentity.cs",
+        "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyCommandService.cs",
         "src/frontend/goymen-erp-web/src/cari/CariCreatePage.tsx",
         "src/frontend/goymen-erp-web/src/cari/CariQuickCreate.module.css",
         "src/frontend/goymen-erp-web/src/cari/CariQuickCreate.test.tsx",
@@ -346,28 +355,38 @@
         "src/frontend/goymen-erp-web/src/purchasing/PurchaseOrderCreatePage.test.tsx",
         "src/frontend/goymen-erp-web/src/purchasing/PurchaseOrderCreatePage.tsx",
         "src/frontend/goymen-erp-web/src/sales/SalesDraftCreatePage.test.tsx",
-        "src/frontend/goymen-erp-web/src/sales/SalesDraftCreatePage.tsx"
+        "src/frontend/goymen-erp-web/src/sales/SalesDraftCreatePage.tsx",
+        "tests/GoymenERP.Api.IntegrationTests/CounterpartyAtomicCreateTaxIdentitySqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/CounterpartyMutationViewProjectorTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/CounterpartyTaxIdentityPreCreateSqlServerRelationalAcceptanceTests.cs"
       ],
       "execution": {
         "source_commits": [
           "0dc6182ab",
-          "f3ebf4963"
+          "f3ebf4963",
+          "816a146ef",
+          "75c7b7762",
+          "1bde68553"
         ],
         "agent_source_commit": "7b2ed4d6fa93f318a467a4c9cdbc073e77e05313",
         "local_checks": {
           "frontend": "Complete five affected test files: 101/101 passed, 0 skipped, 126.13s. Scoped integrated Cari/Sales/Purchasing/Finance entry files match agent source exactly.",
           "tsc": "exit 0",
           "lint": "exit 0; 0 errors, 12 existing hook/memo warnings; no broad cleanup.",
-          "Tax identity increment": "120/120 in seven affected files, skip0, tsc/scoped lint exit0 at agent e667 source integrated f3ebf4963; six pre-existing lint warnings. Source evidence, not browser/API acceptance."
+          "Tax identity increment": "120/120 in seven affected files, skip0, tsc/scoped lint exit0 at agent e667 source integrated f3ebf4963; six pre-existing lint warnings. Source evidence, not browser/API acceptance.",
+          "Pre-create duplicate read": "5 native SQL facts compiled at c1adee420; actual SQL NOT_RUN.",
+          "Atomic create": "Exactf7aafd03c10c14d11b7c0c866f4df1d174337009: API Release and complete integration-source builds0errors/0warnings; selected API98 total97pass/1fail0skip. The two new pure projector Facts passed; old normal-host CreateAndReplay test stopped at deferred shell accepted-provider pin before endpoint invocation. Original failure retained; no filter/assertion/skip change. Exact52274cbc183933228923609e46b2842dc7c0537d: Counterparty403/403 passed,skip0. Seven atomic and5 precreate SQL facts compiled, actual SQL NOT_RUN. Early atomic UI source is in progress, not accepted."
         },
         "reuse": [
           "CariCreatePage native form/probe/useCommandAttempt and strict mutation decoder",
           "Existing Sales/Purchasing owner option queries",
           "Existing Finance Cari list and canonical draft-context validation",
-          "Existing native EnterTaxIdentity command and duplicate warning/confirmation; Create remains the existing four-field contract"
+          "Existing native EnterTaxIdentity command and duplicate warning/confirmation; Create remains the existing four-field contract",
+          "Existing company-fenced FindDuplicates/TaxIdentityNumber and fresh actor/company/member/permission fence for pre-create probe",
+          "Native create/account, EnterTaxIdentity, initial identity revision, audit writer and immutable receipt; optional tax composes these, without a second create service."
         ],
         "remaining": [
-          "Pre-create legal-identity duplicate checks, foreign identity and complete tax/duplicate acceptance; current post-create tax step is not an atomic create-with-tax contract.",
+          "Early pre-create warning and atomic optional-tax UI binding remain; current UI still performs separate create/tax steps. Foreign identity and complete duplicate acceptance are not implemented.",
           "Unauthorized creation request contract/service",
           "Incoming-document and independent receipt-start entry points",
           "Real browser/API, SQL/full CI and independent review"
@@ -1573,7 +1592,13 @@
           "9fda9c514",
           "003bcd16e",
           "ea9d10803",
-          "8be2c6e0c"
+          "8be2c6e0c",
+          "2ccb6810e",
+          "68c7a4f3f",
+          "fac8445dd",
+          "1faa0cd34",
+          "a340b771d",
+          "4839e27c4"
         ],
         "reuse": [
           "existing WeighbridgeCalculator.Net",
@@ -1581,12 +1606,13 @@
           "existing Inventory customer-return participant and actual shipment trace"
         ],
         "migration": "20261127091944_AddCustomerReturnWeighing;7nullable fields,no historical rewrite;filtered company/weighing unique;Downfirst52353 before destructive operations.52352 reserved unused. Designer/snapshot normalized model body ordinal equal.",
-        "local_checks": "9e690 API compile0errors0warnings196.10s; generated56fc API compile0errors0warnings188.41s; EF10.0.8 has-pending-model-changes EXIT0 No changes. Scoped tests RUNNING, actual SQL NOT_RUN.",
+        "local_checks": "Exact56fcfa5a: generated API build0errors0warnings188.41s; EF10.0.8 has-pending-model-changes EXIT0 No changes; Logistics scoped88/88PASS0skip; integration assembly compiled including5SQL sources and nonSQL Guard/WorkHost/Safety43/43PASS0skip. Root independently parsed both TRX. First empty assets-missing exit0 without TRX retained and not counted. These checks precede provider1.16/nativeUI delta.",
         "sql": "4Logistics+1Inventory actual SQL facts inventoried/NOT_RUN. Inventory mapping test has controlled Logistics delivery/weighing source, not full cross-owner E2E.",
         "browser": "NOT_RUN",
         "hosted_ci": "NOT_RUN",
         "independent_review": "Bounded root/nonauthor source reviews, no full K3 acceptance.",
-        "new_permissions": []
+        "new_permissions": [],
+        "native_ui": "Exact4839e27c4c6c29e0eb1c5f10f5c8a52e86849908:6 native frontend files108/108PASS0skip, fulltsc exit0/50.30s,12pathlint exit0/5existing warnings. Root independently parsed108 JSON. First106/2 and107/1 fixture failures retained. Provider1.17 parent contract fixed; real candidate registry fact awaiting current .NET batch. No actual SQL/browser/CI/K3 acceptance."
       }
     },
     {
@@ -2050,7 +2076,8 @@
         "Sales invoice/order native commands and terminal decision metadata connected; approve-only purpose read avoids adding DraftsRead. Invoice command also requires existing price-read authority. Optional native reject reasons retained."
       ],
       "decisions": [
-        "YOL-D41"
+        "YOL-D41",
+        "FNS-D128"
       ],
       "depends_on": [
         "T2/WP3"
@@ -2071,7 +2098,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Verify LOJ-D22 measured return paired source and B2 source-bound summary, complete native weighing-entry UI and remaining owner adapters.26 paired source kinds do not close64-flow actual acceptance.",
+      "next_action": "Verify paired native measured-return UI and provider1.16, complete remaining owner adapters and64-flow actual acceptance. B2 grounded sales summary is scoped-tested, recommendations and other families remain closed.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2097,8 +2124,10 @@
         "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.InventoryTransferOverage.cs",
         "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.LogisticsPlanExcess.cs",
         "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceBankAccountService.cs",
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceCashAccountService.cs",
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/FinanceTreasuryTransaction.cs",
+        "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/ManualBankPaymentService.ApprovalSafety.cs",
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/Shell/FinanceShellCapabilityProvider.cs",
         "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceCashAccountWorkInboxSourcesV1.cs",
         "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/Shell/InventoryShellCapabilityProvider.cs",
@@ -2149,8 +2178,10 @@
         "src/frontend/goymen-erp-web/src/work/workDelegationApi.ts",
         "src/frontend/goymen-erp-web/src/work/workManagementText.ts",
         "src/frontend/goymen-erp-web/src/work/workRoutes.tsx",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceBankAccountSqlServerRelationalAcceptanceTests.IbanApprovalSafety.cs",
         "tests/GoymenERP.Api.IntegrationTests/FinanceCashAccountSqlServerRelationalAcceptanceTests.WorkDecisions.cs",
         "tests/GoymenERP.Api.IntegrationTests/FinanceCashAccountSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/FinanceCommandApiSqlServerRelationalAcceptanceTests.ManualBankApprovalSafety.cs",
         "tests/GoymenERP.Api.IntegrationTests/InventoryTransferOverageWorkPurposeSqlServerRelationalAcceptanceTests.cs",
         "tests/GoymenERP.Api.IntegrationTests/LogisticsInstructionSqlServerRelationalAcceptanceTests.WorkPlanExcess.cs",
         "tests/GoymenERP.Api.IntegrationTests/WorkDecisionHostTests.cs",
@@ -2158,7 +2189,9 @@
         "tests/GoymenERP.Api.IntegrationTests/WorkLogisticsPlanExcessDecisionHostTests.cs",
         "tests/GoymenERP.Api.IntegrationTests/WorkSalesDecisionHostTests.cs",
         "tests/GoymenERP.Api.IntegrationTests/WorkShellCapabilityProviderTests.cs",
+        "tests/GoymenERP.Finance.UnitTests/FinanceBankAccountIbanApprovalSafetyTests.cs",
         "tests/GoymenERP.Finance.UnitTests/FinanceShellCapabilityProviderTests.cs",
+        "tests/GoymenERP.Finance.UnitTests/ManualBankPaymentServiceTests.ApprovalSafety.cs",
         "tests/GoymenERP.Inventory.UnitTests/InventoryOpeningCostWorkInboxSourceTests.cs",
         "tests/GoymenERP.Inventory.UnitTests/InventoryShellCapabilityProviderTests.cs",
         "tests/GoymenERP.Inventory.UnitTests/InventoryTransferOverageWorkInboxSourceTests.Decision.cs",
@@ -2211,7 +2244,8 @@
           "finance.bank-account.v1",
           "inventory.stock-scrap.v1",
           "logistics.dispatch-note.v1",
-          "logistics.customer-return.v1"
+          "logistics.customer-return.v1",
+          "finance.manual-bank-payment.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -2940,11 +2974,35 @@
               "fac8445dd"
             ],
             "scope": "CustomerReturn paired Work purpose is source-published; LOJ-D22 native actual weighing/pieces and readonly7field proof bind Pending1->weighed2->terminal3, immutable original receipts, no UI kg conversion. Existing weighbridge/Inventory owner participants reused. Separate native weighing-entry control is still staged pending its UI. B2 optional sales-only summary mounts after evidence, uses actual owner version and answer receipt, and never blocks Work.",
-            "local_checks": "Initial native9e690 API build0errors0warnings196.10s; final generated56fc validation RUNNING. New a43/B2 source deltas NOT_RUN. Historical033 API389/389 and frozen2e9 UI275/275 scopes are recorded underC9; they do not cover these new changes.",
+            "local_checks": "Exact56fc API compile/EFpending0; Logistics88/88+APIguard43/43PASS0skip, before provider1.16. Work UI d9e other3files339/339PASS0skip; fixturefix48aa fullPage289/289PASS0skip/fulltsc0/lint0zero warnings. Source-only nativeUI/provider1.16 validation separate RUNNING, not accepted64flows.",
             "remaining": [
-              "Native weighing entry paired UI and final scoped validation",
+              "Native weighing-entry final scoped validation",
+              "Remaining owner decision adapters and all64 actual acceptance",
               "SQL/HTTP/browser/pins/fullCI/twoK3"
             ]
+          },
+          {
+            "source_commits": [
+              "3d1981c00",
+              "5e05fad25",
+              "71d6e2686",
+              "c1adee420",
+              "e1c4566f5",
+              "792cd00d9",
+              "1967aa7a2",
+              "52274cbc1"
+            ],
+            "scope": "Manual bank payment approval routes only to native ApproveAsync with existing permission, maker/reviser exclusions, version/key and live delegation. No reject, draft or Record/money call. Finance1.23 standalone Work capability and27-kind frontend are paired.",
+            "local_checks": "Original native safety API test fixture CS0246 fixed by1967 import only. f7aafd03c10c14d11b7c0c866f4df1d174337009: API Release and complete integration-source builds0errors/0warnings; targeted98 tests97pass/1fail0skip, sole old normal-host Counterparty test refused deferred shell owner pin before HTTP. Native safety unit fixture then failed missing same interface using;52274cbc1 import-only correction. At exact52274cbc183933228923609e46b2842dc7c0537d Finance2026/2026+Counterparty403/403 passed,skip0, including7manual and6IBAN safety entry cases. Original failures retained. Actual SQL NOT_RUN.",
+            "sql": "NOT_RUN",
+            "frontend": "Agent497:713pass/1fail0skip across8 full files. Failure was early assertion before restored source was ready; test-only af64/rootc1 retains expected version7 and awaits it. af64 full WorkDecisionPage295/295 passed, fulltsc/lint exit0 zero warnings. Other7 unchanged files419pass at497 are separate-head evidence, not714 final-head acceptance."
+          },
+          {
+            "source_commit": "e230c7360",
+            "agent_source_commit": "1daed9b3cee0dcc065d92615d452c2cb97f1a78b",
+            "scope": "Native IBAN Approve reuses existing bank owned helper via action/account/native-core parameters; existing BankApprove default, change-maker SoD, original actor/hash/receipt and fresh audit/rollback remain. No Work purpose/disclosure/UI/new grant yet. FNS-D128 is a separate explicit user decision.",
+            "local_checks": "API/integration-source compile atf7 zero errors/warnings; Finance2026 passed at522, including6 new IBAN entry cases. Five IBAN SQL facts compiled, actualSQL NOT_RUN. Full three-file independent nonauthor/root source read found no open P0/P1/P2; not K3.",
+            "sql": "NOT_RUN"
           }
         ],
         "source_commits": [
@@ -3062,9 +3120,18 @@
           "4cb71878b",
           "47d4773a9",
           "7fa0da2d7",
-          "9a6190efb"
+          "9a6190efb",
+          "3d1981c00",
+          "5e05fad25",
+          "71d6e2686",
+          "c1adee420",
+          "e1c4566f5",
+          "792cd00d9",
+          "1967aa7a2",
+          "e230c7360",
+          "52274cbc1"
         ],
-        "kind_count_scope": "26 paired source kinds; not26 accepted flows. All64 actual SQL/HTTP/browser/CI/K3 acceptance remains open.",
+        "kind_count_scope": "27 paired source kinds, not27 accepted flows. Manual native approval P1 source repair compiled and unit-tested; actual safety SQL and all64 SQL/HTTP/browser/CI/K3 acceptance remain open.",
         "staged_kinds": []
       }
     },
@@ -3350,10 +3417,11 @@
             "a57404e8a",
             "2014cdf77",
             "c880b9229",
-            "9a6190efb"
+            "9a6190efb",
+            "83be3738c"
           ],
           "scope": "Optional source-bound sales order summary reuses Ask/capabilities/strict owner tool content and actual AnswerId feedback; exact company/draft/version/citation digest proof, separate read authority, explicit human request.29component+10mount test cases authored. No recommendation/risk score/automatic Ask. Other B2 families and refusal/risk semantics remain open.",
-          "local_checks": "NOT_RUN for this source delta; no old UI/API proof transferred.",
+          "local_checks": "d9e0 frozen: API298+Summary29+Feedback12 all PASS0skip, Page288PASS/1fixtureFAIL; original failure logs retained. Fixture-only48aa head then full Page289/289PASS0skip; fulltsc exit0/50.78s,11explicitpathlint0errors0warnings. No final628 same-head full-run claim. Native UI/provider1.16 tree not covered.",
           "remaining": [
             "Scoped Node/tsc/lint",
             "Real SQL/runtime/browser/CI/K3 and other B2 families"
@@ -3689,7 +3757,7 @@
       "backlog_parent": "W5-AIGATEWAY",
       "title": "Ayar ve yetki talebi taslağı",
       "group": "TREN2",
-      "status": "SOURCE_REVIEW_REQUIRED",
+      "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
       "priority": "P1",
       "risk": "K3",
       "scope": "Etki/SoD önizlemesi; atama ve politika yayımı normal insan eylemi.",
@@ -3712,9 +3780,10 @@
       "reuse_mode": "SMALL_EXTENSION",
       "source_findings": [
         "AI-D25 forbids role/grant assignment and policy publication in AI commands; current Pipeline/Effects/Catalog already enforce the exclusion. C3 must prepare a request, never wrap normal mutation commands as an AI write tool.",
-        "Existing Identity GetUserAsync/GetRoleAsync supply effective/selected-role permission and Critical facts. AccessGrantPanel uses these real facts. No general owner SoD/affected-transactions/peer-comparison impact read contract exists.",
         "Settings Record* methods write a new active policy version; existing SoD GetAsync may auto-close/audit, so it is not a side-effect-free C3 preview source. No fabricated impact/always-unconfigured draft shell was added.",
-        "NLP-to-typed request and authoritative owner impact preview remain actual package dependencies. Existing normal human forms remain the only mutation path; no new grant/policy activation."
+        "Code-only role request impact owner reader now reuses native GetUser/GetRole with repeated current actor/company/member/AssignmentsRead fences. Sorted permission code and Critical snapshots must agree; no role-name-derived policy.",
+        "POST /api/v1/identity/access/role-request-impact reads target UserId/RoleId only; extra body/query company or approval values are refused. No assignment, approval, policy, request or audit writer is used.",
+        "This slice has no SoD/scope/affected-operations assessment: nullable HasSegregationOfDutiesConflict and ExpandsScope remain explicitly unknown. Existing native human assignment commands remain separate."
       ],
       "decisions": [
         "AI-D16",
@@ -3739,7 +3808,7 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Add the real owner read-only impact contract before binding a request preview; no fabricated SoD conflicts from permission names or fake natural-language parser. Independent WP8/C9 implementation continues.",
+      "next_action": "Validate the code-only read slice, then add authoritative missing impact and request preparation without granting roles or publishing policy; unknown is never safe.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -3750,14 +3819,67 @@
         "tests/GoymenERP.Api.IntegrationTests/AiCommandPipelineTests.cs",
         "tests/GoymenERP.Settings.UnitTests/CompanyPolicyRulesV1Tests.cs"
       ],
-      "change_files": []
+      "change_files": [
+        "src/backend/GoymenERP.Api/Endpoints/IdentityEndpoints.AccessRequestImpact.cs",
+        "src/backend/GoymenERP.Api/Endpoints/IdentityEndpoints.cs",
+        "src/backend/GoymenERP.Api/Program.cs",
+        "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Application/Contracts/IdentityAccessRequestImpactV1.cs",
+        "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/IdentityAccessRequestImpactModuleExtensions.cs",
+        "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityAccessRequestImpactReadV1.cs",
+        "src/frontend/goymen-erp-web/src/identity/AccessGrantPanel.test.tsx",
+        "src/frontend/goymen-erp-web/src/identity/IdentityUserManagementRoleSelection.test.tsx",
+        "src/frontend/goymen-erp-web/src/identity/RoleSelectionPreview.tsx",
+        "src/frontend/goymen-erp-web/src/identity/api.ts",
+        "src/frontend/goymen-erp-web/src/identity/contract.test.ts",
+        "src/frontend/goymen-erp-web/src/identity/contract.ts",
+        "src/frontend/goymen-erp-web/src/identity/identityText.ts",
+        "src/frontend/goymen-erp-web/src/identity/roleRequestImpactApi.test.ts",
+        "tests/GoymenERP.Api.IntegrationTests/IdentityAccessRequestImpactContractTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/IdentityAccessViewSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Identity.UnitTests/IdentityAccessRequestImpactReadTests.cs"
+      ],
+      "execution": {
+        "source_commits": [
+          "5fe224f0c",
+          "bad87c329",
+          "c386e31ac",
+          "f4331cfa0",
+          "f7aafd03c"
+        ],
+        "agent_source_commit": "ec6ca321a0081858cb7ee4ddc2bb097b8d5f3d88",
+        "local_checks": "At e1c4566f573dd9ba55251a7023cd0d19cbcf06e6 all Identity unit886/886 passed, skip0, including20 code-impact cases. At c1adee420 API Release/integration-source build0errors/0warnings and selected API91/91 passed, skip0, including6 strict impact wire cases. Native SQL HTTP fact compiled, actual SQL NOT_RUN. C3 UI source c386/f433 reuses existing role preview; Node validation is separate, pending.",
+        "reuse": [
+          "Native IdentityAccessReadService.GetUser/GetRole permission facts",
+          "Current authority revalidation and canonical permission/Critical catalogue",
+          "Existing Identity HTTP no-store/company/authorization pattern and SQL fixture",
+          "Existing RoleSelectionPreview, native typed POST transport, auth boundary, current user/role form and existing grant commands; no second role UI or automatic assignment."
+        ],
+        "remaining": [
+          "Native owner HTTP/SQL and browser acceptance; current source is only explicit single-role code impact, not full NLP/request/SoD capability.",
+          "Native SQL/HTTP plus authorized browser acceptance",
+          "Authoritative SoD/scope/affected-operation preview; NLP-to-typed request and Settings draft preparation",
+          "Train pins/full CI/two K3"
+        ],
+        "new_permissions": [],
+        "migration": null,
+        "sql": "NOT_RUN",
+        "browser": "NOT_RUN",
+        "hosted_ci": "NOT_RUN",
+        "independent_review": "PENDING",
+        "activation": "No role/grant/Critical/provider/policy activation",
+        "measurements": {
+          "token": "NOT_AVAILABLE",
+          "development_duration": "NOT_SEPARATELY_MEASURED"
+        },
+        "frontend": "Agent9357 five complete files80/80 passed,skip0; tsc failed only unused new test callback parameter. Test-only377/rootf7 removes parameter with unchanged assertions. Final377 full panel22/22 passed,skip0; fulltsc0/48.07s and scoped8filelint0/zero warnings. Other unchanged4 files58pass at9357 remain separate-head proof, not80finalhead."
+      }
     },
     {
       "id": "T2/WP-C5",
       "backlog_parent": "W5-AIGATEWAY",
       "title": "Zamanlı görev ve sabah özeti",
       "group": "TREN2",
-      "status": "SOURCE_REVIEW_REQUIRED",
+      "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
       "priority": "P1",
       "risk": "K2",
       "scope": "Dört etki ayrımı; çalışırken güncel görev sahibi yetkisi; bütçe ve iptal.",
@@ -3780,7 +3902,8 @@
       "reuse_mode": "SMALL_EXTENSION",
       "source_findings": [
         "Devir belgesinde kalan iş; listedeki mevcut kaynak/testler bulundu.",
-        "Tam davranış ve runtime kabulü: NOT_RUN."
+        "Tam davranış ve runtime kabulü: NOT_RUN.",
+        "44416 source (root9ab16b311) adds deterministic counts of an actual released morning digest for current active recipient only, reusing Settings schedule/Work owner-read ports. No AI/job/write/external activation. Two bounded source snapshots and owner/member rechecks; unknown/truncated evidence is unavailable, never partial counts. Not complete scheduled-task management."
       ],
       "decisions": [
         "AI-D33"
@@ -3795,14 +3918,15 @@
       "technical_acceptance": [
         "Değişen davranış, negatif şirket/yetki ve stale version; gerekiyorsa replay/rollback/concurrency kanıtı.",
         "K3 mutation/migration: gerçek SQL; ilgili UI: gerçek owner API ile tarayıcı ve erişim iptali.",
-        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı."
+        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı.",
+        "Morning digest read exposes only actual released current-recipient counts; missing digest204, unknown/unreadable/truncated sources503/no partial totals, no company/user/model selector and no AI/scheduler activation. HTTP/normalhost and full scheduled-task lifecycle are separate acceptance."
       ],
       "business_acceptance": [
         "Yetki/işten ayrılış sonrası eski yetkiyle koşmaz; aynı dönem özetini çoğaltmaz."
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "next_action": "Finish scoped UI validation and normal-host HTTP acceptance; then implement approved scheduled-task lifecycle/effect boundaries without inferring management or data policies.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -3813,7 +3937,54 @@
         "tests/GoymenERP.Api.IntegrationTests/WorkNotificationSqlServerRelationalAcceptanceTests.cs",
         "tests/GoymenERP.Work.UnitTests/WorkCollaborationServiceTests.Wp9.cs"
       ],
-      "change_files": []
+      "change_files": [
+        "src/backend/GoymenERP.Api/Endpoints/WorkCollaborationEndpoints.cs",
+        "src/backend/GoymenERP.Api/Endpoints/WorkMorningSummaryEndpoints.cs",
+        "src/backend/GoymenERP.Api/Program.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Domain/WorkMorningSummaryV1.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/Collaboration/WorkMorningSummaryReadV1.cs",
+        "src/backend/Modules/Work/GoymenERP.Modules.Work.Infrastructure/WorkMorningSummaryModuleExtensions.cs",
+        "src/frontend/goymen-erp-web/src/work/WorkMorningSummary.test.tsx",
+        "src/frontend/goymen-erp-web/src/work/WorkMorningSummary.tsx",
+        "src/frontend/goymen-erp-web/src/work/WorkQueuePage.test.tsx",
+        "src/frontend/goymen-erp-web/src/work/WorkQueuePage.tsx",
+        "src/frontend/goymen-erp-web/src/work/workMorningSummaryApi.test.ts",
+        "src/frontend/goymen-erp-web/src/work/workMorningSummaryApi.ts",
+        "src/frontend/goymen-erp-web/src/work/workMorningSummaryText.ts",
+        "tests/GoymenERP.Api.IntegrationTests/WorkMorningSummaryEndpointTests.cs",
+        "tests/GoymenERP.Work.UnitTests/WorkCollaborationServiceTests.MorningSummary.cs"
+      ],
+      "execution": {
+        "source_commit": "9ab16b311",
+        "agent_source_commit": "44416f1327409e867ddc0137095fbd2e39455831",
+        "scope": "First deterministic morning read slice, not the full C5 scheduled-task management. Only existing released recipient digest from first Settings slot, no model call or new job.",
+        "local_checks": "Exact24af1c13db7689b87c80a1bfe54e9c6f7039403f: API Release build0errors/0warnings; Work180/180 (morning9 included), Logistics89/89, selectedAPI/real-candidate-registry44/44 passed, skip0. First integration compile failed MSB3030 missing RcsiReadiness test tool output; tool built at same head, original failure retained and retry44 passed. No SQL executed.",
+        "reuse": [
+          "WorkDigestSlotsV1/current Settings schedule",
+          "existing digest and recipient-slot identity",
+          "IWorkRecordAccessPortV1/current membership",
+          "WorkCollaborationServiceTests existing harness"
+        ],
+        "remaining": [
+          "Normal-host8HTTP transport cases and actual browser",
+          "Scheduled-task lifecycle, explicit four-effect policy and role/business scope",
+          "Current-owner proof for event-only items",
+          "SQL/train CI/twoK3"
+        ],
+        "migration": null,
+        "new_permissions": [],
+        "activation": "Existing schedulers/AI/provider/grants unchanged and OFF by default.",
+        "source_commits": [
+          "9ab16b311",
+          "87f8f2094",
+          "195cc6f2c",
+          "24af1c13d",
+          "b28edb177",
+          "dbcfb5090"
+        ],
+        "http": "GET /api/v1/work/morning-summary; current recipient only, no company/user/model arguments; typed200or204null, sharedNoStore/code-lessproblems.8 real-host contract cases SOURCE_ONLY/normal-host pins deferred.",
+        "frontend": "Agent frozen0fc4b6a7a3fdd0821812c4cabdc52278589028b0: 7 complete test files691/691 passed, skip0 (C5 API34/component12/WorkQueue12/WorkInbox38/WorkDecisionAPI298/Page289/LogisticsMount8),69.73s; fulltsc exit0/50.59s; seven-file lint0warnings/exit0. Root b28/dbcf retains same frontend source. Technical digest/schedule evidence is in a closed native details element. Synthetic transport/UI, not actual browser/owner HTTP."
+      }
     },
     {
       "id": "T2/WP-C7",

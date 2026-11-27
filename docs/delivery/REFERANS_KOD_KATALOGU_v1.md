@@ -78,3 +78,5 @@ REF-ORDER-01 güncel native onay korumalarına (`43d4e5063`), REF-UI-03 mevcut r
 REF-CARD-01, native kimlik kararı güvenlik artımının `cdc4aac0c` kaynağına güncellendi; CreateAsync yeniden kullanılabilir. Katalog 50 kayıttır; kaynak/test kanıtı ve yeni kullanım için SQL/CI kabulü ayrıdır.
 
 27 Kasım `5b07aacf3`: REF-OPENITEM-01 ve REF-LOGISTICS-01 kaynak parmak izleri mevcut küçük genişletmelere göre güncellendi. Kimlik claim/admission ve native onay/audit altyapıları yeniden kullanıldı; eski CI bu yeni kullanımı kabul etmiş sayılmaz. Gerçek SQL ve tren kapanışı bekler.
+
+27 Kasım son artımında mevcut `REF-CARD-01`, atomik ilk vergi kimliği kodu ve SQL kaynak testiyle genişletildi; yeni referans kimliği oluşturulmadı. `REF-UI-03`, aynı rol seçim ekranındaki C3 salt okunur izin farkına güncellendi. İkisi kaynak/test sınıfında kalır; JSON ayrı head yerel kanıtlarını ve normal-host shell-pin engelini belirtir. Toplam50 referans/41paket değişmedi; eski CI yeni kullanıma kabul sayılmaz.

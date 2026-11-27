@@ -1,5 +1,7 @@
 # Göymen ERP Karar Sicili v1.0
 
+Son tarihli finans ek kararı: [FNS-D128 — kayda özel IBAN değişikliği karar önizlemesi](SINAN_KARARLARI_2026-11-27_IBAN_ONAY_ONIZLEMESI.md). Sinan'ın doğrudan cevabıdır; genel banka, bakiye, rapor, AI, dışa aktarım veya ödeme onayı erişimi kazandırmaz.
+
 Son tarihli müşteri iadesi kararı: [LOJ-D22 — gerçek adet, fiilî net tartım ve bekleyen kabul](SINAN_KARARLARI_2026-11-27_MUSTERI_IADESI.md). Sinan'ın bu oturumdaki doğrudan cevabıdır; tartımsız kesin stok girişi veya yeni tolerans politikası açılmaz.
 
 Son tarihli ek karar: [LOJ-D21 — şirket genelinde hareket payı kimliği ve geçmiş çakışma kapısı](SINAN_KARARLARI_2026-11-27_LOJISTIK_SHARE_ID.md). Sinan'ın 27 Kasım doğrudan cevabıdır; aşağıdaki kaynak önceliğine göre uygulanır.
