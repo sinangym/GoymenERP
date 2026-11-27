@@ -21,7 +21,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// not fake the Inventory participant or host endpoints; full physical acceptance remains blocked on
 /// the owned participant and central Serializable runner.
 /// </summary>
-public sealed class LogisticsCustomerReturnSqlServerRelationalAcceptanceTests
+public sealed partial class LogisticsCustomerReturnSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid Company = TestCompanyIds.CompanyA;
     private static readonly DateTimeOffset T0 = new(2026, 10, 3, 20, 0, 0, TimeSpan.Zero);
@@ -233,7 +233,7 @@ public sealed class LogisticsCustomerReturnSqlServerRelationalAcceptanceTests
     private sealed record Source(Guid InstructionId, Guid LineId, Guid DeliveryId, Guid ShipmentId,
         Guid OrderId, Guid OrderLineId, Guid UnitId, decimal Delivered);
 
-    private sealed class Run(SqlServerRelationalApiFactory factory) : IAsyncDisposable
+    private sealed partial class Run(SqlServerRelationalApiFactory factory) : IAsyncDisposable
     {
         public static async Task<Run> StartAsync()
         {

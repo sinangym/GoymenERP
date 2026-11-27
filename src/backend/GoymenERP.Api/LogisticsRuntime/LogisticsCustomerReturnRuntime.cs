@@ -2,6 +2,7 @@ using System.Data;
 using System.Data.Common;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
+using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
 using GoymenERP.Modules.Logistics.Application.Contracts;
@@ -54,20 +55,32 @@ internal sealed class LogisticsCustomerReturnTransactionRunner(LogisticsDbContex
         Func<CancellationToken, Task> beforeCommit, CancellationToken cancellationToken = default)
     {
         Require(companyId, work, beforeCommit);
-        await using var transaction = await logistics.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        var audit = RequireOwnedEntry(companyId);
+        var actor = user.UserId!;
+        var transaction = await logistics.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        var disposed = false;
         try
         {
+            await FenceAsync(companyId, actor, beforeCommit, cancellationToken);
             var result = await work(cancellationToken);
-            await beforeCommit(cancellationToken);
+            await FenceAsync(companyId, actor, beforeCommit, cancellationToken);
+            if (audit.HasPendingDrafts)
+            {
+                await audit.WritePendingAsync(transaction.GetDbTransaction(), cancellationToken);
+                await FenceAsync(companyId, actor, beforeCommit, cancellationToken);
+            }
+            if (audit.HasPendingDrafts) throw Unavailable();
+            await FenceAsync(companyId, actor, beforeCommit, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return result;
         }
         catch
         {
-            await RollbackAsync(transaction, cancellationToken);
-            logistics.ChangeTracker.Clear();
+            disposed = true;
+            if (!await AbortAsync(transaction, null, audit)) throw Unavailable();
             throw;
         }
+        finally { if (!disposed) await transaction.DisposeAsync(); }
     }
 
     public async Task<T> ExecuteApprovalAsync<T>(Guid companyId,
@@ -76,22 +89,39 @@ internal sealed class LogisticsCustomerReturnTransactionRunner(LogisticsDbContex
         CancellationToken cancellationToken = default)
     {
         Require(companyId, work, beforeCommit);
-        await using var transaction = await logistics.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
-        await using var stock = new CustomerReturnStock(logistics.Database.GetDbConnection(), transaction.GetDbTransaction(),
+        var audit = RequireOwnedEntry(companyId);
+        var actor = user.UserId!;
+        var transaction = await logistics.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
+        var stock = new CustomerReturnStock(logistics.Database.GetDbConnection(), transaction.GetDbTransaction(),
             companyId, services, company, user, authority, clock);
+        var disposed = false;
         try
         {
+            await FenceAsync(companyId, actor, token => beforeCommit(stock, token), cancellationToken);
             var result = await work(stock, cancellationToken);
-            await beforeCommit(stock, cancellationToken);
+            await FenceAsync(companyId, actor, token => beforeCommit(stock, token), cancellationToken);
+            if (audit.HasPendingDrafts)
+            {
+                await audit.WritePendingAsync(transaction.GetDbTransaction(), cancellationToken);
+                await FenceAsync(companyId, actor, token => beforeCommit(stock, token), cancellationToken);
+            }
+            if (audit.HasPendingDrafts) throw Unavailable();
+            await FenceAsync(companyId, actor, token => beforeCommit(stock, token), cancellationToken);
+            // The Inventory participant has already saved its own audit in this same borrowed transaction.
+            // Finish its context before commit; a disposal fault must not release a committed success.
+            await stock.DisposeAsync();
+            // Native callback only revalidates the captured permission and stock authority; no new participant is enlisted.
+            await FenceAsync(companyId, actor, token => beforeCommit(stock, token), cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             return result;
         }
         catch
         {
-            await RollbackAsync(transaction, cancellationToken);
-            logistics.ChangeTracker.Clear();
+            disposed = true;
+            if (!await AbortAsync(transaction, stock, audit)) throw Unavailable();
             throw;
         }
+        finally { if (!disposed) await transaction.DisposeAsync(); }
     }
 
     private static void Require(Guid companyId, Delegate work, Delegate beforeCommit)
@@ -101,11 +131,50 @@ internal sealed class LogisticsCustomerReturnTransactionRunner(LogisticsDbContex
         ArgumentNullException.ThrowIfNull(beforeCommit);
     }
 
-    private static async Task RollbackAsync(IDbContextTransaction transaction, CancellationToken cancellationToken)
+    private IAuditTransactionWriterV1 RequireOwnedEntry(Guid companyId)
     {
-        try { await transaction.RollbackAsync(cancellationToken); }
-        catch { /* Preserve the operation failure. */ }
+        // Shared Request/Reject/Approve/terminal/recovery boundary. Refusal is OUTSIDE owned cleanup:
+        // callers' ambient/borrowed handles, unsaved entities and pending audit drafts belong to them.
+        var audit = services.GetService<IAuditTransactionWriterV1>();
+        if (audit is null || !company.IsResolved || company.CompanyId != companyId
+            || !user.IsAuthenticated || string.IsNullOrWhiteSpace(user.UserId) || !user.CanAccessCompany(companyId)
+            || System.Transactions.Transaction.Current is not null || !logistics.Database.IsRelational()
+            || logistics.Database.CurrentTransaction is not null || logistics.ChangeTracker.HasChanges() || audit.HasPendingDrafts)
+            throw Unavailable();
+        return audit;
     }
+
+    private async Task FenceAsync(Guid companyId, string actor, Func<CancellationToken, Task> callback, CancellationToken token)
+    {
+        bool Current() => company.IsResolved && company.CompanyId == companyId && user.IsAuthenticated
+            && user.UserId == actor && user.CanAccessCompany(companyId);
+        if (!Current()) throw new LogisticsCustomerReturnServiceException(403, "forbidden");
+        await callback(token);
+        if (!Current()) throw new LogisticsCustomerReturnServiceException(403, "forbidden");
+    }
+
+    private async Task<bool> AbortAsync(IDbContextTransaction transaction, CustomerReturnStock? stock, IAuditTransactionWriterV1 audit)
+    {
+        var clean = true;
+        try { await transaction.RollbackAsync(CancellationToken.None); }
+        catch { clean = false; }
+        try { if (stock is not null) await stock.DisposeAsync(); }
+        catch { clean = false; }
+        finally
+        {
+            try { await transaction.DisposeAsync(); }
+            catch { clean = false; }
+            finally
+            {
+                try { logistics.ChangeTracker.Clear(); }
+                finally { audit.DiscardPending(); }
+            }
+        }
+        return clean;
+    }
+
+    private static LogisticsCustomerReturnServiceException Unavailable() =>
+        new(503, LogisticsCustomerReturnCodesV1.InventoryUnavailable);
 
     private sealed class CustomerReturnStock(DbConnection connection, DbTransaction transaction, Guid companyId,
         IServiceProvider services, ICompanyContext company, ICurrentUser user,
