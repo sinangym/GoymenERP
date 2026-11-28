@@ -13,7 +13,7 @@
 import { API_BASE, contractRequestHeader } from './clientContract'
 import { putVersionedCommand, type CommandContext, type CommandOutcome, type ReplayableFailures } from './commandApi'
 import { MERGE_PROBLEM_CODE, decodeMergeView, mergePath, mergeProblemCodeOf, type MergeView } from './merge'
-import { decodeMergeImpact, type MergeImpact, type MergeImpactSelection } from './mergeImpact'
+import { decodeMergeImpact, decodeMergePurposeImpact, type MergePurposeImpact, type MergeImpact, type MergeImpactSelection } from './mergeImpact'
 import { isLosslessVersion } from './wireGuards'
 
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
@@ -113,9 +113,20 @@ export function approveMerge(
 export type MergeImpactOutcome = Exclude<MergeReadOutcome, { readonly type: 'ok' }> | { readonly type: 'ok'; readonly data: MergeImpact }
 /** Read-only selected-pair preflight, not an idempotent mutation or an atomic native PUT precondition. */
 export async function fetchMergeImpact(selection: MergeImpactSelection, signal?: AbortSignal): Promise<MergeImpactOutcome> {
+  return readMergeImpact(selection, 'preview', decodeMergeImpact, signal)
+}
+
+export type MergePurposeImpactOutcome = Exclude<MergeReadOutcome, { readonly type: 'ok' }> | { readonly type: 'ok'; readonly data: MergePurposeImpact }
+export function fetchMergePurposeImpact(selection: MergeImpactSelection, signal?: AbortSignal): Promise<MergePurposeImpactOutcome> {
+  return readMergeImpact(selection, 'purpose-preview', decodeMergePurposeImpact, signal)
+}
+
+async function readMergeImpact<T>(selection: MergeImpactSelection, route: 'preview' | 'purpose-preview',
+  decode: (raw: unknown, expected: MergeImpactSelection) => T | null, signal?: AbortSignal,
+): Promise<Exclude<MergeReadOutcome, { readonly type: 'ok' }> | { readonly type: 'ok'; readonly data: T }> {
   if (signal?.aborted) return { type: 'aborted' }
   try {
-    const response = await fetch(`${API_BASE}${mergePath(selection.partyId)}/preview`, {
+    const response = await fetch(`${API_BASE}${mergePath(selection.partyId)}/${route}`, {
       method: 'POST', cache: 'no-store', signal,
       headers: { ...devHeaders(), ...contractRequestHeader(), 'X-Company-Id': selection.companyId, 'Content-Type': 'application/json' },
       body: JSON.stringify({ mergedPartyId: selection.mergedPartyId, expectedVersion: selection.expectedVersion, mergedPartyExpectedVersion: selection.mergedPartyExpectedVersion }),
@@ -124,7 +135,7 @@ export async function fetchMergeImpact(selection: MergeImpactSelection, signal?:
     try { body = await response.json() } catch { /* No partial preview is released. */ }
     if (signal?.aborted) return { type: 'aborted' }
     if (response.status !== 200) return { type: 'http', status: response.status, code: null }
-    const data = decodeMergeImpact(body, selection)
+    const data = decode(body, selection)
     return data === null ? { type: 'malformed' } : { type: 'ok', data }
   } catch (error) {
     if (signal?.aborted) return { type: 'aborted' }
@@ -132,4 +143,13 @@ export async function fetchMergeImpact(selection: MergeImpactSelection, signal?:
     if (error instanceof TypeError) return { type: 'network-error' }
     throw error
   }
+}
+
+/** The viewed token is a header; the native four-field request and its hash stay unchanged. */
+export function approveMergePurpose(context: CommandContext, survivorPartyId: string, expectedVersion: string,
+  approval: MergeApproval, seenImpactDigest: string, signal?: AbortSignal): Promise<CommandOutcome<null>> {
+  if (!isLosslessVersion(approval.mergedPartyExpectedVersion)) return Promise.resolve({ type: 'unfenced' })
+  return putVersionedCommand(mergePath(survivorPartyId), context, expectedVersion, {
+    mergedPartyId: approval.mergedPartyId, mergedPartyExpectedVersion: approval.mergedPartyExpectedVersion, reason: approval.reason,
+  }, signal, MERGE_REPLAYABLE, false, 'PUT', { kind: 'counterparty-merge', seenImpactDigest })
 }

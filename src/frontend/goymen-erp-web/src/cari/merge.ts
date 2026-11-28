@@ -28,6 +28,7 @@ export const MERGE_CANDIDATE_LIMIT = 20
 /** The endpoint's own stable codes (`CounterpartyProblemCodesV1`). */
 export const MERGE_PROBLEM_CODE = {
   versionConflict: 'version_conflict',
+  impactChanged: 'counterparty_merge_impact_changed',
   notFound: 'not_found',
   idempotencyConflict: 'idempotency_conflict',
   alreadyMerged: 'party_already_merged',
@@ -206,6 +207,7 @@ export const MERGE_TEXT = {
   commandForbidden:
     'Bu işlem için yetkiniz yok. Birleştirme onayı, iki cariyi kullanan her şirkette yetki gerektirir.',
   refusal: {
+    [MERGE_PROBLEM_CODE.impactChanged]: 'Birleştirme etkisi değişti. Güncel bilgileri inceleyip yeniden onaylayın.',
     [MERGE_PROBLEM_CODE.versionConflict]:
       'Carilerden biri siz incelerken değiştirildi. Güncel bilgiler yüklendi; seçiminizi yeniden yapın.',
     [MERGE_PROBLEM_CODE.notFound]: 'Cari bulunamadı veya bu şirkette kullanılamıyor.',

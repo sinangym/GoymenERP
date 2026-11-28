@@ -527,3 +527,40 @@ it('marks atomic post-commit 403 as possibly committed while preserving the actu
  expect(await createCounterparty(CONTEXT,{...PAYLOAD,taxIdentityNumber:'1234567890'})).toMatchObject({type:'http',status:403,mayHaveCommitted:true})
  expect(await createCounterparty(CONTEXT,PAYLOAD)).not.toHaveProperty('mayHaveCommitted')
 })
+
+describe('fixed Cari merge purpose header', () => {
+  const path = `/counterparties/${PARTY}/merge`
+  const digest = 'A'.repeat(64)
+  const fields = { mergedPartyId: PARTY_2, mergedPartyExpectedVersion: '5', reason: 'SENTETIK' }
+  it('adds only the fixed purpose header while retaining the native method, four-field body and identity headers', async () => {
+    const calls = stubFetch(() => new Response(null, { status: 204 }))
+    await putVersionedCommand(path, CONTEXT, '3', fields)
+    await putVersionedCommand(path, CONTEXT, '3', fields, undefined, undefined, false, 'PUT', { kind: 'counterparty-merge', seenImpactDigest: digest })
+    expect(calls).toHaveLength(2)
+    expect(calls[1].url).toBe(calls[0].url)
+    expect(calls[1].init?.method).toBe(calls[0].init?.method)
+    expect(calls[1].init?.body).toBe(calls[0].init?.body)
+    expect(bodyOf(calls[1])).toEqual({ ...fields, expectedVersion: '3' })
+    expect(headersOf(calls[0])['X-Counterparty-Merge-Seen-Impact']).toBeUndefined()
+    expect(headersOf(calls[1])).toEqual({ ...headersOf(calls[0]), 'X-Counterparty-Merge-Seen-Impact': digest })
+  })
+  it.each(['', 'A'.repeat(63), 'a'.repeat(64), 'A'.repeat(64) + '\n', 'A'.repeat(64) + '\r', 'A'.repeat(63) + ' '])('refuses noncanonical token %j before fetch', async seenImpactDigest => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch)
+    expect(await putVersionedCommand(path, CONTEXT, '3', fields, undefined, undefined, false, 'PUT',
+      { kind: 'counterparty-merge', seenImpactDigest })).toEqual({ type: 'unfenced' })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+  it.each([`/counterparties/${PARTY}/merge/preview`, `/counterparties/${PARTY}/merge?other=1`,
+    `/counterparties/${PARTY}\n/merge`, `/counterparties/${PARTY}/legal-name`])('cannot attach a purpose to another path %j', async wrongPath => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch)
+    expect(await putVersionedCommand(wrongPath, CONTEXT, '3', fields, undefined, undefined, false, 'PUT',
+      { kind: 'counterparty-merge', seenImpactDigest: digest })).toEqual({ type: 'unfenced' })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+  it('cannot attach the purpose to POST', async () => {
+    const fetch = vi.fn(); vi.stubGlobal('fetch', fetch)
+    expect(await putVersionedCommand(path, CONTEXT, '3', fields, undefined, undefined, false, 'POST',
+      { kind: 'counterparty-merge', seenImpactDigest: digest })).toEqual({ type: 'unfenced' })
+    expect(fetch).not.toHaveBeenCalled()
+  })
+})

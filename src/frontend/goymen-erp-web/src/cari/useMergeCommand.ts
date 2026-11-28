@@ -33,6 +33,7 @@ export interface MergeNotice {
 /** Definite answers after which the survivor or a candidate is stale and the merge view is read again. */
 const REFRESH_CODES = new Set<string>([
   MERGE_PROBLEM_CODE.versionConflict,
+  MERGE_PROBLEM_CODE.impactChanged,
   MERGE_PROBLEM_CODE.notFound,
   MERGE_PROBLEM_CODE.alreadyMerged,
   MERGE_PROBLEM_CODE.targetMerged,

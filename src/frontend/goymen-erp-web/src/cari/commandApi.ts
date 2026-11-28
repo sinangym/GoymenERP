@@ -22,7 +22,7 @@ import { decodeCounterpartyMutation, type CounterpartyMutationResult } from './m
 import { decodeLinkCandidatePage, type LinkCandidatePage } from './candidateContract'
 import { accountStatusPath, type AccountStatusPayload } from './accountStatusContract'
 import { PROBLEM_CODE, problemCodeOf, type PartyKind, type ProblemCode } from './contract'
-import { isLosslessVersion } from './wireGuards'
+import { isBoundUuid, isLosslessVersion } from './wireGuards'
 import {
   beginContractRead,
   commandAckOutcome,
@@ -337,6 +337,11 @@ export async function postCommand<T>(
  * here; only `expectedVersion` is owned by this function, and it overrides any
  * same-named key a caller might carry.
  */
+export interface CounterpartyMergeCommandPurpose {
+  readonly kind: 'counterparty-merge'
+  readonly seenImpactDigest: string
+}
+
 export async function putVersionedCommand(
   path: string,
   context: CommandContext,
@@ -361,11 +366,22 @@ export async function putVersionedCommand(
    * the fence, the key, the exact-204 and acknowledgment rules — is identical.
    */
   method: 'PUT' | 'POST' = 'PUT',
+  purpose?: CounterpartyMergeCommandPurpose,
 ): Promise<CommandOutcome<null>> {
   // Same write gate as every command: proven compatibility in THIS context first.
   if (!isCommandContractReady(context.contract)) return { type: 'contract-not-ready' }
   if (!(isLosslessVersion(expectedVersion) || (allowZeroVersion && expectedVersion === '0'))) {
     return { type: 'unfenced' }
+  }
+
+  // A fixed purpose header cannot override identity, company, key or compatibility headers.
+  if (purpose !== undefined) {
+    const prefix = '/counterparties/'
+    const suffix = '/merge'
+    const partyId = path.startsWith(prefix) && path.endsWith(suffix) ? path.slice(prefix.length, -suffix.length) : ''
+    if (purpose.kind !== 'counterparty-merge' || method !== 'PUT' || !isLosslessVersion(expectedVersion) || partyId.length !== 36 || !isBoundUuid(partyId)
+      || typeof purpose.seenImpactDigest !== 'string' || purpose.seenImpactDigest.length !== 64
+      || !/^[A-F0-9]+$/.test(purpose.seenImpactDigest)) return { type: 'unfenced' }
   }
 
   const headers: Record<string, string> = {
@@ -375,6 +391,8 @@ export async function putVersionedCommand(
     'X-Company-Id': context.companyId,
     'Idempotency-Key': context.idempotencyKey,
   }
+
+  if (purpose !== undefined) headers['X-Counterparty-Merge-Seen-Impact'] = purpose.seenImpactDigest
 
   let response: Response
   try {

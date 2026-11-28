@@ -18,8 +18,8 @@ import { useCallback, useId, useMemo, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ContractContext } from './clientContract'
 import { MERGE_REASON_MAX, MERGE_TEXT as T, checkMergeReason, type MergeView } from './merge'
-import { approveMerge, fetchMerge, fetchMergeImpact } from './mergeApi'
-import { MERGE_IMPACT_TEXT as I, type MergeImpact } from './mergeImpact'
+import { approveMergePurpose, fetchMerge, fetchMergePurposeImpact } from './mergeApi'
+import { MERGE_IMPACT_TEXT as I, type MergePurposeImpact } from './mergeImpact'
 import { useMergeCommand } from './useMergeCommand'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './CariTradeName.module.css'
@@ -54,14 +54,17 @@ function MergePanel({ partyId, companyId, namespace, contractContext, onChanged,
   ])
 
   const refresh = useCallback(() => {
+    setConfirmed(false)
+    setConfirmedImpact(null)
+    void queryClient.invalidateQueries({ queryKey: [namespace, entryGeneration, 'counterparty-merge-impact', companyId, partyId] })
     void queryClient.invalidateQueries({ queryKey })
     onChanged?.()
-  }, [onChanged, queryClient, queryKey])
+  }, [onChanged, queryClient, queryKey, namespace, entryGeneration, companyId, partyId])
   const command = useMergeCommand(companyId, contractContext, `cari.party-merge:${partyId}`, refresh)
   const [selected, setSelected] = useState('')
   const [reason, setReason] = useState('')
   const [confirmed, setConfirmed] = useState(false)
-  const [confirmedImpact, setConfirmedImpact] = useState<MergeImpact | null>(null)
+  const [confirmedImpact, setConfirmedImpact] = useState<MergePurposeImpact | null>(null)
   const [commandView, setCommandView] = useState<MergeView | null>(null)
   const [fieldError, setFieldError] = useState<string | null>(null)
 
@@ -90,14 +93,15 @@ function MergePanel({ partyId, companyId, namespace, contractContext, onChanged,
     queryFn: async ({ signal }) => {
       if (nativeView === null || selectedCandidate === null) throw new Error('Missing selected merge pair')
       const security = boundary.capture()
-      const answer = await fetchMergeImpact({ companyId, partyId, mergedPartyId: selectedCandidate.partyId,
+      const answer = await fetchMergePurposeImpact({ companyId, partyId, mergedPartyId: selectedCandidate.partyId,
         expectedVersion: nativeView.version, mergedPartyExpectedVersion: selectedCandidate.version }, signal)
       if (answer.type === 'http' && (answer.status === 401 || answer.status === 403)) boundary.report(answer.status, security)
       return answer
     },
   })
-  const impact = !locked && !read.isFetching && !read.isError && !impactQuery.isFetching && !impactQuery.isError && selectedCandidate !== null && impactQuery.data?.type === 'ok'
+  const purposeImpact = !locked && !read.isFetching && !read.isError && !impactQuery.isFetching && !impactQuery.isError && selectedCandidate !== null && impactQuery.data?.type === 'ok'
     ? impactQuery.data.data : null
+  const impact = purposeImpact?.impact ?? null
 
   if (read.isPending && !(locked && commandView !== null)) {
     return (
@@ -187,11 +191,11 @@ function MergePanel({ partyId, companyId, namespace, contractContext, onChanged,
       setFieldError(check.message)
       return
     }
-    if (impact === null) {
+    if (impact === null || purposeImpact === null) {
       setFieldError(I.unavailable)
       return
     }
-    if (!confirmed || confirmedImpact !== impact) {
+    if (!confirmed || confirmedImpact !== purposeImpact) {
       setFieldError(T.confirmRequired)
       return
     }
@@ -201,10 +205,11 @@ function MergePanel({ partyId, companyId, namespace, contractContext, onChanged,
       mergedPartyExpectedVersion: candidate.version,
       reason: check.value,
     }
+    const seenImpactDigest = purposeImpact.seenImpactDigest
     setCommandView(view)
     const ok = await command.run(
       `approve:${partyId}:${candidate.partyId}`,
-      (context) => approveMerge(context, partyId, view.version, approval),
+      (context) => approveMergePurpose(context, partyId, view.version, approval, seenImpactDigest),
       T.approved,
     )
     if (ok) {
@@ -274,11 +279,11 @@ function MergePanel({ partyId, companyId, namespace, contractContext, onChanged,
             <input
               id={confirmId}
               type="checkbox"
-              checked={confirmed && confirmedImpact === impact && impact !== null}
+              checked={confirmed && confirmedImpact === purposeImpact && purposeImpact !== null}
               disabled={locked || impact === null}
               onChange={(event) => {
                 setConfirmed(event.target.checked)
-                setConfirmedImpact(event.target.checked ? impact : null)
+                setConfirmedImpact(event.target.checked ? purposeImpact : null)
                 setFieldError(null)
               }}
             />{' '}

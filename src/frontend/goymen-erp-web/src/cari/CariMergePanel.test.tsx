@@ -35,6 +35,9 @@ interface Call {
   readonly body: unknown
 }
 
+const TOKEN = 'A'.repeat(64)
+const purposeImpact = () => ({ impact: impact(), seenImpactDigest: TOKEN })
+
 const ack = { [COUNTERPARTY_CONTRACT_HEADER]: COUNTERPARTY_CONTRACT_VERSION }
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json', ...ack } })
@@ -68,7 +71,7 @@ const impact = () => ({ companyId: COMPANY,
   ], changes: { partyId: DUPLICATE, mergedIntoPartyId: PARTY, isActive: false },
 })
 
-function install(handler: (call: Call) => Response | Promise<Response>, preview: (call: Call) => Response | Promise<Response> = () => json(impact())) {
+function install(handler: (call: Call) => Response | Promise<Response>, preview: (call: Call) => Response | Promise<Response> = () => json(purposeImpact())) {
   const calls: Call[] = []
   vi.stubGlobal(
     'fetch',
@@ -80,7 +83,7 @@ function install(handler: (call: Call) => Response | Promise<Response>, preview:
         body: typeof init?.body === 'string' ? JSON.parse(init.body) : null,
       }
       calls.push(call)
-      return call.url.endsWith('/merge/preview') ? preview(call) : handler(call)
+      return call.url.endsWith('/merge/purpose-preview') ? preview(call) : handler(call)
     }),
   )
   return calls
@@ -155,6 +158,7 @@ describe('F-027 / EK-18 #76-#77 Cari duplicate merge', () => {
     const [put] = puts(calls)
     expect(puts(calls)).toHaveLength(1)
     expect(put.url).toBe(`/api/v1/counterparties/${PARTY}/merge`)
+    expect(put.headers['X-Counterparty-Merge-Seen-Impact']).toBe(TOKEN)
     expect(put.body).toEqual({
       mergedPartyId: DUPLICATE,
       mergedPartyExpectedVersion: '5',
@@ -298,7 +302,7 @@ describe('F-027 / EK-18 #76-#77 Cari duplicate merge', () => {
     const region = await screen.findByRole('region', { name: I.heading })
     expect(region.textContent).toContain(I.history); expect(region.textContent).toContain(I.effect)
     for (const row of impact().holdingAccounts) expect(region.textContent).toContain(row.accountId)
-    const request = calls.find(call => call.url.endsWith('/preview'))!
+    const request = calls.find(call => call.url.endsWith('/purpose-preview'))!
     expect(request.method).toBe('POST'); expect(request.headers['X-Company-Id']).toBe(COMPANY)
     expect(request.headers['Idempotency-Key']).toBeUndefined()
     expect(request.body).toEqual({ mergedPartyId: DUPLICATE, expectedVersion: '3', mergedPartyExpectedVersion: '5' })
@@ -318,9 +322,9 @@ describe('F-027 / EK-18 #76-#77 Cari duplicate merge', () => {
   it.each(['foreign-company','stale-version','partial'])('refuses %s preview rather than allowing confirmation', async failure => {
     const calls = install(() => json(view()), () => {
       const body = impact()
-      return json(failure === 'foreign-company' ? { ...body, companyId: DUPLICATE }
+      return json({ seenImpactDigest: TOKEN, impact: failure === 'foreign-company' ? { ...body, companyId: DUPLICATE }
         : failure === 'stale-version' ? { ...body, merged: { ...body.merged, version: '6' } }
-          : { ...body, holdingAccounts: [] })
+          : { ...body, holdingAccounts: [] } })
     })
     renderPanel(); const user = userEvent.setup()
     await user.selectOptions(await screen.findByLabelText(T.candidateLabel), DUPLICATE)
@@ -340,16 +344,18 @@ describe('F-027 / EK-18 #76-#77 Cari duplicate merge', () => {
     renderPanel(); const user = userEvent.setup(); await fillAndApprove(user)
     await screen.findByText(T.unknownOutcome)
     expect(screen.queryByRole('region', { name: I.heading })).toBeNull()
-    const previewsBeforeRetry = calls.filter(call => call.url.endsWith('/preview')).length
+    const previewsBeforeRetry = calls.filter(call => call.url.endsWith('/purpose-preview')).length
     const readsBeforeRetry = reads(calls).length
     await user.click(screen.getByRole('button', { name: T.retrySame }))
     await waitFor(() => expect(puts(calls)).toHaveLength(2))
     // The second native response is still pending. No current human read can replace the original attempt.
-    expect(calls.filter(call => call.url.endsWith('/preview'))).toHaveLength(previewsBeforeRetry)
+    expect(calls.filter(call => call.url.endsWith('/purpose-preview'))).toHaveLength(previewsBeforeRetry)
     expect(reads(calls)).toHaveLength(readsBeforeRetry)
     expect(screen.queryByRole('region', { name: I.heading })).toBeNull()
     expect(puts(calls)[1].body).toEqual(puts(calls)[0].body)
     expect(puts(calls)[1].headers['Idempotency-Key']).toBe(puts(calls)[0].headers['Idempotency-Key'])
+    expect(puts(calls)[1].headers['X-Counterparty-Merge-Seen-Impact']).toBe(TOKEN)
+    expect(puts(calls)[1].headers).toEqual(puts(calls)[0].headers)
     await act(async () => { applied = true; finishRetry(noContent()) })
     await screen.findByText(T.approved)
     await screen.findByText(T.noCandidates)
@@ -367,7 +373,7 @@ describe('F-027 / EK-18 #76-#77 Cari duplicate merge', () => {
     // A disabled query can still retain or receive cached data. It must not replace the attempted pair.
     await act(async () => {
       queryClient.setQueryData(['ns-test', 0, 'counterparty-party-merge', PARTY, COMPANY], { type: 'ok', data: view({ version: '999', candidates: [] }) })
-      queryClient.setQueryData(['ns-test', 0, 'counterparty-merge-impact', COMPANY, PARTY, '3', DUPLICATE, '5'], { type: 'ok', data: { ...impact(), merged: { ...impact().merged, legalName: 'SONRAKI CARİ' } } })
+      queryClient.setQueryData(['ns-test', 0, 'counterparty-merge-impact', COMPANY, PARTY, '3', DUPLICATE, '5'], { type: 'ok', data: { seenImpactDigest: 'B'.repeat(64), impact: { ...impact(), merged: { ...impact().merged, legalName: 'SONRAKI CARİ' } } } })
     })
     expect(screen.queryByRole('region', { name: I.heading })).toBeNull()
     expect(screen.queryByText('SONRAKI CARİ')).toBeNull()
@@ -392,7 +398,7 @@ describe('F-027 / EK-18 #76-#77 Cari duplicate merge', () => {
 
   it('does not promote cached successful impact after an unexpected refetch error', async () => {
     let reads = 0
-    install(() => json(view()), () => { if (++reads === 1) return json(impact()); throw new Error('SENTETIK read failure') })
+    install(() => json(view()), () => { if (++reads === 1) return json(purposeImpact()); throw new Error('SENTETIK read failure') })
     const { queryClient } = renderPanel(); const user = userEvent.setup()
     await user.selectOptions(await screen.findByLabelText(T.candidateLabel), DUPLICATE)
     await screen.findByRole('region', { name: I.heading }); await user.click(screen.getByLabelText(T.confirmLabel))
@@ -400,6 +406,44 @@ describe('F-027 / EK-18 #76-#77 Cari duplicate merge', () => {
     await screen.findByText(I.unavailable)
     expect(screen.queryByRole('region', { name: I.heading })).toBeNull()
     expect((screen.getByLabelText(T.confirmLabel) as HTMLInputElement).disabled).toBe(true)
+  })
+
+  it('refreshes changed holding impact with unchanged party versions and requires a new human confirmation', async () => {
+    let writes = 0; let previews = 0
+    const calls = install(call => {
+      if (call.method !== 'PUT') return json(view())
+      return ++writes === 1 ? json({ code: 'counterparty_merge_impact_changed' }, 409) : noContent()
+    }, () => json({ impact: impact(), seenImpactDigest: ++previews === 1 ? TOKEN : 'B'.repeat(64) }))
+    renderPanel(); const user = userEvent.setup(); await fillAndApprove(user)
+    await screen.findByText(T.refusal.counterparty_merge_impact_changed)
+    await waitFor(() => expect(previews).toBeGreaterThan(1))
+    await screen.findByRole('region', { name: I.heading })
+    expect((screen.getByLabelText(T.confirmLabel) as HTMLInputElement).checked).toBe(false)
+    await user.click(screen.getByRole('button', { name: T.approve }))
+    expect(puts(calls)).toHaveLength(1)
+    await user.click(screen.getByLabelText(T.confirmLabel)); await user.click(screen.getByRole('button', { name: T.approve }))
+    await screen.findByText(T.approved)
+    expect(puts(calls)).toHaveLength(2)
+    expect(puts(calls)[1].body).toEqual(puts(calls)[0].body)
+    expect(puts(calls)[1].headers['Idempotency-Key']).not.toBe(puts(calls)[0].headers['Idempotency-Key'])
+    expect(puts(calls)[0].headers['X-Counterparty-Merge-Seen-Impact']).toBe(TOKEN)
+    expect(puts(calls)[1].headers['X-Counterparty-Merge-Seen-Impact']).toBe('B'.repeat(64))
+  })
+
+  it('keeps the original token on a 503 retry even if a different successful preview enters the cache', async () => {
+    const calls = install(call => call.method === 'PUT' ? json({}, 503) : json(view()))
+    const { queryClient } = renderPanel(); const user = userEvent.setup(); await fillAndApprove(user)
+    await screen.findByText(T.unknownOutcome)
+    const previewCount = calls.filter(call => call.url.endsWith('/purpose-preview')).length
+    await act(async () => { queryClient.setQueryData(['ns-test', 0, 'counterparty-merge-impact', COMPANY, PARTY, '3', DUPLICATE, '5'],
+      { type: 'ok', data: { impact: impact(), seenImpactDigest: 'B'.repeat(64) } }) })
+    await user.click(screen.getByRole('button', { name: T.retrySame }))
+    await waitFor(() => expect(puts(calls)).toHaveLength(2))
+    expect(puts(calls)[1]).toEqual(puts(calls)[0])
+    expect(calls.filter(call => call.url.endsWith('/purpose-preview'))).toHaveLength(previewCount)
+    expect(screen.queryByRole('region', { name: I.heading })).toBeNull()
+    expect(document.body.textContent).not.toContain(TOKEN)
+    expect(document.body.innerHTML).not.toContain(TOKEN)
   })
 
 })

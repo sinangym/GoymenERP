@@ -55,3 +55,12 @@ export const MERGE_IMPACT_TEXT = {
 
 /** Existing native approval permission, published as a control of the existing Cari detail. */
 export const CARI_MERGE_CAPABILITY = 'cari.parties.merge'
+
+/** Purpose-only wrapper; the five native human fields remain decoded by the native decoder above. */
+export interface MergePurposeImpact { readonly impact: MergeImpact; readonly seenImpactDigest: string }
+export function decodeMergePurposeImpact(raw: unknown, expected: MergeImpactSelection): MergePurposeImpact | null {
+  if (!object(raw) || !keys(raw, ['impact', 'seenImpactDigest']) || typeof raw.seenImpactDigest !== 'string'
+    || raw.seenImpactDigest.length !== 64 || !/^[A-F0-9]+$/.test(raw.seenImpactDigest)) return null
+  const impact = decodeMergeImpact(raw.impact, expected)
+  return impact === null ? null : { impact, seenImpactDigest: raw.seenImpactDigest }
+}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decodeMergeImpact } from './mergeImpact'
+import { decodeMergeImpact, decodeMergePurposeImpact } from './mergeImpact'
 const a = '11111111-1111-1111-1111-111111111111', b = '22222222-2222-2222-2222-222222222222', company = 'aaaaaaaa-0000-0000-0000-000000000001'
 const expected = { partyId: a, mergedPartyId: b, companyId: company, expectedVersion: '9007199254740993', mergedPartyExpectedVersion: '9223372036854775807' }
 const fixture = () => ({ companyId: company,
@@ -28,5 +28,23 @@ describe('actual selected-pair merge impact wire', () => {
     const value = fixture()
     expect(decodeMergeImpact({ ...value, companyId: company + suffix }, expected)).toBeNull()
     expect(decodeMergeImpact({ ...value, survivor: { ...value.survivor, version: '1' + suffix } }, { ...expected, expectedVersion: '1' + suffix })).toBeNull()
+  })
+})
+
+describe('purpose impact wrapper', () => {
+  it('retains the exact native human fields and the opaque canonical token', () => {
+    const value = { impact: fixture(), seenImpactDigest: 'A'.repeat(64) }
+    expect(decodeMergePurposeImpact(value, expected)).toEqual(value)
+    expect(decodeMergeImpact(fixture(), expected)).toEqual(fixture())
+  })
+  it.each(['', 'A'.repeat(63), 'a'.repeat(64), 'A'.repeat(64) + '\n', 'A'.repeat(64) + '\r', ' '.repeat(64), null])('rejects malformed token %j', seenImpactDigest => {
+    expect(decodeMergePurposeImpact({ impact: fixture(), seenImpactDigest }, expected)).toBeNull()
+  })
+  it('rejects bare legacy, unknown root, unknown native field and wrong selected pair', () => {
+    const value = { impact: fixture(), seenImpactDigest: 'A'.repeat(64) }
+    expect(decodeMergePurposeImpact(fixture(), expected)).toBeNull()
+    expect(decodeMergePurposeImpact({ ...value, receipt: {} }, expected)).toBeNull()
+    expect(decodeMergePurposeImpact({ ...value, impact: { ...fixture(), amount: '1' } }, expected)).toBeNull()
+    expect(decodeMergePurposeImpact(value, { ...expected, mergedPartyId: company })).toBeNull()
   })
 })
