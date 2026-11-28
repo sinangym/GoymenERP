@@ -72,7 +72,8 @@ public sealed class WorkSalesQuoteConversionDecisionPreviewV1Tests
         var d=VisibleFacts();d=Seal(d with{Quote=d.Quote with{DueTerms=new(instalments)}});
         var view=WorkSalesQuoteConversionDecisionPreviewV1.FromNative(d);var json=JsonSerializer.Serialize(view,Json);instalments.Clear();
         Assert.Equal(json,JsonSerializer.Serialize(view,Json));Assert.Single(view.Quote.DueTerms!.Instalments);
-        var malformed=Seal(d with{Quote=d.Quote with{DueTerms=new(null!)}});
+        // A malformed owner response cannot be sealed by the strict native JSON writer.
+        var malformed=d with{Quote=d.Quote with{DueTerms=new(null!)}};
         Assert.Equal(503,Assert.Throws<WorkDecisionException>(()=>WorkSalesQuoteConversionDecisionPreviewV1.FromNative(malformed)).Status);
     }
 

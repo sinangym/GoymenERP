@@ -9,7 +9,8 @@ public sealed record WorkSalesQuoteConversionDecisionPreviewV1(Guid RequestId, S
 {
     internal static WorkSalesQuoteConversionDecisionPreviewV1 FromNative(SalesQuoteConversionDecisionDetailV1 detail)
     {
-        if (SalesQuoteConversionDecisionBindingV1.Item(detail) is null || detail.Quote.DueTerms is { Instalments: null }) throw new WorkDecisionException(503);
+        // Reject malformed owner collections before the binding computes their native digest.
+        if (detail.Quote.DueTerms is { Instalments: null } || SalesQuoteConversionDecisionBindingV1.Item(detail) is null) throw new WorkDecisionException(503);
         var q = detail.Quote;
         return new(detail.RequestId, detail.Request, q with
         {
