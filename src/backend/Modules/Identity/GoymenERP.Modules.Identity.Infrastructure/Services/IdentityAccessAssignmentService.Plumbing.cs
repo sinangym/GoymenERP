@@ -226,6 +226,7 @@ internal sealed partial class IdentityAccessAssignmentService
             await RequireCommandStillAsync(command, cancellationToken);
             return new Prepared(null, Unstored(Answers.Unavailable(), metadata));
         }
+        await AccessApprovalFenceAsync(cancellationToken);
         if (execution is null)
         {
             return new Prepared(command, null);
@@ -246,6 +247,8 @@ internal sealed partial class IdentityAccessAssignmentService
         Func<DateTimeOffset, Task<Step>> body,
         CancellationToken cancellationToken)
     {
+        if (accessApproval is not null)
+            return await RunAccessApprovalLockedAsync(command, body, cancellationToken);
         try
         {
             var attempt = await RunLockedCoreAsync(command, body, cancellationToken);
@@ -297,31 +300,37 @@ internal sealed partial class IdentityAccessAssignmentService
         Func<DateTimeOffset, Task<Step>> body,
         CancellationToken cancellationToken)
     {
-        await using var transaction = await database.Database.BeginTransactionAsync(
+        var transaction = await database.Database.BeginTransactionAsync(
             command.ManagedUserId is null ? IsolationLevel.ReadCommitted : IsolationLevel.Serializable,
             cancellationToken);
         var commitStarted = false;
+        if (accessApproval is { } entered) entered.Transaction = transaction;
         try
         {
+            await AccessApprovalFenceAsync(cancellationToken);
             var lockCompanies = command.ManagedUserId is { } managed
                 ? (await new IdentityUserManagementEvaluator(database).GetMembershipCompanyIdsAsync(
                     managed, timeProvider.GetUtcNow(), cancellationToken)).Append(command.CompanyId).Distinct().Order().ToArray()
                 : [command.CompanyId];
             foreach (var lockCompany in lockCompanies)
             {
-                if (!await IdentityAdminLock.TryAcquireAsync(database, lockCompany, cancellationToken))
+                var acquired = await IdentityAdminLock.TryAcquireAsync(database, lockCompany, cancellationToken);
+                await AccessApprovalFenceAsync(cancellationToken);
+                if (!acquired)
                 {
-                    await transaction.RollbackAsync(cancellationToken);
+                    await RollbackAccessPrimaryAsync(transaction, cancellationToken);
                     return new PrimaryAttempt(Result: Unstored(Answers.Unavailable(), command.Metadata));
                 }
             }
 
             await RequireCommandStillAsync(command, cancellationToken);
+            await AccessApprovalFenceAsync(cancellationToken);
 
             var raced = await FindExecutionAsync(command, cancellationToken);
+            await AccessApprovalFenceAsync(cancellationToken);
             if (raced is not null)
             {
-                await transaction.RollbackAsync(cancellationToken);
+                await RollbackAccessPrimaryAsync(transaction, cancellationToken);
                 return new PrimaryAttempt(Winner: raced);
             }
 
@@ -331,28 +340,40 @@ internal sealed partial class IdentityAccessAssignmentService
             {
                 if (refusal.StatusCode >= 500 || refusal.StatusCode == 400)
                 {
-                    await transaction.RollbackAsync(cancellationToken);
+                    await RollbackAccessPrimaryAsync(transaction, cancellationToken);
                     database.ChangeTracker.Clear();
                     return new PrimaryAttempt(Result: Unstored(refusal, command.Metadata));
                 }
                 database.ChangeTracker.Clear();
                 await RequireCommandStillAsync(command, cancellationToken);
+                await AccessApprovalFenceAsync(cancellationToken);
                 RecordTerminal(command, refusal);
                 AddExecution(command, refusal, timeProvider.GetUtcNow().ToUniversalTime());
-                try { await database.SaveChangesAsync(cancellationToken); }
+                try
+                {
+                    await database.SaveChangesAsync(cancellationToken);
+                    await AccessApprovalFenceAsync(cancellationToken);
+                }
                 catch (DbUpdateException exception) when (IsUniqueViolation(exception))
                 {
-                    await transaction.RollbackAsync(cancellationToken);
+                    await RollbackAccessPrimaryAsync(transaction, cancellationToken);
                     return new PrimaryAttempt(RequiredWinnerFailure: exception);
                 }
+                await AccessApprovalFenceAsync(cancellationToken);
                 await auditWriter.WritePendingAsync(transaction.GetDbTransaction(), cancellationToken);
+                await AccessApprovalFenceAsync(cancellationToken);
+                await PrepareAccessApprovalCommitAsync(cancellationToken);
                 commitStarted = true;
+                if (accessApproval is { } committingRefusal) committingRefusal.CommitAttempted = true;
                 await transaction.CommitAsync(cancellationToken);
+                if (accessApproval is { } refusalCommitted) refusalCommitted.Committed = true;
+                await AccessApprovalFenceAsync(cancellationToken);
                 return new PrimaryAttempt(Result: new IdentityAccessCommandResultV1(refusal, false, command.Metadata.CorrelationId));
             }
 
             var change = step.Change ?? throw new InvalidOperationException("Kimlik yetki komutu sonuç üretmedi.");
             await RequireCommandStillAsync(command, cancellationToken);
+            await AccessApprovalFenceAsync(cancellationToken);
             foreach (var audit in change.Audits)
             {
                 auditEvents.Enqueue(audit);
@@ -362,30 +383,45 @@ internal sealed partial class IdentityAccessAssignmentService
             try
             {
                 await database.SaveChangesAsync(cancellationToken);
+                await AccessApprovalFenceAsync(cancellationToken);
             }
             catch (DbUpdateException exception) when (exception is DbUpdateConcurrencyException || IsUniqueViolation(exception))
             {
-                await transaction.RollbackAsync(cancellationToken);
+                await RollbackAccessPrimaryAsync(transaction, cancellationToken);
                 return new PrimaryAttempt(Conflict: change.OnConflict);
             }
 
             await auditWriter.WritePendingAsync(transaction.GetDbTransaction(), cancellationToken);
+            await AccessApprovalFenceAsync(cancellationToken);
 
             if (change.SecurityEvent is { } securityEvent)
             {
                 var written = await securityEvents.WriteAsync(securityEvent, cancellationToken);
+                await AccessApprovalFenceAsync(cancellationToken);
                 if (!written.CallerMayContinue)
                 {
                     // identity.permission.changed is fail-closed: no grant or revocation stands without its security event.
-                    await transaction.RollbackAsync(cancellationToken);
+                    await RollbackAccessPrimaryAsync(transaction, cancellationToken);
                     database.ChangeTracker.Clear();
                     return new PrimaryAttempt(Result: Unstored(Answers.Unavailable(), command.Metadata));
                 }
             }
 
+            await PrepareAccessApprovalCommitAsync(cancellationToken);
             commitStarted = true;
+            if (accessApproval is { } committing) committing.CommitAttempted = true;
             await transaction.CommitAsync(cancellationToken);
+            if (accessApproval is { } committed) committed.Committed = true;
+            await AccessApprovalFenceAsync(cancellationToken);
             return new PrimaryAttempt(Result: new IdentityAccessCommandResultV1(change.Answer, false, command.Metadata.CorrelationId));
+        }
+        catch (Exception exception) when (accessApproval is not null)
+        {
+            // The same native TX owns every approval artifact. No cleanup fault is converted to a retryable answer.
+            await AbortAccessApprovalAsync(exception, commitStarted);
+            if (!commitStarted && !cancellationToken.IsCancellationRequested && IsRetryablePrimarySqlFailure(exception))
+                return new PrimaryAttempt(ProviderUnavailable: true);
+            throw;
         }
         catch (Exception exception) when (!commitStarted && !cancellationToken.IsCancellationRequested
             && IsRetryablePrimarySqlFailure(exception))
@@ -397,6 +433,14 @@ internal sealed partial class IdentityAccessAssignmentService
             database.ChangeTracker.Clear();
             auditWriter.DiscardPending();
             return new PrimaryAttempt(ProviderUnavailable: true);
+        }
+        finally
+        {
+            if (accessApproval is not { } owned || !owned.DisposalAttempted)
+            {
+                if (accessApproval is { } disposing) disposing.DisposalAttempted = true;
+                await transaction.DisposeAsync();
+            }
         }
     }
 

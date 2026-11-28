@@ -13,7 +13,12 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Services;
 /// </summary>
 internal sealed partial class IdentityAccessAssignmentService
 {
-    public async Task<IdentityAccessCommandResultV1> ApproveAsync(
+    public Task<IdentityAccessCommandResultV1> ApproveAsync(Guid requestId, ApproveAccessGrantRequestV1 request,
+        IdentityAccessCommandMetadataV1 metadata, CancellationToken cancellationToken = default) => mandatoryAccessApprovalSafety
+        ? WithAccessGrantApprovalSafety().ApproveAsync(requestId, request, metadata, cancellationToken)
+        : ApproveNativeAsync(requestId, request, metadata, cancellationToken);
+
+    private async Task<IdentityAccessCommandResultV1> ApproveNativeAsync(
         Guid requestId,
         ApproveAccessGrantRequestV1 request,
         IdentityAccessCommandMetadataV1 metadata,
@@ -41,7 +46,12 @@ internal sealed partial class IdentityAccessAssignmentService
         return await RunLockedAsync(command, now => ApproveStepAsync(command, requestId, now, cancellationToken), cancellationToken);
     }
 
-    public async Task<IdentityAccessCommandResultV1> RejectAsync(
+    public Task<IdentityAccessCommandResultV1> RejectAsync(Guid requestId, RejectAccessGrantRequestV1 request,
+        IdentityAccessCommandMetadataV1 metadata, CancellationToken cancellationToken = default) => mandatoryAccessApprovalSafety
+        ? WithAccessGrantApprovalSafety().RejectAsync(requestId, request, metadata, cancellationToken)
+        : RejectNativeAsync(requestId, request, metadata, cancellationToken);
+
+    private async Task<IdentityAccessCommandResultV1> RejectNativeAsync(
         Guid requestId,
         RejectAccessGrantRequestV1 request,
         IdentityAccessCommandMetadataV1 metadata,
@@ -170,6 +180,7 @@ internal sealed partial class IdentityAccessAssignmentService
     {
         var grantRequest = await database.AccessGrantRequests
             .SingleOrDefaultAsync(x => x.CompanyId == command.CompanyId && x.Id == requestId, cancellationToken);
+        await AccessApprovalFenceAsync(cancellationToken);
         var state = PendingState(command, grantRequest);
         if (state is not null)
         {
@@ -183,12 +194,15 @@ internal sealed partial class IdentityAccessAssignmentService
         }
 
         var target = await LoadGrantTargetAsync(pending.TargetUserId, pending.RoleId, cancellationToken);
+        await AccessApprovalFenceAsync(cancellationToken);
         if (target.Refusal is { } refused)
         {
             return Step.Refuse(refused);
         }
 
-        if (await HasActiveAssignmentAsync(command.CompanyId, pending.TargetUserId, pending.RoleId, now, cancellationToken))
+        var alreadyAssigned = await HasActiveAssignmentAsync(command.CompanyId, pending.TargetUserId, pending.RoleId, now, cancellationToken);
+        await AccessApprovalFenceAsync(cancellationToken);
+        if (alreadyAssigned)
         {
             return Step.Refuse(Answers.DuplicateActiveAssignment());
         }
@@ -233,6 +247,7 @@ internal sealed partial class IdentityAccessAssignmentService
     {
         var grantRequest = await database.AccessGrantRequests
             .SingleOrDefaultAsync(x => x.CompanyId == command.CompanyId && x.Id == requestId, cancellationToken);
+        await AccessApprovalFenceAsync(cancellationToken);
         var state = PendingState(command, grantRequest);
         if (state is not null)
         {

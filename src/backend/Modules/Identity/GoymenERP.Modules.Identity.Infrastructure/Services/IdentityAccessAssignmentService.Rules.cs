@@ -75,6 +75,7 @@ internal sealed partial class IdentityAccessAssignmentService
             .Where(x => x.Id == userId)
             .Select(x => (bool?)x.IsActive)
             .SingleOrDefaultAsync(cancellationToken);
+        await AccessApprovalFenceAsync(cancellationToken);
         if (userActive is not true)
         {
             return GrantTarget.Refused(Answers.UserNotAssignable());
@@ -84,12 +85,14 @@ internal sealed partial class IdentityAccessAssignmentService
             .Where(x => x.Id == roleId)
             .Select(x => new { x.Code, x.IsActive })
             .SingleOrDefaultAsync(cancellationToken);
+        await AccessApprovalFenceAsync(cancellationToken);
         if (role is not { IsActive: true })
         {
             return GrantTarget.Refused(Answers.RoleNotAssignable());
         }
 
         var permissions = await RolePermissionsAsync(roleId, cancellationToken);
+        await AccessApprovalFenceAsync(cancellationToken);
         return new GrantTarget(null, role.Code, permissions, permissions.Any(ErpPermissions.IsCritical));
     }
 

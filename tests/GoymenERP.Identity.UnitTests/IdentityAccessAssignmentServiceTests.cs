@@ -22,7 +22,7 @@ namespace GoymenERP.Identity.UnitTests;
 /// transaction, so every test here would fail loudly if the path reached the locked body; the locked body (applock,
 /// one save, last Admin, two-person rule under concurrency) is measured by the SqlServerFact suite. SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class IdentityAccessAssignmentServiceTests
+public sealed partial class IdentityAccessAssignmentServiceTests
 {
     private static readonly Guid CompanyA = Guid.NewGuid();
     private static readonly Guid CompanyB = Guid.NewGuid();
@@ -411,14 +411,15 @@ public sealed class IdentityAccessAssignmentServiceTests
 
         public RecordingSecurityEventWriter SecurityEvents { get; } = new();
 
-        public IdentityAccessAssignmentService Service() => new(
-            Database,
-            companyContext,
-            user,
+        public IdentityAccessAssignmentService Service(IdentityDbContext? database = null, IAuditTransactionWriterV1? writer = null,
+            ICompanyContext? context = null, ICurrentUser? currentActor = null) => new(
+            database ?? Database,
+            context ?? companyContext,
+            currentActor ?? user,
             Authorization,
             Revalidation,
             Audits,
-            new UnexpectedTransactionAuditWriter(),
+            writer ?? new UnexpectedTransactionAuditWriter(),
             RefusedAttempts,
             SecurityEvents,
             new ManualTimeProvider(Now),
@@ -528,6 +529,7 @@ public sealed class IdentityAccessAssignmentServiceTests
 
     private sealed class ProbeRevalidation : IErpAuthorityRevalidationService
     {
+        public Action? BeforeFresh { get; set; }
         public PermissionScope Scope { get; set; } = IdentityAccessAssignmentServiceTests.Scope(true, true);
 
         public List<(string Permission, Guid Company)> Asked { get; } = [];
@@ -536,6 +538,7 @@ public sealed class IdentityAccessAssignmentServiceTests
             string permission, Guid companyId, CancellationToken cancellationToken = default)
         {
             Asked.Add((permission, companyId));
+            BeforeFresh?.Invoke();
             return Task.FromResult(Scope);
         }
     }

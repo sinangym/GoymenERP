@@ -83,8 +83,10 @@ public static class IdentityModuleExtensions
         services.AddScoped<IIdentityAccessReadService, IdentityAccessReadService>();
         // ID-3 role assignment, revocation and the Critical role request (KIM-D1/D5/D15/D17). It grants nothing by
         // itself: who holds identity.roles.manage and identity.access.approve stays a human gate.
-        services.AddScoped<IdentityAccessAssignmentService>();
-        services.AddScoped<IIdentityAccessAssignmentService>(sp => sp.GetRequiredService<IdentityAccessAssignmentService>());
+        services.AddScoped(sp => ActivatorUtilities.CreateInstance<IdentityAccessAssignmentService>(sp)
+            .RequireAccessGrantApprovalSafety());
+        services.AddScoped<IIdentityAccessAssignmentService>(sp =>
+            sp.GetRequiredService<IdentityAccessAssignmentService>().WithAccessGrantApprovalSafety());
         services.AddScoped<IIdentityUserManagementServiceV1>(sp => sp.GetRequiredService<IdentityAccessAssignmentService>());
         services.AddScoped<ICompanySetupGroupAuthorityV1, SqlCompanySetupGroupAuthorityV1>();
         services.AddScoped<IdentityCompanySetupService>();
