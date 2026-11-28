@@ -17,7 +17,8 @@ public sealed partial class OrganizationCompanyTaxIdChangeWorkInboxSourceV1Tests
         var snapshot = Assert.IsType<WorkApprovalDecisionSnapshotV1>(await DecisionSource(owner).ReadDecisionAsync(Caller(), detail.Request.Id, default));
         Assert.Equal(detail.CompanyVersion.ToString(System.Globalization.CultureInfo.InvariantCulture), snapshot.SourceVersion);
         Assert.Equal(status == "pending", snapshot.Pending); Assert.Equal(ProposedVkn, snapshot.Item.DocumentLabel);
-        Assert.Equal("/ayarlar/organizasyon/sirket-vergi-no", snapshot.Item.Link);
+        Assert.Equal($"{OrganizationCompanyTaxIdDecisionBindingV1.PurposePath}/{snapshot.Item.ItemId:D}", snapshot.Item.Link);
+        Assert.Equal("/ayarlar/organizasyon/sirket-vergi-no", OrganizationCompanyTaxIdChangeWorkInboxSourceV1.ScreenPath);
         Assert.Equal(stale && status == "pending", snapshot.Item.Rules.Any(x => x.RuleCode == OrganizationCompanyTaxIdChangeWorkInboxSourceV1.StaleRule));
         Assert.Equal(first, snapshot.Item.Rules.Any(x => x.RuleCode == OrganizationCompanyTaxIdChangeWorkInboxSourceV1.FirstVknRule));
         Assert.True(OrganizationCompanyTaxIdDecisionBindingV1.MatchesDecisionProof(snapshot.Item, snapshot.OrganizationCompanyTaxIdProof));

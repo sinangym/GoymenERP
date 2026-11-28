@@ -154,6 +154,7 @@ export const CAPABILITY = {
    * the request/decide buttons follow the server's own viewer flags.
    */
   organizationCompanyTaxId: 'organization.company.tax-id',
+  organizationCompanyTaxIdWorkDecision: 'organization.company-tax-id-change.work-decision',
   /** S-02 sales order draft list. Route `/satis/siparisler`, owner the Sales lane (SİPARİŞ). */
   salesDraftsList: 'sales.drafts.list',
   /** Sales-owned purpose routes mounted by Work; no browse grant required. */
@@ -537,6 +538,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.organizationWorkCentersDetail]: '/ayarlar/organizasyon/is-merkezleri/:workCenterId',
   // ORG-05: a static sibling of the work-centre list; no url matches it and any other Organization route.
   [CAPABILITY.organizationCompanyTaxId]: '/ayarlar/organizasyon/sirket-vergi-no',
+  [CAPABILITY.organizationCompanyTaxIdWorkDecision]: '/onaylarim/organization.company-tax-id-change.v1/:approvalId',
   [CAPABILITY.salesDraftsList]: '/satis/siparisler',
   [CAPABILITY.salesOrderWorkDecision]: '/onaylarim/sales.order-draft.v1/:approvalId',
   [CAPABILITY.salesInvoiceWorkDecision]: '/onaylarim/sales.invoice.v1/:approvalId',

@@ -23,7 +23,8 @@ public sealed class OrganizationShellCapabilityProvider : IShellCapabilityProvid
     // read. It carries no control: the screen's request/approve buttons follow the viewer flags the tax-id read returns,
     // and the read itself answers 403 to a caller who holds neither tax-id permission. The same cascade: the accepted
     // authority constants move with it in the central round.
-    public const string OwnerContractVersion = "1.5";
+    // 1.6 (WP8): standalone company VKN decisions reuse only the existing company-wide approval permission.
+    public const string OwnerContractVersion = "1.6";
     public const string ListCapabilityId = "organization.sites.list";
     public const string DetailCapabilityId = "organization.locations.detail";
     public const string SitesReadCapabilityId = "organization.sites.read";
@@ -36,6 +37,10 @@ public sealed class OrganizationShellCapabilityProvider : IShellCapabilityProvid
     public const string WorkCenterCreateCapabilityId = "organization.work-centers.create";
     public const string WorkCenterEditCapabilityId = "organization.work-centers.edit";
     public const string WorkCenterCalendarEditCapabilityId = "organization.work-centers.calendar.edit";
+    public const string CompanyTaxIdWorkDecisionCapabilityId = "organization.company-tax-id-change.work-decision";
+    public const string CompanyTaxIdWorkDecisionRouteId = "organization-company-tax-id-change-work-decision";
+    public const string CompanyTaxIdWorkDecisionRoutePath = "/onaylarim/organization.company-tax-id-change.v1/:approvalId";
+    public const string CompanyTaxIdWorkDecisionScreenId = "ORG-COMPANY-TAX-ID-CHANGE-WORK-DECISION";
     public const string CompanyTaxIdCapabilityId = "organization.company.tax-id";
 
     public string Owner => OwnerId;
@@ -100,6 +105,10 @@ public sealed class OrganizationShellCapabilityProvider : IShellCapabilityProvid
             workCenters,
             workCenterDetail,
             companyTaxId,
+            new(CompanyTaxIdWorkDecisionCapabilityId, CompanyTaxIdWorkDecisionRouteId, CompanyTaxIdWorkDecisionRoutePath,
+                CompanyTaxIdWorkDecisionScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+                ShellCapabilityContextRequirement.SingleCompany, ShellCapabilityScopeRequirement.CompanyWide,
+                [OrganizationCompanyTaxIdPermissionsV1.Approve], ImplementationAvailable: true),
             list with
             {
                 CapabilityId = SitesReadCapabilityId,

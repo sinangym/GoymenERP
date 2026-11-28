@@ -4,7 +4,8 @@ import { isBoundUuid } from '../finance/contract'
 import { hasExactKeys } from '../finance/wireShape'
 import { catalogVersion, catalogIncrementable } from './workApprovedSourceCatalogDecision'
 
-// Staged core only. The shared Work adapter and paired shell publication are separate leases.
+// Paired human Work purpose. Capability availability is controlled by the server shell.
+export const ORGANIZATION_COMPANY_TAX_ID_WORK_CAPABILITY='organization.company-tax-id-change.work-decision'
 export const ORGANIZATION_COMPANY_TAX_ID_WORK_KIND='organization.company-tax-id-change.v1'
 export interface WorkOrganizationCompanyTaxIdPreview {
  readonly companyId:string;readonly companyVersion:string;readonly companyVkn:string|null

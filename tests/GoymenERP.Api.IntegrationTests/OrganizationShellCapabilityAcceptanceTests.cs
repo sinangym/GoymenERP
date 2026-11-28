@@ -34,11 +34,11 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(
         var providers = container.GetServices<IShellCapabilityProvider>().ToArray();
         var registry = new ShellCapabilityRegistry(providers, new ShellCapabilityAuthorityCatalog([authority]));
         Assert.Equal(authority, registry.Revision);
-        // Counterparty's six (four routes plus the two FNS-D121 IBAN controls) plus Organization's THIRTEEN (ORG-03 joined the four ORG-01/02 declarations,
+        // Counterparty's six (four routes plus the two FNS-D121 IBAN controls) plus Organization's FOURTEEN (ORG-03 joined the four ORG-01/02 declarations,
         // ORG-04's work-centre card the fifth, the master edit's five controls, B-15's calendar edit
-        // control, then KIM-S23's company tax-id route). Measured, not incremented: the count is asserted
+        // control, KIM-S23's native tax-id route and its standalone WP8 decision). Measured, not incremented: the count is asserted
         // here so that a declaration appearing or vanishing has to be stated rather than absorbed.
-        Assert.Equal(19, registry.Registrations.Count);
+        Assert.Equal(20, registry.Registrations.Count);
         Assert.Throws<InvalidOperationException>(() => new ShellCapabilityRegistry(
             providers, new ShellCapabilityAuthorityCatalog(
                 [ShellCapabilityRegistryAuthorities.CounterpartyV15PublishedListCreateAndDetail])));
@@ -81,6 +81,7 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(
         OrganizationPermissionManifestV1.WorkCentersWrite,
         OrganizationPermissionManifestV1.WorkCenterCalendarsWrite,
         ErpPermissions.OrganizationContextRead,
+        OrganizationCompanyTaxIdPermissionsV1.Approve,
     ];
 
     /// <summary>
@@ -252,6 +253,8 @@ public sealed class OrganizationShellCapabilityAcceptanceTests(
         // (scope kind 0); a site / location / work-centre scoped grant never publishes it.
         if ((permissions & Bit(ErpPermissions.OrganizationContextRead)) != 0 && scope == 0)
             expected.Add(OrganizationShellCapabilityProvider.CompanyTaxIdCapabilityId);
+        if ((permissions & Bit(OrganizationCompanyTaxIdPermissionsV1.Approve)) != 0 && scope == 0)
+            expected.Add(OrganizationShellCapabilityProvider.CompanyTaxIdWorkDecisionCapabilityId);
 
         Assert.Equal(expected.Order(StringComparer.Ordinal), snapshot.Capabilities);
     }

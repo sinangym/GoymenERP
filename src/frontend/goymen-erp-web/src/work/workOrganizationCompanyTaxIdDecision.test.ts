@@ -1,4 +1,5 @@
-import {describe,expect,it} from 'vitest'
+import {decodeWorkDecisionPreview,isWorkDecisionRequest,sendWorkDecision,WORK_DECISION_KINDS,workDecisionReasonLimit} from './workDecisionApi'
+import {afterEach,describe,expect,it,vi} from 'vitest'
 import {COMPANY_A,COMPANY_B} from '../settings/testHarness'
 import {decodeTaxIdChange} from '../organization/companyTaxIdContract'
 import {decodeWorkOrganizationCompanyTaxIdPreview,validOrganizationCompanyTaxIdPreview,isOrganizationCompanyTaxIdDecisionRequest,
@@ -7,7 +8,7 @@ import {organizationCompanyTaxIdHuman as human,organizationCompanyTaxIdFixture a
 const decode=(v:unknown)=>decodeWorkOrganizationCompanyTaxIdPreview(v,COMPANY_A,id)
 function put(root:object,path:readonly string[],value:unknown){let p=root as Record<string,unknown>;for(const key of path.slice(0,-1)){const child=p[key];if(child===null||typeof child!=='object')throw new Error('Missing fixture');p=child as Record<string,unknown>}p[path[path.length-1]!]=value}
 const max='9223372036854775807'
-describe('staged organization company VKN Work core',()=>{
+describe('organization company VKN Work core',()=>{
  it.each([false,true])('preserves all6 and native10 human fields without opaque proof, first=%s',first=>{
   const h=human(COMPANY_A,first),raw=JSON.stringify(h);expect(decode(h)).toEqual(h);expect(JSON.stringify(h)).toBe(raw)
   expect(Object.keys(h)).toHaveLength(6);expect(Object.keys(h.request)).toHaveLength(10)
@@ -112,5 +113,42 @@ describe('staged organization company VKN Work core',()=>{
  it.each([null,'bad',id+'\n',id+'\r',id+'\r\n','00000000-0000-0000-0000-000000000000'])('validates the optional delegation ID exactly %s',delegationId=>{
   expect(isOrganizationCompanyTaxIdDecisionRequest({expectedVersion:'1',approve:true,reason:null,delegationId})).toBe(delegationId===null)
  })
- it('does not publish or fabricate a request-row version for the staged core',()=>expect(kind).toBe('organization.company-tax-id-change.v1'))
+ it('pins the exact owner kind without fabricating a request-row version',()=>expect(kind).toBe('organization.company-tax-id-change.v1'))
+})
+
+
+afterEach(()=>vi.unstubAllGlobals())
+describe('paired company VKN generic Work transport',()=>{
+ it('requires the actual12-key wrapper and publishes one purpose without changing native6/native10 facts',()=>{
+  const v=fixture(COMPANY_A),raw=JSON.stringify(v)
+  expect(decodeWorkDecisionPreview(v,COMPANY_A,kind,id)?.organizationCompanyTaxId).toEqual(v.organizationCompanyTaxId)
+  expect(Object.keys(v)).toHaveLength(12);expect(WORK_DECISION_KINDS).toHaveLength(54);expect(WORK_DECISION_KINDS.filter(k=>k===kind)).toEqual([kind])
+  expect(workDecisionReasonLimit(kind)).toBe(1000);expect(JSON.stringify(v)).toBe(raw)
+ })
+ it.each([true,false])('keeps the existing exact four-field optional-note command on approve=%s',approve=>{
+  expect(isWorkDecisionRequest({expectedVersion:'9007199254740993',approve,reason:null,delegationId:null},kind)).toBe(true)
+  expect(isWorkDecisionRequest({expectedVersion:'9007199254740993',approve,reason:'n'.repeat(1000),delegationId:id},kind)).toBe(true)
+  expect(isWorkDecisionRequest({expectedVersion:'9007199254740993',approve,reason:'n'.repeat(1001),delegationId:null},kind)).toBe(false)
+ })
+ it.each(['normalJournalDraft','inventoryCostCancellation','postingAccountMappingSelection','organizationCompanyTaxId','decisionReceipt'])('rejects a foreign command selector %s',field=>{
+  expect(isWorkDecisionRequest({expectedVersion:'1',approve:false,reason:null,delegationId:null,[field]:{}},kind)).toBe(false)
+ })
+ it.each(['sourceVoucher','inventoryCostCancellation','organizationCompanyTaxIdProof','previewDigest'])('refuses a cross-kind/private GET field %s',field=>{
+  expect(decodeWorkDecisionPreview({...fixture(COMPANY_A),[field]:{}},COMPANY_A,kind,id)).toBeNull()
+ })
+ it('does not couple an original frozen rejection body to the current request or reject maxInt64',()=>{
+  const request={expectedVersion:'9223372036854775807',approve:false,reason:null,delegationId:null}
+  expect(isWorkDecisionRequest(request,kind)).toBe(true);expect(isWorkDecisionRequest({...request,approve:true},kind)).toBe(false)
+  expect(isWorkDecisionRequest({...request,expectedVersion:'9007199254740993',approve:true},kind)).toBe(true)
+ })
+ it.each([true,false])('requires exact lowercase original state and replay headers, approve=%s',async approve=>{
+  const request={expectedVersion:'9007199254740993',approve,reason:'SENTETIK frozen note',delegationId:null},body={companyId:COMPANY_A,kind,itemId:id,state:approve?'approved':'rejected',replayed:true,originalCorrelationId:'SENTETIK original org59'}
+  const headers={'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':body.originalCorrelationId}
+  const fetcher=vi.fn(async(_url:RequestInfo|URL,_init?:RequestInit)=>new Response(JSON.stringify(body),{status:200,headers}));vi.stubGlobal('fetch',fetcher)
+  expect(await sendWorkDecision(COMPANY_A,kind,id,request,'SENTETIK retained org59')).toMatchObject({type:'applied',replayed:true})
+  const sent=fetcher.mock.calls[0]![1];expect(JSON.parse(String(sent?.body))).toEqual(request);expect(new Headers(sent?.headers).get('Idempotency-Key')).toBe('SENTETIK retained org59')
+  for(const state of ['Approved','Rejected',approve?'rejected':'approved']){fetcher.mockImplementation(async()=>new Response(JSON.stringify({...body,state}),{status:200,headers}));expect((await sendWorkDecision(COMPANY_A,kind,id,request,'SENTETIK retained org59')).type).toBe('unknown')}
+  fetcher.mockImplementation(async()=>new Response(JSON.stringify(body),{status:200}));expect((await sendWorkDecision(COMPANY_A,kind,id,request,'SENTETIK retained org59')).type).toBe('unknown')
+  fetcher.mockImplementation(async()=>new Response(JSON.stringify({...body,organizationCompanyTaxId:{}}),{status:200,headers}));expect((await sendWorkDecision(COMPANY_A,kind,id,request,'SENTETIK retained org59')).type).toBe('unknown')
+ })
 })

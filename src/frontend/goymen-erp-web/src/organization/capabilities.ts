@@ -144,6 +144,7 @@ export const ORGANIZATION_CAPABILITY = {
    * server still decides every command (hazırlayan ≠ onaylayan is enforced there).
    */
   companyTaxId: 'organization.company.tax-id',
+  companyTaxIdWorkDecision: 'organization.company-tax-id-change.work-decision',
 } as const
 
 export type OrganizationCapabilityId =
@@ -156,6 +157,7 @@ export const ORGANIZATION_ROUTE: Record<string, string> = {
   [ORGANIZATION_CAPABILITY.workCentersList]: '/ayarlar/organizasyon/is-merkezleri',
   [ORGANIZATION_CAPABILITY.workCenterDetail]: '/ayarlar/organizasyon/is-merkezleri/:workCenterId',
   [ORGANIZATION_CAPABILITY.companyTaxId]: '/ayarlar/organizasyon/sirket-vergi-no',
+  [ORGANIZATION_CAPABILITY.companyTaxIdWorkDecision]: '/onaylarim/organization.company-tax-id-change.v1/:approvalId',
 }
 
 /**
@@ -173,6 +175,7 @@ export const ORGANIZATION_NAV_LABEL: Record<string, string> = {
   [ORGANIZATION_CAPABILITY.workCenterDetail]: '',
   // ORG-05 gets its own entry: it stands on the context read, not on ORG-01's locations read, so no list links to it.
   [ORGANIZATION_CAPABILITY.companyTaxId]: 'Şirket Vergi Numarası',
+  [ORGANIZATION_CAPABILITY.companyTaxIdWorkDecision]: '',
 }
 
 /** Concrete path to one location's card. */

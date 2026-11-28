@@ -37,15 +37,22 @@ describe('WP7-2 master data inbox kinds', () => {
       'product.package-standards.approve', 'product.price-lists.publish']) expect(inboxPermissionText(permission)).not.toBe(permission)
   })
 
-  it('opens the inbox for exact Cari decision purposes and price publication, preserving the other native kinds', () => {
+  it('opens the inbox for exact company VKN/Cari decision purposes and price publication, preserving the other native kinds', () => {
+    expect(WORK_INBOX_CAPABILITIES).toContain('organization.company-tax-id-change.work-decision')
+    expect(WORK_INBOX_KINDS.filter(entry=>entry.kind==='organization.company-tax-id-change.v1')).toEqual([{kind:'organization.company-tax-id-change.v1',module:'organization',capability:'organization.company-tax-id-change.work-decision'}])
     expect(WORK_INBOX_CAPABILITIES).toContain('price-lists.price-list-version.work-decision')
     expect(WORK_INBOX_KINDS.filter(entry=>entry.kind==='product.package-standard-version.v1')).toEqual([{kind:'product.package-standard-version.v1',module:'product',capability:'price-lists.package-standard-version.work-decision'}])
     for(const [kind,capability] of [['counterparty.tax-identity-change.v1','cari.tax-identity-change.work-decision'],['counterparty.legal-name-change.v1','cari.legal-name-change.work-decision']]) {
       expect(WORK_INBOX_CAPABILITIES).toContain(capability)
       expect(WORK_INBOX_KINDS.filter(entry=>entry.kind===kind)).toEqual([{kind,module:'counterparty',capability}])
     }
-    expect(WORK_INBOX_KINDS.filter((entry) => entry.module !== 'counterparty' && entry.kind !== 'product.price-list-version.v1' && entry.kind !== 'product.package-standard-version.v1'
-      && KINDS.some(([kind]) => kind === entry.kind)).every((entry) => entry.capability === null)).toBe(true)
+    expect(WORK_INBOX_KINDS.filter(entry=>KINDS.some(([kind])=>kind===entry.kind))).toEqual([
+      {kind:'organization.company-tax-id-change.v1',module:'organization',capability:'organization.company-tax-id-change.work-decision'},
+      {kind:'counterparty.tax-identity-change.v1',module:'counterparty',capability:'cari.tax-identity-change.work-decision'},
+      {kind:'counterparty.legal-name-change.v1',module:'counterparty',capability:'cari.legal-name-change.work-decision'},
+      {kind:'product.package-standard-version.v1',module:'product',capability:'price-lists.package-standard-version.work-decision'},
+      {kind:'product.price-list-version.v1',module:'product',capability:'price-lists.price-list-version.work-decision'},
+    ])
   })
 })
 

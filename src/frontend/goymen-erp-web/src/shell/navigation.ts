@@ -272,6 +272,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'organization.work-centers.detail': '',
   // ORG-05: its only entry point is the sidebar.
   'organization.company.tax-id': 'Şirket Vergi Numarası',
+  'organization.company-tax-id-change.work-decision': '',
   'sales.drafts.list': 'Satış Siparişleri',
   'sales.order-draft.work-decision': '',
   'sales.invoice.work-decision': '',

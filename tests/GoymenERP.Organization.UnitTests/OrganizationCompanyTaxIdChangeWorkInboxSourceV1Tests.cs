@@ -35,7 +35,8 @@ public sealed partial class OrganizationCompanyTaxIdChangeWorkInboxSourceV1Tests
         Assert.Equal(("organization", "organization.company-tax-id-change.v1"), (item.Module, item.Kind));
         Assert.Equal(request, item.ItemId);
         Assert.Equal(ProposedVkn, item.DocumentLabel);
-        Assert.Equal("/ayarlar/organizasyon/sirket-vergi-no", item.Link);
+        Assert.Equal($"{OrganizationCompanyTaxIdDecisionBindingV1.PurposePath}/{item.ItemId:D}", item.Link);
+        Assert.Equal("/ayarlar/organizasyon/sirket-vergi-no", OrganizationCompanyTaxIdChangeWorkInboxSourceV1.ScreenPath);
         Assert.Equal("SENTETIK-maker", item.PreparedBy);
         Assert.Equal(Start, item.WaitingSinceUtc);
         Assert.Equal([OrganizationCompanyTaxIdChangeWorkInboxSourceV1.ApprovalRequiredRule], item.Rules.Select(rule => rule.RuleCode));

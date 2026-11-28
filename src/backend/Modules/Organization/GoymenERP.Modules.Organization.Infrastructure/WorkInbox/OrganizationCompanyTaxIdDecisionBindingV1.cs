@@ -25,7 +25,7 @@ public static class OrganizationCompanyTaxIdDecisionBindingV1
         var rules = new List<WorkApprovalRuleResultV1>(3) { new(OrganizationCompanyTaxIdChangeWorkInboxSourceV1.ApprovalRequiredRule, null, null, null, null) };
         if (firstVkn) rules.Add(new(OrganizationCompanyTaxIdChangeWorkInboxSourceV1.FirstVknRule, null, null, null, null));
         if (pending && !isCurrent) rules.Add(new(OrganizationCompanyTaxIdChangeWorkInboxSourceV1.StaleRule, null, null, null, null));
-        return new(ModuleName, KindName, id, proposedVkn, requestedAtUtc.ToUniversalTime(), ScreenPath, requestedBy, rules, []);
+        return new(ModuleName, KindName, id, proposedVkn, requestedAtUtc.ToUniversalTime(), $"{PurposePath}/{id:D}", requestedBy, rules, []);
     }
     // Scalar proof certifies only identity/current presentation. Full immutable facts bind through owner/receipt.
     public static bool MatchesDecisionProof(WorkInboxItemV1? item, WorkOrganizationCompanyTaxIdProofV1? p) => p is not null
