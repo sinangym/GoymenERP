@@ -150,6 +150,7 @@ public sealed class AiScheduledTaskServiceTests
             var entity = model.FindEntityType(type)!; Assert.Equal("ai", entity.GetSchema()); Assert.NotEmpty(entity.GetDeclaredQueryFilters());
             Assert.All(entity.GetForeignKeys(), key => Assert.Equal(DeleteBehavior.Restrict, key.DeleteBehavior));
         }
+        Assert.False(db.Database.HasPendingModelChanges());
         var snapshot = db.GetService<IMigrationsAssembly>().ModelSnapshot!.Model;
         var scheduledTables = new[] { "ScheduledTasks", "ScheduledTaskCommands", "ScheduledTaskRuns", "ScheduledTaskEvents" };
         foreach (var type in new[] { typeof(AiScheduledTaskRow), typeof(AiScheduledTaskCommandRow), typeof(AiScheduledTaskRunRow), typeof(AiScheduledTaskEventRow) })
