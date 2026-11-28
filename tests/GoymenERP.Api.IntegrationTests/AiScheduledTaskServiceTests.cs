@@ -121,7 +121,7 @@ public sealed class AiScheduledTaskServiceTests
         var missing = new AiScheduledTaskServiceV1(f.Company, f.User, TimeProvider.System, f.Store);
         Assert.Equal(503, (await Assert.ThrowsAsync<AiScheduledTaskException>(() => missing.CreateAsync(id, Definition, Meta("create")))).Status);
         await f.Service.CreateAsync(id, Definition, Meta("create")); f.User.Actor = "SENTETIK-other";
-        Assert.Equal(403, (await Assert.ThrowsAsync<AiScheduledTaskException>(() => f.Service.ReadOwnAsync(id)))).Status);
+        Assert.Equal(403, (await Assert.ThrowsAsync<AiScheduledTaskException>(() => f.Service.ReadOwnAsync(id))).Status);
         Assert.Equal(0, f.Ports.Reads);
     }
     [Fact]

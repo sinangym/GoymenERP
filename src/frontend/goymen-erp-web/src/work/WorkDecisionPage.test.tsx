@@ -2745,11 +2745,12 @@ describe('Work period paired native decision',()=>{
   cleanup();mountAccountingPeriod(kind);await screen.findByText(T.unknown)
   expect(screen.queryByRole('region',{name:T.accountingReopeningTitle})).toBeNull();expect(screen.queryByRole('region',{name:T.accountingPeriodTitle})).toBeNull()
   expect(calls.filter(c=>c.url.includes(path)&&c.method==='GET')).toHaveLength(reads)
-  fireEvent.click(screen.getByRole('button',{name:T.retry}));await screen.findByText(T.done)
+  await userEvent.setup().click(screen.getByRole('button',{name:T.retry}))
   const sent=calls.filter(c=>c.method==='POST');expect(sent).toHaveLength(2);expect(sent[1]!.body).toEqual(sent[0]!.body)
   expect(sent[1]!.headers['Idempotency-Key']).toBe(sent[0]!.headers['Idempotency-Key'])
   expect(sent[0]!.body).toEqual({expectedVersion:kind===openingPeriodKind?'9007199254740993':'1',approve:true,reason:null,delegationId:null,
    ...(kind===reopeningPeriodKind?{accountingPeriodReopening:{expectedPeriodVersion:'9007199254740993'}}:{})})
+  await screen.findByText(T.done)
   expect(JSON.stringify(sessionStorage)).not.toContain('sourceFactsDigest');expect(JSON.stringify(sessionStorage)).not.toContain('SENTETIK yeniden açma gerekçesi')
  })
  it.each([openingPeriodKind,reopeningPeriodKind] as const)('does not read with only legacy/native or missing approval capabilities: %s',async kind=>{
