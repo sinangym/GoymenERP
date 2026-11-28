@@ -245,6 +245,9 @@ public static class CounterpartyProblemCodesV1
 
     public const string PartyMergeTaxIdentityMismatch = "party_merge_tax_identity_mismatch";
 
+    /// <summary>KIM-D59: nonstored seen-impact refusal; this is not a native terminal command receipt.</summary>
+    public const string PartyMergeImpactChanged = "counterparty_merge_impact_changed";
+
     /// <summary>KLN-D38 party succession (predecessor → successor in one company).</summary>
     public const string SuccessionSameParty = "succession_same_party";
 

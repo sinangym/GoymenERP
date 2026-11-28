@@ -35,6 +35,7 @@ public sealed class CounterpartyProblemCodesV1Tests
             CounterpartyProblemCodesV1.PartyAlreadyMerged,
             CounterpartyProblemCodesV1.PartyMergeTargetMerged,
             CounterpartyProblemCodesV1.PartyMergeTaxIdentityMismatch,
+            CounterpartyProblemCodesV1.PartyMergeImpactChanged,
             CounterpartyProblemCodesV1.SuccessionSameParty,
             CounterpartyProblemCodesV1.SuccessionSameTaxIdentity,
             CounterpartyProblemCodesV1.SuccessionSuccessorInactive,
@@ -48,7 +49,7 @@ public sealed class CounterpartyProblemCodesV1Tests
             CounterpartyProblemCodesV1.LegalNameSelfDecision,
         };
 
-        Assert.Equal(37, codes.Distinct(StringComparer.Ordinal).Count());
+        Assert.Equal(38, codes.Distinct(StringComparer.Ordinal).Count());
         Assert.All(codes, code => Assert.Matches("^[a-z]+(?:_[a-z]+)*$", code));
     }
 

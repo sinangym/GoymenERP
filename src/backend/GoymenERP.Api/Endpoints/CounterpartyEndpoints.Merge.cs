@@ -25,6 +25,7 @@ public static partial class CounterpartyEndpoints
 {
     private static void MapPartyMergeEndpoints(RouteGroupBuilder group)
     {
+        MapPartyMergePurposePreview(group);
         group.MapGet("/{partyId:guid}/merge", async (
             Guid partyId, ICounterpartyPartyMergeService service,
             HttpContext context, CancellationToken cancellationToken) =>
@@ -110,7 +111,22 @@ public static partial class CounterpartyEndpoints
             CounterpartyCommandExecution execution;
             try
             {
-                execution = await service.ApproveMergeAsync(partyId, command, metadata, cancellationToken);
+                if (context.Request.Headers.TryGetValue(MergeSeenImpactHeader, out var seen))
+                {
+                    if (seen.Count != 1 || !IsMergeSeenImpactDigest(seen[0]))
+                        return ValidationProblem("Cari birleştirme isteği geçersiz.", "Görülen etki bağı geçersiz.");
+                    var purpose = context.RequestServices.GetService<ICounterpartyPartyMergePurposeV1>();
+                    if (purpose is null) return Results.Problem(statusCode: 503);
+                    var answer = await purpose.ApprovePurposeAsync(partyId, command, seen[0]!, metadata,
+                        token => RequireMergeHttpContext(user, company, correlation, metadata.CompanyId, metadata.ActorId, metadata.CorrelationId, token), cancellationToken);
+                    if (answer is { Status: CounterpartyPartyMergePurposeStatusV1.Changed, Execution: null })
+                        return CounterpartyProblem(409, CounterpartyProblemCodesV1.PartyMergeImpactChanged,
+                            "Birleştirme etkisi değişti.", "Önizlemeyi yeniden okuyup gerçekleşecek etkiyi tekrar onaylayın.");
+                    if (answer is not { Status: CounterpartyPartyMergePurposeStatusV1.Executed, Execution: { } original })
+                        return Results.Problem(statusCode: 503);
+                    execution = original;
+                }
+                else execution = await service.ApproveMergeAsync(partyId, command, metadata, cancellationToken);
             }
             catch (UnauthorizedAccessException)
             {
@@ -142,7 +158,9 @@ public static partial class CounterpartyEndpoints
                 CounterpartyProblemCodesV1.PartyAlreadyMerged,
                 CounterpartyProblemCodesV1.PartyMergeTargetMerged,
                 CounterpartyProblemCodesV1.PartyMergeTaxIdentityMismatch,
+                CounterpartyProblemCodesV1.PartyMergeImpactChanged,
                 CounterpartyClientContract.RequiredCode, CounterpartyClientContract.UnsupportedCode)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .ProducesErpAuthenticatedProblems();
     }
 

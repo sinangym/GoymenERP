@@ -129,6 +129,8 @@ public static class CounterpartyModuleExtensions
             provider.GetRequiredService<CounterpartyCommandService>());
         services.AddScoped<ICounterpartyPartyMergeService>(provider =>
             provider.GetRequiredService<CounterpartyCommandService>());
+        services.AddScoped<ICounterpartyPartyMergePurposeV1>(provider =>
+            (ICounterpartyPartyMergePurposeV1)provider.GetRequiredService<ICounterpartyPartyMergeService>());
         services.AddScoped<ICounterpartyCustomerGroupService>(provider =>
             provider.GetRequiredService<CounterpartyCommandService>());
         services.AddScoped<ICounterpartyEDocumentProfileService>(provider =>
