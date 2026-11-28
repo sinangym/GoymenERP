@@ -262,3 +262,22 @@ it('does not open or read the Work inbox under only the native Risk control',asy
  await renderAt('/onaylarim/kuyruk');await waitFor(()=>expect(stateBlock('not-found')).not.toBeNull())
  expect(inboxCalls()).toEqual([]);expect(queueCalls()).toEqual([]);expect(screen.queryByTestId('work-inbox-list')).toBeNull()
 })
+
+it('opens the existing Contract inbox row under its standalone purpose only and preserves the price-free native reference',async()=>{
+ const kind='sales.contract-discount.v1',cap='sales.contract-discount.work-decision'
+ const item={...importItem,module:'sales',kind,itemId:FIRST,documentLabel:'Sözleşme #11',link:`/onaylarim/${kind}/${FIRST}`,
+  awaitingPermission:'sales.contracts.discount.approve',ruleVersion:`work.approval-rule:${kind}:0`,
+  explanation:{rules:[{ruleCode:'sales.contract-discount-limit-undefined',threshold:null,actual:null,deviation:null,unit:null}],
+   references:[{role:'sales-contract',label:'Sözleşme #11',recordId:FIRST,link:null}]}}
+ const {inboxCalls,queueCalls}=installFetch([cap],()=>json(inbox({items:[item],sources:[source('sales',kind,'sales.contracts.discount.approve')]})))
+ await renderAt('/onaylarim/kuyruk');await screen.findByTestId('work-inbox-list');expect(cards()).toHaveLength(1)
+ const card=cards()[0]!;expect(card.getAttribute('data-kind')).toBe(kind)
+ expect(within(card).getByRole('link',{name:WORK_INBOX_TEXT.openOwnerLabel('Sözleşme iskontosu onayı',item.documentLabel)}).getAttribute('href')).toBe(item.link)
+ await userEvent.setup().click(within(card).getByRole('button',{name:WORK_INBOX_TEXT.explanationToggle}))
+ expect(within(card).getAllByText('Sözleşme #11').length).toBeGreaterThan(0);expect(item.explanation.references[0].link).toBeNull()
+ expect(inboxCalls()).toEqual([{url:'/api/v1/work/inbox?view=awaiting-my-decision',companyId:COMPANY}]);expect(queueCalls()).toEqual([])
+})
+it.each(['sales.contracts.discount-approve','sales.contracts.list'])('does not open or read the standalone Contract queue using only native %s',async cap=>{
+ const {inboxCalls,queueCalls}=installFetch([cap]);await renderAt('/onaylarim/kuyruk')
+ await waitFor(()=>expect(stateBlock('not-found')).not.toBeNull());expect(inboxCalls()).toEqual([]);expect(queueCalls()).toEqual([])
+})

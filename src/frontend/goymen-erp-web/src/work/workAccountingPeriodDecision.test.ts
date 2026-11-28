@@ -9,7 +9,7 @@ const request: WorkDecisionRequest={expectedVersion:'1',approve:true,reason:null
 afterEach(()=>vi.unstubAllGlobals())
 describe('Work period native projections',()=>{
  it('publishes both paired kinds and reuses exact full native shapes',()=>{
-  expect(WORK_DECISION_KINDS).toHaveLength(62)
+  expect(WORK_DECISION_KINDS).toHaveLength(63)
   const opening=accountingOpeningFixture(company,id,'9007199254740993'),reopening=accountingReopeningFixture(company,id,'9007199254740993')
   expect(decodeWorkDecisionPreview(opening,company,openingPeriodKind,id)?.accountingPeriodOpening).toEqual(opening.accountingPeriodOpening)
   expect(decodeWorkDecisionPreview(reopening,company,reopeningPeriodKind,id)?.accountingPeriodReopening).toEqual(reopening.accountingPeriodReopening)

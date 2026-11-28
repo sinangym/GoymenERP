@@ -9,7 +9,7 @@ const decode=(v:unknown)=>decodeWorkDecisionPreview(v,COMPANY_A,kind,id)
 const record=(v:unknown)=>v as Record<string,unknown>
 describe('numbered over-delivery strict native human/Work transport',()=>{
  it('publishes exactly one paired purpose beside all existing60 kinds',()=>{
-  expect(WORK_DECISION_KINDS).toHaveLength(62);expect(WORK_DECISION_KINDS.filter(x=>x===kind)).toEqual([kind])
+  expect(WORK_DECISION_KINDS).toHaveLength(63);expect(WORK_DECISION_KINDS.filter(x=>x===kind)).toEqual([kind])
  })
  it('keeps full5/18/11/8 exact shapes, raw quantity strings and independent request/order versions',()=>{
   const v=fixture(COMPANY_A),before=JSON.stringify(v),d=decode(v);expect(d).not.toBeNull();expect(JSON.stringify(v)).toBe(before)

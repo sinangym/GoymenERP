@@ -26,7 +26,7 @@ const WP4_KINDS = {
   'sales.invoice.v1': SALES_WORK_DECISION_CAPABILITY.invoice,
   'sales.subcontract-invoice.v1': SALES_WORK_DECISION_CAPABILITY.subcontractInvoice,
   'sales.customer-return.v1': SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY,
-  'sales.contract-discount.v1': null,
+  'sales.contract-discount.v1': SALES_WORK_DECISION_CAPABILITY.contractDiscount,
   // SAT-D476 / SAT-D475: the request-based kinds.
   'sales.quote-conversion-request.v1': SALES_WORK_DECISION_CAPABILITY.quoteConversion,
   'sales.over-delivery-request.v1': SALES_WORK_DECISION_CAPABILITY.overDeliveryRequest,

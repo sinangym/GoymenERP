@@ -70,7 +70,7 @@ internal sealed partial class SalesContractDiscountWorkInboxSourceV1(
                 id,
                 label,
                 createdAtUtc.ToUniversalTime(),
-                SalesWorkInboxItemsV1.ContractsLink,
+                $"/onaylarim/{KindName}/{id:D}",
                 SalesWorkInboxItemsV1.RequireActor(createdBy),
                 rules,
                 [new WorkApprovalReferenceV1(SalesWorkInboxItemsV1.ContractRole, label, id, null)]);

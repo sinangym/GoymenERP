@@ -10,7 +10,7 @@ describe('paired manufacturing cost Work purpose',()=>{
   const v=fixture(company),h=v.manufacturingCostDifference
   expect(decodeWorkDecisionPreview(v,company,kind,id)?.manufacturingCostDifference).toEqual(h)
   expect(Object.keys(h)).toHaveLength(4);expect(Object.keys(h.proposal)).toHaveLength(20);expect(Object.keys(h.proposal.outputs[0]!)).toHaveLength(11);expect(Object.keys(h.proposal.accountPlan)).toHaveLength(7)
-  expect(h.proposal.outputs).toHaveLength(13);expect(isWorkDecisionKind(kind)).toBe(true);expect(WORK_DECISION_KINDS).toHaveLength(62)
+  expect(h.proposal.outputs).toHaveLength(13);expect(isWorkDecisionKind(kind)).toBe(true);expect(WORK_DECISION_KINDS).toHaveLength(63)
   expect(WORK_DECISION_KINDS.filter(k=>String(k)===kind)).toHaveLength(1)
   expect(decodeWorkDecisionPreview(v,company.toUpperCase(),kind,id.toUpperCase())).not.toBeNull()
  })

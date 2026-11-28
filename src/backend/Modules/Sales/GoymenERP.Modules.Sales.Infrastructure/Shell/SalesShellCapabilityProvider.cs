@@ -55,8 +55,9 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    // 1.36: quantity-only remainder decisions retain native OrdersApprove and SAT-D2 persona rules.
-    public const string OwnerContractVersion = "1.36";
+    // 1.37: the contract discount purpose uses its existing approval only; optional prices remain owner-controlled.
+    public const string OwnerContractVersion = "1.37";
+    public const string ContractDiscountWorkDecisionCapabilityId = "sales.contract-discount.work-decision";
     public const string RiskExceptionWorkDecisionCapabilityId = "sales.risk-exception.work-decision";
     public const string RemainderChangeWorkDecisionCapabilityId = "sales.remainder-change.work-decision";
     public const string OverDeliveryRequestWorkDecisionCapabilityId = "sales.over-delivery-request.work-decision";
@@ -310,6 +311,10 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
         return
         [
         // WP8: purpose decision routes require the native command names, with no browse/read grant added.
+        new ShellCapabilityDeclaration(ContractDiscountWorkDecisionCapabilityId,"sales-contract-discount-work-decision",
+            "/onaylarim/sales.contract-discount.v1/:approvalId","W-SALES-CONTRACT-DISCOUNT-01",ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            ShellCapabilityContextRequirement.SingleCompany,ShellCapabilityScopeRequirement.CompanyWide,
+            [SalesPermissionManifestV1.ContractsDiscountApprove],ImplementationAvailable:true),
         new ShellCapabilityDeclaration(RemainderChangeWorkDecisionCapabilityId,"sales-remainder-change-work-decision",
             "/onaylarim/sales.remainder-change.v1/:approvalId","W-SALES-REMAINDER-CHANGE-01",ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
             ShellCapabilityContextRequirement.SingleCompany,ShellCapabilityScopeRequirement.CompanyWide,

@@ -181,6 +181,9 @@ public sealed class SalesRemainingApprovalWorkInboxSourcesV1Tests
             new WorkApprovalRuleResultV1(SalesContractDiscountWorkInboxSourceV1.OverLimitRule, null, null, null, null), rule));
         Assert.Equal(2, withheld.Rules.Count);
         Assert.Equal(("Sözleşme #1", Maker, T0.ToUniversalTime()), (shown.DocumentLabel, shown.PreparedBy, shown.WaitingSinceUtc));
+        Assert.Equal($"/onaylarim/{SalesContractDiscountWorkInboxSourceV1.KindName}/{shown.ItemId:D}", shown.Link);
+        Assert.Equal(SalesWorkInboxItemsV1.ContractsLink, "/satis/sozlesmeler");
+        Assert.Null(Assert.Single(shown.References).Link);
         AssertContractShape(Sources.Contract(store), new WorkInboxSourceResultV1(NativeApprovalQueueOutcomeV1.Found, Company,
             [shown], false));
     }
