@@ -192,3 +192,17 @@ it('places the existing released morning summary on the one Work inbox without a
  expect(await screen.findByRole('heading',{level:2,name:MORNING_SUMMARY_TEXT.heading})).toBeTruthy()
  expect(screen.getByTestId('work-inbox')).toBeTruthy();expect(queueCalls()).toHaveLength(0)
 })
+
+// Flow7 replaces the existing request inbox capability; it does not append a second source/card.
+it('opens the one inbox with only the Sales request purpose and preserves the native detail reference',async()=>{
+ const kind='sales.request.v1',cap='sales.request.work-decision'
+ const item={...importItem,module:'sales',kind,itemId:FIRST,documentLabel:'SENTETIK SR-7',link:`/onaylarim/${kind}/${FIRST}`,
+  awaitingPermission:'sales.requests.approve',ruleVersion:`work.approval-rule:${kind}:0`,
+  explanation:{rules:[{ruleCode:'sales.request-approval-required',threshold:null,actual:null,deviation:null,unit:null}],
+   references:[{role:'sales-request',label:'SENTETIK SR-7',recordId:FIRST,link:`/satis/talepler/${FIRST}`}]}}
+ const {inboxCalls,queueCalls}=installFetch([cap],()=>json(inbox({items:[item],sources:[source('sales',kind,'sales.requests.approve')]})))
+ await renderAt('/onaylarim/kuyruk');await screen.findByTestId('work-inbox-list');expect(cards()).toHaveLength(1)
+ const card=cards()[0]!;expect(card.getAttribute('data-kind')).toBe(kind)
+ expect(within(card).getByRole('link',{name:WORK_INBOX_TEXT.openOwnerLabel('Satış talebi onayı',item.documentLabel)}).getAttribute('href')).toBe(item.link)
+ expect(inboxCalls()).toEqual([{url:'/api/v1/work/inbox?view=awaiting-my-decision',companyId:COMPANY}]);expect(queueCalls()).toEqual([])
+})

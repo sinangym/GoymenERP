@@ -158,6 +158,7 @@ export const CAPABILITY = {
   /** S-02 sales order draft list. Route `/satis/siparisler`, owner the Sales lane (SİPARİŞ). */
   salesDraftsList: 'sales.drafts.list',
   /** Sales-owned purpose routes mounted by Work; no browse grant required. */
+  salesRequestWorkDecision: 'sales.request.work-decision',
   salesOrderWorkDecision: 'sales.order-draft.work-decision',
   salesInvoiceWorkDecision: 'sales.invoice.work-decision',
   salesSubcontractInvoiceWorkDecision: 'sales.subcontract-invoice.work-decision',
@@ -540,6 +541,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.organizationCompanyTaxId]: '/ayarlar/organizasyon/sirket-vergi-no',
   [CAPABILITY.organizationCompanyTaxIdWorkDecision]: '/onaylarim/organization.company-tax-id-change.v1/:approvalId',
   [CAPABILITY.salesDraftsList]: '/satis/siparisler',
+  [CAPABILITY.salesRequestWorkDecision]: '/onaylarim/sales.request.v1/:approvalId',
   [CAPABILITY.salesOrderWorkDecision]: '/onaylarim/sales.order-draft.v1/:approvalId',
   [CAPABILITY.salesInvoiceWorkDecision]: '/onaylarim/sales.invoice.v1/:approvalId',
   [CAPABILITY.salesSubcontractInvoiceWorkDecision]: '/onaylarim/sales.subcontract-invoice.v1/:approvalId',

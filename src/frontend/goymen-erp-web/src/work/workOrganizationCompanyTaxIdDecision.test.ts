@@ -122,7 +122,7 @@ describe('paired company VKN generic Work transport',()=>{
  it('requires the actual12-key wrapper and publishes one purpose without changing native6/native10 facts',()=>{
   const v=fixture(COMPANY_A),raw=JSON.stringify(v)
   expect(decodeWorkDecisionPreview(v,COMPANY_A,kind,id)?.organizationCompanyTaxId).toEqual(v.organizationCompanyTaxId)
-  expect(Object.keys(v)).toHaveLength(12);expect(WORK_DECISION_KINDS).toHaveLength(54);expect(WORK_DECISION_KINDS.filter(k=>k===kind)).toEqual([kind])
+  expect(Object.keys(v)).toHaveLength(12);expect(WORK_DECISION_KINDS).toHaveLength(55);expect(WORK_DECISION_KINDS.filter(k=>k===kind)).toEqual([kind])
   expect(workDecisionReasonLimit(kind)).toBe(1000);expect(JSON.stringify(v)).toBe(raw)
  })
  it.each([true,false])('keeps the existing exact four-field optional-note command on approve=%s',approve=>{

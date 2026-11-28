@@ -28,7 +28,7 @@ describe('shell ↔ Sales lane capability ids', () => {
     expect(NAV_GROUPS.find((group) => group.id === 'sales')?.entries).toContain(CAPABILITY.salesOfficialInvoiceCancellation)
   })
 
-  it.each(['order', 'invoice', 'subcontractInvoice'] as const)('mounts the Sales %s purpose route exactly once ahead of the legacy generic detail', key => {
+  it.each(['request', 'order', 'invoice', 'subcontractInvoice'] as const)('mounts the Sales %s purpose route exactly once ahead of the legacy generic detail', key => {
     const capability = SALES_WORK_DECISION_CAPABILITY[key]
     const path = SALES_WORK_DECISION_ROUTE[key]
     expect(Object.values(CAPABILITY)).toContain(capability)
@@ -155,4 +155,11 @@ describe('shell ↔ Sales lane capability ids', () => {
     expect(NAV_CAPABILITIES).not.toContain(SALES_POOL_CAPABILITY_ID.quotesCreate)
     expect(matchPath(CAPABILITY_ROUTE[CAPABILITY.salesDraftsDetail], SALES_POOL_ROUTE.requests)).toBeNull()
   })
+})
+
+it('retains the native request detail path beside the new purpose without granting browse through the purpose',()=>{
+ expect(SALES_WORK_DECISION_ROUTE.request).toBe('/onaylarim/sales.request.v1/:approvalId')
+ expect(SALES_POOL_ROUTE.requestDetail).toBe('/satis/talepler/:requestId')
+ expect(SALES_WORK_DECISION_CAPABILITY.request).not.toBe(SALES_POOL_CAPABILITY_ID.requestsDetail)
+ expect(matchRoutes(shellRoutes,'/satis/talepler/cccccccc-0000-4000-8000-0000000000f1')?.at(-1)?.route.path).toBe('satis/talepler/:requestId')
 })

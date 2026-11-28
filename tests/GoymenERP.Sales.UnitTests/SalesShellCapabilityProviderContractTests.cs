@@ -27,7 +27,13 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal("/onaylarim/sales.subcontract-invoice.v1/:approvalId",subcontract.RoutePath);
         Assert.Equal("sales-subcontract-invoice-work-decision",subcontract.RouteId);
         Assert.Equal("W-SALES-SUBCONTRACT-01",subcontract.ScreenId);
-        Assert.All(new[]{order,invoice,subcontract},item=>Assert.Equal(ShellCapabilityContextRequirement.SingleCompany,item.ContextRequirement));
+        var request=Assert.Single(declarations,item=>item.CapabilityId==SalesShellCapabilityProvider.RequestWorkDecisionCapabilityId);
+        Assert.Equal([SalesPermissionManifestV1.RequestsApprove],request.RequiredPermissions);
+        Assert.Null(request.ParentCapabilityId);
+        Assert.True(request.ImplementationAvailable);
+        Assert.Equal(("sales-request-work-decision","/onaylarim/sales.request.v1/:approvalId","W-SALES-REQUEST-01"),
+            (request.RouteId,request.RoutePath,request.ScreenId));
+        Assert.All(new[]{order,invoice,subcontract,request},item=>Assert.Equal(ShellCapabilityContextRequirement.SingleCompany,item.ContextRequirement));
     }
     private const string FrontendCapabilities = "src/frontend/goymen-erp-web/src/sales/capabilities.ts";
 
@@ -72,9 +78,9 @@ public sealed class SalesShellCapabilityProviderContractTests
         // API-40 / UI-70b / SAT-D288..SAT-D294 (1.25, merged after API-07 1.24): registers the four return names (manifest v30), the S-10
         // return list, create and detail screens and the detail's submission, approval and finalisation controls.
         // API-33 / API-36 (1.27): the four invoice controls of the S-09 list (write, approve, match, finalize); no new name.
-        // WP8 1.29 adds the subcontract native decision purpose alongside the two earlier routes without a browsing read permission or a new grant.
-        Assert.Equal(("SALES", "1.29"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(46, declarations.Count);
+        // WP8 1.30 adds the price-free request purpose; 1.29 adds the subcontract native decision purpose alongside the two earlier routes without a browsing read permission or a new grant.
+        Assert.Equal(("SALES", "1.30"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(47, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);

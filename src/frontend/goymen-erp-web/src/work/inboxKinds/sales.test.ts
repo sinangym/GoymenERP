@@ -22,7 +22,7 @@ import {
 import { SALES_INBOX_KINDS } from './sales'
 
 const WP4_KINDS = {
-  'sales.request.v1': SALES_POOL_CAPABILITY_ID.requestsDecide,
+  'sales.request.v1': SALES_WORK_DECISION_CAPABILITY.request,
   'sales.invoice.v1': SALES_WORK_DECISION_CAPABILITY.invoice,
   'sales.subcontract-invoice.v1': SALES_WORK_DECISION_CAPABILITY.subcontractInvoice,
   'sales.customer-return.v1': SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY,
@@ -41,8 +41,11 @@ describe('WP4 Sales inbox kinds', () => {
       expect(SALES_INBOX_KINDS).toContain(entries[0])
     }
     expect(WORK_INBOX_CAPABILITIES).toEqual(expect.arrayContaining([
-      SALES_POOL_CAPABILITY_ID.requestsDecide, SALES_WORK_DECISION_CAPABILITY.invoice, SALES_WORK_DECISION_CAPABILITY.subcontractInvoice, SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY,
+      SALES_WORK_DECISION_CAPABILITY.request, SALES_WORK_DECISION_CAPABILITY.invoice, SALES_WORK_DECISION_CAPABILITY.subcontractInvoice, SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY,
     ]))
+    expect(WORK_INBOX_CAPABILITIES).not.toContain(SALES_POOL_CAPABILITY_ID.requestsDecide)
+    expect(WORK_INBOX_KINDS).toHaveLength(69)
+    expect(SALES_INBOX_KINDS).toHaveLength(11)
     // S-11 is not routed: holding only the contract discount permission does not open the inbox route.
     expect(WORK_INBOX_CAPABILITIES).not.toContain('sales.contracts.discount-approve')
   })

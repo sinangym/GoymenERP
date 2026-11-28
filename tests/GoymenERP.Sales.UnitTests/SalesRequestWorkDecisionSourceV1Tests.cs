@@ -24,7 +24,8 @@ public sealed class SalesRequestWorkDecisionSourceV1Tests
         Assert.Equal((approve, reject), (snapshot.SalesRequestProof!.ApprovalSupported, snapshot.SalesRequestProof.RejectionSupported));
         Assert.True(SalesRequestDecisionBindingV1.MatchesDecisionSnapshot(snapshot, detail));
         Assert.Null(snapshot.Item.PreparedBy); Assert.Null(snapshot.Item.ExcludedDeciders); Assert.False(snapshot.Item.Excludes(Maker));
-        Assert.Equal($"/satis/talepler/{Id:D}", snapshot.Item.Link);
+        Assert.Equal($"/onaylarim/sales.request.v1/{Id:D}", snapshot.Item.Link);
+        Assert.Equal($"/satis/talepler/{Id:D}", Assert.Single(snapshot.Item.References).Link);
         Assert.Equal(1, owner.Reads); Assert.Empty(store.Calls);
         Assert.All(authority.Asked, name => Assert.Equal(SalesPermissionManifestV1.RequestsApprove, name));
         using var json = JsonDocument.Parse(JsonSerializer.Serialize(snapshot, SalesDraftJson.Options));

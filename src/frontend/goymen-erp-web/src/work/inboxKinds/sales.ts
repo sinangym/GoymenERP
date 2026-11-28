@@ -17,7 +17,7 @@ export const SALES_INBOX_KINDS: readonly WorkInboxKind[] = [
   // WP1 D5: the native D-05 sales order draft is in the one inbox too (the owner's `sales.orders.approve`).
   { kind: 'sales.order-draft.v1', module: 'sales', capability: SALES_WORK_DECISION_CAPABILITY.order },
   // WP4: the remaining Sales approval kinds, each with the owner's existing approve control (none is new).
-  { kind: 'sales.request.v1', module: 'sales', capability: SALES_POOL_CAPABILITY_ID.requestsDecide },
+  { kind: 'sales.request.v1', module: 'sales', capability: SALES_WORK_DECISION_CAPABILITY.request },
   { kind: 'sales.invoice.v1', module: 'sales', capability: SALES_WORK_DECISION_CAPABILITY.invoice },
   // Native subcontract lifecycle purpose: invoice approval + price read, with no order browse grant.
   { kind: 'sales.subcontract-invoice.v1', module: 'sales', capability: SALES_WORK_DECISION_CAPABILITY.subcontractInvoice },

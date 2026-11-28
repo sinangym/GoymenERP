@@ -44,7 +44,8 @@ internal sealed partial class SalesRequestWorkInboxSourceV1(
             }
 
             var documentNo = SalesWorkInboxItemsV1.RequireLabel(request.DocumentNo);
-            var link = SalesWorkInboxItemsV1.RequestLink(request.Id);
+            var nativeLink = SalesWorkInboxItemsV1.RequestLink(request.Id);
+            var link = $"/onaylarim/{KindName}/{request.Id:D}";
             items.Add(new WorkInboxItemV1(
                 SalesWorkInboxSourceBaseV1.ModuleName,
                 KindName,
@@ -54,7 +55,7 @@ internal sealed partial class SalesRequestWorkInboxSourceV1(
                 link,
                 PreparedBy: null,
                 [new WorkApprovalRuleResultV1(ApprovalRule, null, null, null, null)],
-                [new WorkApprovalReferenceV1(SalesWorkInboxItemsV1.RequestRole, documentNo, request.Id, link)]));
+                [new WorkApprovalReferenceV1(SalesWorkInboxItemsV1.RequestRole, documentNo, request.Id, nativeLink)]));
         }
 
         return SalesWorkInboxItemsV1.Page(items, take);
