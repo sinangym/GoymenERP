@@ -108,7 +108,8 @@ public sealed partial class SalesDraftServiceTests
         Assert.False(SalesDiscountDecisionBindingV1.MatchesDecisionSnapshot(snapshot, detail with { DocumentNo = "other" }));
         var source = DiscountPurposeSource(world); var current = await source.ReadDecisionVersionAsync(DiscountPurposeContext(world), id, detail.Version, default);
         Assert.NotNull(current); Assert.True(current.Pending); Assert.False(current.SalesDiscountProof!.Historical);
-        Assert.Equal(SalesWorkInboxItemsV1.OrderLink(id), current.Item.Link);
+        Assert.Equal($"{SalesDiscountExceptionWorkInboxSourceV1.WorkDecisionPath}/{id:D}", current.Item.Link);
+        Assert.Equal(SalesWorkInboxItemsV1.OrderLink(id), current.Item.References![0].Link);
     }
 
     [Fact]

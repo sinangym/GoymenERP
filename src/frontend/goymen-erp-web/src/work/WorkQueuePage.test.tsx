@@ -219,3 +219,25 @@ it('opens the one inbox with only the quote conversion purpose and preserves its
  expect(within(card).getByRole('link',{name:WORK_INBOX_TEXT.openOwnerLabel('Süresi dolmuş teklif dönüşüm talebi',item.documentLabel)}).getAttribute('href')).toBe(item.link)
  expect(inboxCalls()).toEqual([{url:'/api/v1/work/inbox?view=awaiting-my-decision',companyId:COMPANY}]);expect(queueCalls()).toEqual([])
 })
+
+
+it('opens the single inbox under only Discount purpose authority with the native order reference retained',async()=>{
+ const kind='sales.discount-exception.v1',cap='sales.discount-exception.work-decision'
+ const item={...importItem,module:'sales',kind,itemId:FIRST,documentLabel:'SENTETIK SO-D3',link:`/onaylarim/${kind}/${FIRST}`,
+  awaitingPermission:'sales.orders.discount-exception.approve',ruleVersion:`work.approval-rule:${kind}:0`,
+  explanation:{rules:[{ruleCode:'sales.discount-over-limit',threshold:'10',actual:null,deviation:null,unit:'%'}],
+   references:[{role:'sales-order-draft',label:'SENTETIK SO-D3',recordId:FIRST,link:`/satis/siparisler/${FIRST}`}]}}
+ const {inboxCalls,queueCalls}=installFetch([cap],()=>json(inbox({items:[item],sources:[source('sales',kind,'sales.orders.discount-exception.approve')]})))
+ await renderAt('/onaylarim/kuyruk');await screen.findByTestId('work-inbox-list');expect(cards()).toHaveLength(1)
+ const card=cards()[0]!;expect(card.getAttribute('data-kind')).toBe(kind)
+ expect(within(card).getByRole('link',{name:WORK_INBOX_TEXT.openOwnerLabel('İskonto istisnası',item.documentLabel)}).getAttribute('href')).toBe(item.link)
+ await userEvent.setup().click(within(card).getByRole('button',{name:WORK_INBOX_TEXT.explanationToggle}))
+ expect(within(card).getByRole('link',{name:item.documentLabel}).getAttribute('href')).toBe(`/satis/siparisler/${FIRST}`)
+ expect(inboxCalls()).toEqual([{url:'/api/v1/work/inbox?view=awaiting-my-decision',companyId:COMPANY}]);expect(queueCalls()).toEqual([])
+})
+
+it('does not open or read the Work inbox under only the native Discount control',async()=>{
+ const {inboxCalls,queueCalls}=installFetch(['sales.orders.discount-exception.approve'])
+ await renderAt('/onaylarim/kuyruk');await waitFor(()=>expect(stateBlock('not-found')).not.toBeNull())
+ expect(inboxCalls()).toEqual([]);expect(queueCalls()).toEqual([]);expect(screen.queryByTestId('work-inbox-list')).toBeNull()
+})

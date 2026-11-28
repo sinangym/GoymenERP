@@ -49,6 +49,8 @@ public sealed class SalesShellCapabilityProviderTests
                     $"{SalesPermissionManifestV1.ReturnsRead}+{SalesPermissionManifestV1.OrdersPriceRead}", null),
                 ("sales.customer-returns.submit", "/satis/iadeler/:returnId",
                     $"{SalesPermissionManifestV1.ReturnsRead}+{SalesPermissionManifestV1.OrdersPriceRead}+{SalesPermissionManifestV1.ReturnsWrite}", "sales.customer-returns.detail"),
+                ("sales.discount-exception.work-decision", "/onaylarim/sales.discount-exception.v1/:approvalId",
+                    SalesPermissionManifestV1.OrdersDiscountExceptionApprove, null),
                 // UI-60 (Sales 1.9): the S-07 dispatch list on the order read.
                 ("sales.dispatches.list", "/satis/sevkiyatlar", SalesPermissionManifestV1.DraftsRead, null),
                 ("sales.drafts.create", "/satis/siparisler/yeni", SalesPermissionManifestV1.DraftsCreate, null),

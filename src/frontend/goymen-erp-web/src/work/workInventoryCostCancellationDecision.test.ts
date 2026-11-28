@@ -135,7 +135,7 @@ describe('published cancellation Work transport',()=>{
  it('decodes the actual five-field human wrapper and binds uppercase route GUIDs without rewriting raw facts',()=>{
   const v=fixture(company),raw=JSON.stringify(v)
   expect(decodeWorkDecisionPreview(v,company.toUpperCase(),kind,id.toUpperCase())?.inventoryCostCancellation).toEqual(v.inventoryCostCancellation)
-  expect(JSON.stringify(v)).toBe(raw);expect(WORK_DECISION_KINDS.filter(value=>value===kind)).toEqual([kind]);expect(WORK_DECISION_KINDS).toHaveLength(58)
+  expect(JSON.stringify(v)).toBe(raw);expect(WORK_DECISION_KINDS.filter(value=>value===kind)).toEqual([kind]);expect(WORK_DECISION_KINDS).toHaveLength(59)
  })
  it.each(WORK_DECISION_KINDS.filter(value=>value!==kind))('rejects a foreign cancellation selection on %s',otherKind=>{
   expect(isWorkDecisionRequest({expectedVersion:'7',approve:true,reason:null,delegationId:null,inventoryCostCancellation:{expectedProposalVersion:'1'}},otherKind)).toBe(false)

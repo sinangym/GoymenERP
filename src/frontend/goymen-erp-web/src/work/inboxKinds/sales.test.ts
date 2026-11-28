@@ -83,3 +83,12 @@ it('publishes Floor under its standalone purpose while leaving the native detail
  expect(WORK_INBOX_CAPABILITIES).toContain(SALES_WORK_DECISION_CAPABILITY.priceFloor)
  expect(WORK_INBOX_CAPABILITIES).not.toContain('sales.orders.price-floor-exception.approve')
 })
+
+
+it('replaces the Discount inbox capability with its standalone purpose without duplicating a Sales row',()=>{
+ const discount=WORK_INBOX_KINDS.filter(x=>x.kind==='sales.discount-exception.v1')
+ expect(discount).toEqual([{kind:'sales.discount-exception.v1',module:'sales',capability:SALES_WORK_DECISION_CAPABILITY.discount}])
+ expect(WORK_INBOX_CAPABILITIES).toContain(SALES_WORK_DECISION_CAPABILITY.discount)
+ expect(WORK_INBOX_CAPABILITIES).not.toContain('sales.orders.discount-exception.approve')
+ expect(WORK_INBOX_KINDS).toHaveLength(69);expect(SALES_INBOX_KINDS).toHaveLength(11)
+})

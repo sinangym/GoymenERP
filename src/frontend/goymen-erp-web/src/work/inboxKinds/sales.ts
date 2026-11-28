@@ -9,8 +9,7 @@ import type { WorkInboxKind } from './types'
 /** Sales approval kinds of the Work inbox (one file per module so packages add their kinds without touching the others). */
 export const SALES_INBOX_KINDS: readonly WorkInboxKind[] = [
   { kind: 'sales.price-floor-exception.v1', module: 'sales', capability: SALES_WORK_DECISION_CAPABILITY.priceFloor },
-  // No frontend capability for `sales.orders.discount-exception.approve` yet.
-  { kind: 'sales.discount-exception.v1', module: 'sales', capability: null },
+  { kind: 'sales.discount-exception.v1', module: 'sales', capability: SALES_WORK_DECISION_CAPABILITY.discount },
   { kind: 'sales.risk-exception.v1', module: 'sales', capability: SALES_RISK_EXCEPTION_APPROVE_CAPABILITY },
   // WP1 D5: the native D-05 sales order draft is in the one inbox too (the owner's `sales.orders.approve`).
   { kind: 'sales.order-draft.v1', module: 'sales', capability: SALES_WORK_DECISION_CAPABILITY.order },

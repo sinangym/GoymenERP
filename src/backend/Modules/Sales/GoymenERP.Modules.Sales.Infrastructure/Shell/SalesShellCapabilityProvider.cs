@@ -55,8 +55,9 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    // 1.32: the Floor purpose uses only its native approval authority; price disclosure remains optional.
-    public const string OwnerContractVersion = "1.32";
+    // 1.33: Discount uses its native approval authority; price disclosure remains optional.
+    public const string OwnerContractVersion = "1.33";
+    public const string DiscountWorkDecisionCapabilityId = "sales.discount-exception.work-decision";
     public const string PriceFloorWorkDecisionCapabilityId = "sales.price-floor-exception.work-decision";
     public const string QuoteConversionWorkDecisionCapabilityId = "sales.quote-conversion-request.work-decision";
     public const string RequestWorkDecisionCapabilityId = "sales.request.work-decision";
@@ -306,6 +307,10 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
         return
         [
         // WP8: purpose decision routes require the native command names, with no browse/read grant added.
+        new ShellCapabilityDeclaration(DiscountWorkDecisionCapabilityId,"sales-discount-exception-work-decision",
+            "/onaylarim/sales.discount-exception.v1/:approvalId","W-SALES-DISCOUNT-01",ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            ShellCapabilityContextRequirement.SingleCompany,ShellCapabilityScopeRequirement.CompanyWide,
+            [SalesPermissionManifestV1.OrdersDiscountExceptionApprove],ImplementationAvailable:true),
         new ShellCapabilityDeclaration(PriceFloorWorkDecisionCapabilityId,"sales-price-floor-exception-work-decision",
             "/onaylarim/sales.price-floor-exception.v1/:approvalId","W-SALES-PRICE-FLOOR-01",ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
             ShellCapabilityContextRequirement.SingleCompany,ShellCapabilityScopeRequirement.CompanyWide,

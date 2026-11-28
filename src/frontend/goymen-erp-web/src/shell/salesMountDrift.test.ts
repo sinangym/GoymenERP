@@ -28,7 +28,7 @@ describe('shell ↔ Sales lane capability ids', () => {
     expect(NAV_GROUPS.find((group) => group.id === 'sales')?.entries).toContain(CAPABILITY.salesOfficialInvoiceCancellation)
   })
 
-  it.each(['quoteConversion', 'request', 'order', 'invoice', 'subcontractInvoice'] as const)('mounts the Sales %s purpose route exactly once ahead of the legacy generic detail', key => {
+  it.each(['discount', 'quoteConversion', 'request', 'order', 'invoice', 'subcontractInvoice'] as const)('mounts the Sales %s purpose route exactly once ahead of the legacy generic detail', key => {
     const capability = SALES_WORK_DECISION_CAPABILITY[key]
     const path = SALES_WORK_DECISION_ROUTE[key]
     expect(Object.values(CAPABILITY)).toContain(capability)
@@ -178,5 +178,15 @@ it('mounts one standalone Floor purpose beside its unchanged native detail route
  expect(CAPABILITY_ROUTE[CAPABILITY.salesPriceFloorWorkDecision]).toBe(SALES_WORK_DECISION_ROUTE.priceFloor)
  expect(NAV_CAPABILITIES).not.toContain(CAPABILITY.salesPriceFloorWorkDecision)
  expect(matchRoutes(shellRoutes,'/onaylarim/sales.price-floor-exception.v1/cccccccc-0000-4000-8000-0000000000f1')?.at(-1)?.route.path).toBe('onaylarim/sales.price-floor-exception.v1/:approvalId')
+ expect(matchRoutes(shellRoutes,'/satis/siparisler/cccccccc-0000-4000-8000-0000000000f1')?.at(-1)?.route.path).toBe('satis/siparisler/:draftId')
+})
+
+
+it('retains the native order detail route beside the standalone Discount purpose without a browse grant',()=>{
+ expect(SALES_WORK_DECISION_CAPABILITY.discount).toBe('sales.discount-exception.work-decision')
+ expect(SALES_WORK_DECISION_ROUTE.discount).toBe('/onaylarim/sales.discount-exception.v1/:approvalId')
+ expect(CAPABILITY_ROUTE[CAPABILITY.salesDiscountWorkDecision]).toBe(SALES_WORK_DECISION_ROUTE.discount)
+ expect(NAV_CAPABILITIES).not.toContain(CAPABILITY.salesDiscountWorkDecision)
+ expect(matchRoutes(shellRoutes,'/onaylarim/sales.discount-exception.v1/cccccccc-0000-4000-8000-0000000000f1')?.at(-1)?.route.path).toBe('onaylarim/sales.discount-exception.v1/:approvalId')
  expect(matchRoutes(shellRoutes,'/satis/siparisler/cccccccc-0000-4000-8000-0000000000f1')?.at(-1)?.route.path).toBe('satis/siparisler/:draftId')
 })

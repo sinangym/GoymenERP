@@ -30,6 +30,7 @@ internal sealed partial class SalesDiscountExceptionWorkInboxSourceV1(
     : SalesWorkInboxSourceBaseV1(companyContext, currentUser, authority)
 {
     public const string KindName = "sales.discount-exception.v1";
+    public const string WorkDecisionPath = "/onaylarim/sales.discount-exception.v1";
     public const string OverLimitRule = "sales.discount-over-limit";
     public const string LimitUndefinedRule = "sales.discount-limit-undefined";
     public const string WithoutListPriceRule = "sales.discount-without-list-price";
@@ -98,7 +99,7 @@ internal sealed partial class SalesDiscountExceptionWorkInboxSourceV1(
                 SalesWorkInboxItemsV1.ProductLabel(x.ProductCode, x.ProductName), x.ProductId))));
         // SAT-D37 excludes every listed writer. SAT-D45 intentionally excludes no unlisted-only writer.
         return new(SalesWorkInboxSourceBaseV1.ModuleName, KindName, id, documentNo, first.CheckedAtUtc.ToUniversalTime(),
-            SalesWorkInboxItemsV1.OrderLink(id), maker, rules, references,
+            WorkDecisionPath + $"/{id:D}", maker, rules, references,
             maker is null ? null : SalesWorkInboxItemsV1.Others(maker, listed.Select(x => x.CheckedBy).ToArray()));
     }
 
