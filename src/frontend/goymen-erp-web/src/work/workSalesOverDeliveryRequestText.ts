@@ -1,0 +1,9 @@
+export const SALES_OVER_DELIVERY_REQUEST_WORK_TEXT={
+ title:'Fazla teslim talebi onay bilgileri',request:'Kayıtlı fazla teslim talebi',order:'Güncel sipariş',line:'Güncel sipariş satırı',
+ readOnly:'Talepte kayıtlı miktarlar ve güncel sipariş bilgileri ayrı gösterilir. Sevk uygunluğunu sunucu doğrular.',
+ retained:'Önceki fazla teslim kararınız yeniden doğrulanıyor. Karar verdiğiniz talep ve gerekçe korunuyor; güncel sipariş bu isteğin yerine kullanılmıyor.',
+ none:'Yok',yes:'Evet',no:'Hayır',
+ states:{Pending:'Onay bekliyor',Approved:'Onaylı',Rejected:'Reddedildi',Draft:'Taslak',Closed:'Kapalı',Cancelled:'İptal',Preparing:'Hazırlanıyor',PendingApproval:'İç onay bekliyor',Withdrawn:'Geri çekildi',Stale:'Güncelliğini yitirdi'},
+ fields:{requestId:'Talep kimliği',kind:'Talep türü',subjectId:'Talepteki sipariş kimliği',requestNo:'Talep no',subjectRevision:'Talebin sipariş revizyonu',status:'Talep durumu',version:'Talep sürümü',lineId:'Talepteki satır kimliği',ordered:'Talepteki ölçülen miktar',quantity:'Denenen sevk miktarı',requestedTotal:'Talepteki sevk toplamı',loadingInstructionId:'Yükleme talimatı',shipmentId:'Sevk kimliği',note:'Talep notu',requestedBy:'Sevki deneyen',requestedAtUtc:'Talep zamanı',decidedBy:'Karar veren',decidedAtUtc:'Karar zamanı',decisionReason:'Kayıtlı karar gerekçesi',approvalSupported:'Onay verilebilir',rejectionSupported:'Reddedilebilir',
+ id:'Sipariş kimliği',documentNo:'Sipariş no',orderVersion:'Güncel sipariş sürümü',revision:'Güncel sipariş revizyonu',state:'Sipariş durumu',approvalState:'İç onay durumu',partyId:'Cari kimliği',companyAccountId:'Şirket cari hesabı',currencyId:'Para birimi',businessDate:'İş tarihi',currentLineId:'Güncel satır kimliği',lineNo:'Satır no',productId:'Ürün kimliği',productCode:'Ürün kodu',productName:'Ürün adı',orderUnitId:'Sipariş birimi kimliği',orderUnitCode:'Sipariş birimi',currentQuantity:'Güncel sipariş miktarı'}
+} as const
