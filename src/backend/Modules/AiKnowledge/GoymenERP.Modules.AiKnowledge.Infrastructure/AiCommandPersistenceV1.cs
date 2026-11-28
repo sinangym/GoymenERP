@@ -31,6 +31,7 @@ public sealed class AiCommandPersistenceV1(AiKnowledgeDbContext database, ICompa
     public async Task<bool> TryAddAsync(AiCommandStoredRecordV1 record, IReadOnlyList<AiCommandStoredEventV1> events,
         CancellationToken cancellationToken = default)
     {
+        RequireNoScheduledOwner();
         ArgumentNullException.ThrowIfNull(record);
         ArgumentNullException.ThrowIfNull(events);
         if (!Valid(record) || record.Version != 1 || record.State != 1 || events.Count == 0
@@ -48,6 +49,7 @@ public sealed class AiCommandPersistenceV1(AiKnowledgeDbContext database, ICompa
     public async Task<bool> TryReplaceAsync(AiCommandStoredRecordV1 next, long expectedVersion,
         AiCommandStoredEventV1 auditEvent, CancellationToken cancellationToken = default)
     {
+        RequireNoScheduledOwner();
         ArgumentNullException.ThrowIfNull(next);
         ArgumentNullException.ThrowIfNull(auditEvent);
         if (!Valid(next) || !Valid(auditEvent) || expectedVersion is <= 0 or long.MaxValue
@@ -80,6 +82,7 @@ public sealed class AiCommandPersistenceV1(AiKnowledgeDbContext database, ICompa
 
     public Task<bool> AppendAsync(AiCommandStoredEventV1 auditEvent, CancellationToken cancellationToken = default)
     {
+        RequireNoScheduledOwner();
         ArgumentNullException.ThrowIfNull(auditEvent);
         if (!Valid(auditEvent)) return Task.FromResult(false);
         var row = EventRow(auditEvent);
@@ -92,6 +95,7 @@ public sealed class AiCommandPersistenceV1(AiKnowledgeDbContext database, ICompa
         var rows = ownedRows.ToArray();
         try
         {
+            RequireNoScheduledOwner();
             cancellationToken.ThrowIfCancellationRequested();
             if (!InCompany(companyId)) return false;
             // Relational SaveChanges atomically writes the state CAS and all its content-free events.
@@ -112,6 +116,12 @@ public sealed class AiCommandPersistenceV1(AiKnowledgeDbContext database, ICompa
             // Never clear another service's tracked approval/audit records in the shared module context.
             foreach (var row in rows) database.Entry(row).State = EntityState.Detached;
         }
+    }
+
+    private void RequireNoScheduledOwner()
+    {
+        if (database.ScheduledTaskWriteOwner is not null)
+            throw new AiCommandPersistenceUnavailableException(new InvalidOperationException("The context belongs to a scheduled-task command."));
     }
 
     private bool InCompany(Guid id) => id != Guid.Empty && company.IsResolved && company.CompanyId == id;

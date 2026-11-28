@@ -103,6 +103,7 @@ public sealed partial class AiKnowledgeDbContext(
 
     private void ApplyWriteGuards()
     {
+        RequireScheduledTaskWriteOwnership();
         foreach (var entry in ChangeTracker.Entries<AuditEvent>())
         {
             if (entry.State is EntityState.Modified or EntityState.Deleted)

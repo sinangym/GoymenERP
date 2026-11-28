@@ -5,6 +5,15 @@ namespace GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence;
 
 public sealed partial class AiKnowledgeDbContext
 {
+    // Only the current scheduled-task command may save its explicitly registered entities in this context.
+    internal HashSet<object>? ScheduledTaskWriteOwner { get; set; }
+    internal bool ScheduledTaskSaveAuthorized { get; set; }
+    internal void RequireScheduledTaskWriteOwnership()
+    {
+        if (ScheduledTaskWriteOwner is not { } owner) return;
+        if (!ScheduledTaskSaveAuthorized || ChangeTracker.Entries().Any(entry => entry.State is not (EntityState.Unchanged or EntityState.Detached)
+            && !owner.Contains(entry.Entity))) throw new InvalidOperationException("A scheduled-task command cannot save foreign tracked work.");
+    }
     internal DbSet<AiScheduledTaskRow> ScheduledTasks => Set<AiScheduledTaskRow>();
     internal DbSet<AiScheduledTaskCommandRow> ScheduledTaskCommands => Set<AiScheduledTaskCommandRow>();
     internal DbSet<AiScheduledTaskRunRow> ScheduledTaskRuns => Set<AiScheduledTaskRunRow>();

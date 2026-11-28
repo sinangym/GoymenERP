@@ -2,6 +2,7 @@ using System.Data;
 using System.Text.Json;
 using System.Transactions;
 using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.Modules.AiKnowledge.Domain;
 using GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence;
 using GoymenERP.Modules.Audit.Application.Contracts;
@@ -16,13 +17,16 @@ public sealed class AiScheduledTaskPersistenceV1(AiKnowledgeDbContext database, 
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
     private bool owned;
+    private readonly HashSet<object> ownedRows = new(ReferenceEqualityComparer.Instance);
+    private bool foreignAudit;
+    private bool ownAuditPending;
     public bool IsAvailable => database.Database.IsSqlServer() && audit is not null && writer is not null;
-    public bool IsCleanEntry => IsAvailable && !owned && Transaction.Current is null
-        && database.Database.CurrentTransaction is null && !database.ChangeTracker.HasChanges() && !writer!.HasPendingDrafts;
+    public bool IsCleanEntry => IsAvailable && !owned && database.ScheduledTaskWriteOwner is null && Transaction.Current is null
+        && database.Database.CurrentTransaction is null && !database.ChangeTracker.Entries().Any() && !writer!.HasPendingDrafts;
 
     public async Task<AiScheduledTaskViewV1?> ReadAsync(Guid companyId, Guid taskId, Func<CancellationToken, Task> fence, CancellationToken token = default)
     {
-        if (!IsAvailable) throw Unavailable();
+        if (!IsAvailable || database.ScheduledTaskWriteOwner is not null) throw Unavailable();
         await Fence(companyId, fence, token);
         var row = await database.ScheduledTasks.AsNoTracking().SingleOrDefaultAsync(x => x.CompanyId == companyId && x.TaskId == taskId, token);
         await Fence(companyId, fence, token);
@@ -37,7 +41,7 @@ public sealed class AiScheduledTaskPersistenceV1(AiKnowledgeDbContext database, 
         await Fence(command.CompanyId, fence, token);
         // The authority await may have yielded to another writer using this scoped context.
         if (!IsCleanEntry) throw Unavailable();
-        owned = true; IDbContextTransaction? transaction = null; var committed = false; var cleaned = false;
+        owned = true; ownedRows.Clear(); foreignAudit = false; ownAuditPending = false; database.ScheduledTaskWriteOwner = ownedRows; IDbContextTransaction? transaction = null; var committed = false; var cleaned = false;
         try
         {
             transaction = await database.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, token);
@@ -49,7 +53,7 @@ public sealed class AiScheduledTaskPersistenceV1(AiKnowledgeDbContext database, 
                 var replayTransaction = transaction; transaction = null; cleaned = true; await Cleanup(replayTransaction, false, null);
                 await Fence(command.CompanyId, fence, token); return replay;
             }
-            var row = await database.ScheduledTasks.SingleOrDefaultAsync(x => x.CompanyId == command.CompanyId && x.TaskId == command.TaskId, token);
+            var row = await database.ScheduledTasks.AsNoTracking().SingleOrDefaultAsync(x => x.CompanyId == command.CompanyId && x.TaskId == command.TaskId, token);
             await Fence(command.CompanyId, fence, token);
             var activeCount = await database.ScheduledTasks.CountAsync(x => x.CompanyId == command.CompanyId
                 && x.OwnerActorId == command.OwnerActorId && x.State == (int)AiScheduledTaskStateV1.Active, token);
@@ -64,33 +68,44 @@ public sealed class AiScheduledTaskPersistenceV1(AiKnowledgeDbContext database, 
                 if (next.CompanyId != command.CompanyId || next.TaskId != command.TaskId || next.OwnerActorId != command.OwnerActorId
                     || (row is null ? next.Version != 1 : next != View(row) && (row.Version == long.MaxValue || next.Version != row.Version + 1)))
                     throw Unavailable();
-                if (row is null) { row = new() { CompanyId = next.CompanyId, TaskId = next.TaskId }; database.ScheduledTasks.Add(row); }
+                if (row is null)
+                {
+                    row = new() { CompanyId = next.CompanyId, TaskId = next.TaskId }; ownedRows.Add(row); database.ScheduledTasks.Add(row);
+                }
+                else if (next != View(row)) { ownedRows.Add(row); database.ScheduledTasks.Attach(row); }
                 Apply(row, next);
             }
             if (mutation.Run is { } run)
             {
                 if (slotRecorded || run.CompanyId != command.CompanyId || run.TaskId != command.TaskId || run.OwnerActorId != command.OwnerActorId
                     || run.SlotUtc != command.RunSlotUtc || row is null || run.TaskVersion != row.Version) throw Unavailable();
-                database.ScheduledTaskRuns.Add(new() { CompanyId = run.CompanyId, TaskId = run.TaskId, SlotUtc = run.SlotUtc,
-                    ReceiptJson = JsonSerializer.Serialize(run, Json) });
+                var runRow = new AiScheduledTaskRunRow { CompanyId = run.CompanyId, TaskId = run.TaskId, SlotUtc = run.SlotUtc,
+                    ReceiptJson = JsonSerializer.Serialize(run, Json) };
+                ownedRows.Add(runRow); database.ScheduledTaskRuns.Add(runRow);
             }
             var response = new AiScheduledTaskResponseV1(mutation.Status, mutation.Code, mutation.Status == 403 ? null : mutation.Task,
                 mutation.Run, false, command.Metadata.CorrelationId);
-            database.ScheduledTaskCommands.Add(new() { CompanyId = command.CompanyId, ActorId = command.ActorId, KeyHash = command.KeyHash,
+            var commandRow = new AiScheduledTaskCommandRow { CompanyId = command.CompanyId, ActorId = command.ActorId, KeyHash = command.KeyHash,
                 TaskId = command.TaskId, Command = command.Command, PayloadHash = command.PayloadHash,
-                CorrelationId = command.Metadata.CorrelationId, ResponseJson = JsonSerializer.Serialize(response, Json) });
-            database.ScheduledTaskEvents.Add(new() { CompanyId = command.CompanyId, EventId = Guid.NewGuid(), TaskId = command.TaskId,
+                CorrelationId = command.Metadata.CorrelationId, ResponseJson = JsonSerializer.Serialize(response, Json) };
+            ownedRows.Add(commandRow); database.ScheduledTaskCommands.Add(commandRow);
+            var eventRow = new AiScheduledTaskEventRow { CompanyId = command.CompanyId, EventId = Guid.NewGuid(), TaskId = command.TaskId,
                 ActorId = command.ActorId, Kind = mutation.EventKind, Version = mutation.Task?.Version,
-                CorrelationId = command.Metadata.CorrelationId, RecordedAtUtc = command.RecordedAtUtc });
-            await database.SaveChangesAsync(token);
+                CorrelationId = command.Metadata.CorrelationId, RecordedAtUtc = command.RecordedAtUtc };
+            ownedRows.Add(eventRow); database.ScheduledTaskEvents.Add(eventRow);
+            database.ScheduledTaskSaveAuthorized = true;
+            try { await database.SaveChangesAsync(token); }
+            finally { database.ScheduledTaskSaveAuthorized = false; }
             await Fence(command.CompanyId, fence, token);
             // Enqueue only after the owner save: an optional legacy SaveChanges interceptor cannot consume this batch.
+            CheckOwnership(); ownAuditPending = true;
             audit!.Enqueue(new AuditEventDraft(command.CompanyId, "ai.scheduled-task." + mutation.EventKind + ".v1", "Ai.ScheduledTask",
                 command.TaskId.ToString("D"), command.Command, null, mutation.Task?.Version, AuditActorTypes.User, command.ActorId,
                 mutation.PermissionCode, [], "{}", JsonSerializer.Serialize(new { command.TaskId, mutation.EventKind,
                     mutation.Code, Version = mutation.Task?.Version }, Json), mutation.EventKind, null, AuditAiInvolvement.None,
-                null, "api", null, null, command.Metadata.CorrelationId, command.Metadata.CausationId, command.Metadata.IdempotencyKey));
+                null, SourceChannels.Web, null, null, command.Metadata.CorrelationId, command.Metadata.CausationId, command.Metadata.IdempotencyKey));
             await writer!.WritePendingAsync(transaction.GetDbTransaction(), token);
+            ownAuditPending = false;
             await Fence(command.CompanyId, fence, token);
             await transaction.CommitAsync(token); committed = true;
             var committedTransaction = transaction; transaction = null; cleaned = true; await Cleanup(committedTransaction, false, null);
@@ -107,7 +122,7 @@ public sealed class AiScheduledTaskPersistenceV1(AiKnowledgeDbContext database, 
             if (error is DbUpdateException or SqlException) throw new AiScheduledTaskException(503, "ai_scheduled_task_unavailable", error);
             throw;
         }
-        finally { owned = false; }
+        finally { database.ScheduledTaskSaveAuthorized = false; database.ScheduledTaskWriteOwner = null; owned = false; }
     }
 
     private async Task<AiScheduledTaskResponseV1?> Replay(AiScheduledTaskCommandV1 c, Func<CancellationToken, Task> fence, CancellationToken token)
@@ -130,7 +145,18 @@ public sealed class AiScheduledTaskPersistenceV1(AiKnowledgeDbContext database, 
         return answer with { IsReplay = true };
     }
     private async Task Fence(Guid id, Func<CancellationToken, Task> callback, CancellationToken token)
-    { token.ThrowIfCancellationRequested(); Same(id); await callback(token); token.ThrowIfCancellationRequested(); Same(id); }
+    {
+        token.ThrowIfCancellationRequested(); Same(id); CheckOwnership();
+        await callback(token);
+        token.ThrowIfCancellationRequested(); Same(id); CheckOwnership();
+    }
+    private void CheckOwnership()
+    {
+        if (!owned) return;
+        // No callback can make its work part of this command's save or cleanup.
+        if (!ownAuditPending && writer!.HasPendingDrafts) { foreignAudit = true; throw Unavailable(); }
+        if (database.ChangeTracker.Entries().Any(entry => !ownedRows.Contains(entry.Entity))) throw Unavailable();
+    }
     private void Same(Guid id)
     { if (id == Guid.Empty || !company.IsResolved || company.CompanyId != id) throw new AiScheduledTaskException(403, "forbidden"); }
     private async Task Cleanup(IDbContextTransaction? transaction, bool rollback, Exception? original)
@@ -144,8 +170,12 @@ public sealed class AiScheduledTaskPersistenceV1(AiKnowledgeDbContext database, 
             if (rollback && !completedDeadlock) try { await transaction.RollbackAsync(CancellationToken.None); } catch (Exception e) { faults.Add(e); }
             try { await transaction.DisposeAsync(); } catch (Exception e) { faults.Add(e); }
         }
-        try { database.ChangeTracker.Clear(); } catch (Exception e) { faults.Add(e); }
-        try { writer!.DiscardPending(); } catch (Exception e) { faults.Add(e); }
+        foreach (var row in ownedRows)
+            try { database.Entry(row).State = EntityState.Detached; } catch (Exception e) { faults.Add(e); }
+        ownedRows.Clear();
+        // A foreign draft detected after a callback belongs to that caller, including on abort.
+        if (ownAuditPending && !foreignAudit && writer!.HasPendingDrafts)
+            try { writer.DiscardPending(); ownAuditPending = false; } catch (Exception e) { faults.Add(e); }
         if (faults.Count != 0) { if (original is not null) faults.Insert(0, original); throw new AggregateException(faults); }
     }
     private static int? SqlNumber(Exception error)
