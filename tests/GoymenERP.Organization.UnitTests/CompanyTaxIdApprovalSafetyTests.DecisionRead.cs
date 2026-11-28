@@ -104,24 +104,38 @@ public sealed partial class CompanyTaxIdApprovalSafetyTests
         internal static async Task<PurposeRun> Start(bool terminal, string fault = "none")
         {
             var companyContext = new MutableCompany(); companyContext.Set(CompanyId); var bootstrap = new OrganizationBootstrapWriteScope();
-            var db = new OrganizationDbContext(new DbContextOptionsBuilder<OrganizationDbContext>().UseInMemoryDatabase("SENTETIK-tax-purpose-" + Guid.NewGuid()).Options, companyContext, bootstrap);
+            var databaseName = "SENTETIK-tax-purpose-" + Guid.NewGuid();
+            var options = new DbContextOptionsBuilder<OrganizationDbContext>().UseInMemoryDatabase(databaseName).Options;
+            var db = new OrganizationDbContext(options, companyContext, bootstrap);
             var company = new Company(CompanyId, "SENTETIK", "Sentetik şirket", "9000000017", false, false);
             var row = new CompanyTaxIdChangeRequest(RequestId, CompanyId, company.Vkn, "9000000033", 1, "SENTETIK reason", "SENTETIK-maker", DateTimeOffset.UtcNow);
             if (terminal) row.Approve(company, "SENTETIK-checker", null, DateTimeOffset.UtcNow);
             using (bootstrap.BeginBootstrapWrite())
             {
                 db.Companies.Add(company); db.CompanyTaxIdChangeRequests.Add(row);
+                await db.SaveChangesAsync();
                 if (terminal)
                 {
                     var response = JsonSerializer.Serialize(CommandResponses.For(CommandResult.Succeeded));
                     if (fault == "unknown-root") response = response[..^1] + ",\"unexpected\":true}";
                     if (fault == "private-root") response = response[..^1] + ",\"approvalReceipt\":{}}";
                     if (fault == "wrong-response") response = JsonSerializer.Serialize(CommandResponses.For(CommandResult.NotFound));
-                    db.CommandExecutions.Add(CommandExecution.Complete(new(Guid.NewGuid(), fault == "foreign-company" ? Guid.NewGuid() : CompanyId,
+                    var commandCompany = fault == "foreign-company" ? Guid.NewGuid() : CompanyId;
+                    var execution = CommandExecution.Complete(new(Guid.NewGuid(), commandCompany,
                         OrganizationMasterDataService.DecideCompanyTaxIdChangeCommandName, IdempotencyHash.ComputeKey("SENTETIK-proof-key"),
                         IdempotencyHash.ComputePayload(new { CompanyId, RequestId, Decision = "approve", ExpectedVersion = 1L, Note = (string?)null }),
                         fault == "actor" ? "SENTETIK-other" : "SENTETIK-checker", CommandResult.Succeeded.ToString(), 204,
-                        response, "SENTETIK-original", DateTimeOffset.UtcNow, fault == "schema" ? 2 : 1)));
+                        response, "SENTETIK-original", DateTimeOffset.UtcNow, fault == "schema" ? 2 : 1));
+                    if (fault == "foreign-company")
+                    {
+                        // The command tenant guard applies even during bootstrap: seed under the real foreign scope.
+                        var foreignCompany = new MutableCompany(); foreignCompany.Set(commandCompany);
+                        await using var foreign = new OrganizationDbContext(options, foreignCompany, bootstrap);
+                        foreign.Companies.Add(new(commandCompany, "SENTETIK-B", "Sentetik şirket B", "9000000041", false, false));
+                        foreign.CommandExecutions.Add(execution); await foreign.SaveChangesAsync();
+                        Assert.Equal(commandCompany, Assert.Single(await foreign.CommandExecutions.AsNoTracking().ToListAsync()).CompanyId);
+                    }
+                    else db.CommandExecutions.Add(execution);
                 }
                 await db.SaveChangesAsync();
             }
