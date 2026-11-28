@@ -674,7 +674,7 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Finish coordinated native linked price revision/reapproval with immutable held sibling evidence under ALS-D9/D18; then actualSQL/HTTP/browser/CI/K3/business acceptance.",
+      "next_action": "Keep mixed approval/supplier/price history and current UI together; verify real SQL, authorized normal-host HTTP/browser and mixed partial acceptance/invoice chains at closure. No new line-level approval engine.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -1007,6 +1007,34 @@
             },
             "source_scope": "Flow11 native contract owner current/original read, genuine Attempt/Audit receipt, same scoped aliases, Work Host canonical frozen rejection transport and complete native human view with optional price disclosure. Flow10 owned return decision safety source and shared foreign-write guards remain factory-off; current/original source under development. Approved mixed service price revision API and separate current native preview are composed; no replacement order engine.",
             "limits": "All genuine SQL source tests are compilation-only; SQL NOT_RUN. New mixed normalHTTP tests not run while existing startup shell owner pins await aggregate closure; no HTTP/DI acceptance claimed. Contract frontend not yet published. Browser/aggregatepins/fullCI/two independent exact-head K3/business acceptance NOT_RUN."
+          },
+          "mixed_service_price_mounted_frontend": {
+            "source_commit": "97886cfb7c833ac089b7470f89ccc5dba610c0b1",
+            "scope": "BOUNDED_FRONTEND_NOT_BROWSER_OR_RUNTIME_ACCEPTANCE",
+            "tsc": {
+              "freeGiB": 3.9236717224121094,
+              "seconds": 56.4378377,
+              "exit": 0,
+              "head": "97886cfb7c833ac089b7470f89ccc5dba610c0b1"
+            },
+            "lint": {
+              "freeGiB": 3.977924346923828,
+              "seconds": 0.1536414,
+              "exit": 0,
+              "head": "97886cfb7c833ac089b7470f89ccc5dba610c0b1"
+            },
+            "frontend": {
+              "freeGiB": 3.9677085876464844,
+              "seconds": 17.9920606,
+              "exit": 0,
+              "head": "97886cfb7c833ac089b7470f89ccc5dba610c0b1",
+              "total": 177,
+              "passed": 177,
+              "failed": 0,
+              "skipped": 0
+            },
+            "source_scope": "Mixed approved service price revision panel mounted only on the actual current order/company context, existing OrdersRevise-backed UI control, native command-detail decoder reused; same-key retained unknown and scope isolation. Complete new codecs/panel tests plus purchase detail/native codec/supplier revision references.",
+            "limits": "Synthetic DOM/transport only. Actual HTTP startup, browser, real SQL, aggregate pins, full CI and independent K3 remain pending; no grant/activation."
           }
         }
       },
