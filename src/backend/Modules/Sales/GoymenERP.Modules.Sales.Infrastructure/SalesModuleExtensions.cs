@@ -212,7 +212,7 @@ public static class SalesModuleExtensions
         serviceProvider.GetRequiredService<ISalesPartyAccountPortV1>(),
         serviceProvider.GetRequiredService<ISettingsPrerequisiteProvider>(),
         serviceProvider.GetRequiredService<TimeProvider>(),
-        serviceProvider.GetService<ISalesContractDiscountLimitSourceV1>());
+        serviceProvider.GetService<ISalesContractDiscountLimitSourceV1>()).WithContractDiscountDecisionSafety();
 
     // Named for the same architecture guard as the factories below: the company context is resolved, never registered.
     // A missing Finance port stays null: the finalisation fails closed, never a silent admission.
