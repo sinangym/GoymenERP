@@ -87,6 +87,8 @@ public static class IdentityModuleExtensions
             .RequireAccessGrantApprovalSafety());
         services.AddScoped<IIdentityAccessAssignmentService>(sp =>
             sp.GetRequiredService<IdentityAccessAssignmentService>().WithAccessGrantApprovalSafety());
+        services.AddScoped<IIdentityAccessGrantDecisionV1>(sp =>
+            (IIdentityAccessGrantDecisionV1)sp.GetRequiredService<IIdentityAccessAssignmentService>());
         services.AddScoped<IIdentityUserManagementServiceV1>(sp => sp.GetRequiredService<IdentityAccessAssignmentService>());
         services.AddScoped<ICompanySetupGroupAuthorityV1, SqlCompanySetupGroupAuthorityV1>();
         services.AddScoped<IdentityCompanySetupService>();

@@ -42,6 +42,7 @@ public sealed partial class IdentityAccessAssignmentServiceTests
         var service = scope.ServiceProvider.GetRequiredService<IIdentityAccessAssignmentService>();
         Assert.NotSame(core, service);
         Assert.Same(service, scope.ServiceProvider.GetRequiredService<IIdentityAccessAssignmentService>());
+        Assert.Same(service, scope.ServiceProvider.GetRequiredService<IIdentityAccessGrantDecisionV1>());
         Assert.Same(core, scope.ServiceProvider.GetRequiredService<IIdentityUserManagementServiceV1>());
         Assert.Same(h.Audits, scope.ServiceProvider.GetRequiredService<IAuditEventCollector>());
         Assert.Same(writer, scope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>());
