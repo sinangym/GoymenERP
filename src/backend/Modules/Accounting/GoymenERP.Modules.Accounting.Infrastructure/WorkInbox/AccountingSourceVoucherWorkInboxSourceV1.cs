@@ -19,9 +19,10 @@ namespace GoymenERP.Modules.Accounting.Infrastructure.WorkInbox;
 /// (<c>source_voucher_period_waiting</c>); that is shown as a second rule.
 /// </para>
 /// </summary>
-internal sealed class AccountingSourceVoucherWorkInboxSourceV1(
+internal sealed partial class AccountingSourceVoucherWorkInboxSourceV1(
     AccountingDbContext dbContext,
-    AccountingWorkInboxFence fence) : IWorkInboxSourceV1
+    AccountingWorkInboxFence fence,
+    IAccountingSourceVoucherDecisionReadV1? owner = null) : IWorkInboxSourceV1
 {
     public const string ModuleName = "accounting";
     public const string KindName = "accounting.source-voucher.v1";
@@ -78,25 +79,9 @@ internal sealed class AccountingSourceVoucherWorkInboxSourceV1(
             return null;
         }
 
-        var rules = new List<WorkApprovalRuleResultV1>(2)
-        {
-            new(ApprovalRequiredRule, null, WorkInboxRulesV1.Decimal(row.FunctionalPayable), null, null),
-        };
-        if (!pending.PeriodOpen)
-        {
-            rules.Add(new(PeriodWaitingRule, null, null, null, null));
-        }
-
-        var label = AccountingWorkInboxFence.Label(row.OfficialInvoiceNo, row.InvoiceId);
-        return new WorkInboxItemV1(ModuleName, KindName, row.Id, label, row.CreatedAtUtc.ToUniversalTime(), ScreenPath,
-            AccountingWorkInboxFence.Actor(row.SourceActorId), rules,
-            [
-                new WorkApprovalReferenceV1("invoice", label, row.InvoiceId, null),
-                new WorkApprovalReferenceV1("source-document", AccountingWorkInboxFence.ShortReference(row.SourceDocumentId),
-                    row.SourceDocumentId, null),
-                new WorkApprovalReferenceV1("party", AccountingWorkInboxFence.ShortReference(row.PartyId), row.PartyId, null),
-                new WorkApprovalReferenceV1("currency", AccountingWorkInboxFence.ShortReference(row.CurrencyId), row.CurrencyId, null),
-            ]);
+        return AccountingSourceVoucherDecisionBindingV1.Item(row.Id, row.SourceDocumentId, row.InvoiceId,
+            row.SourceActorId, row.PartyId, row.CurrencyId, row.CreatedAtUtc, row.OfficialInvoiceNo,
+            row.FunctionalPayable, pending.PeriodOpen);
     }
 
     private sealed record Pending(AccountingSourceDocumentVoucherDraftRow Row, bool PeriodOpen);
