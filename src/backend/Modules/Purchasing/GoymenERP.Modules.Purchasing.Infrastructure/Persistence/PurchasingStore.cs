@@ -571,7 +571,8 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
         if (freshDecisionFence is not null) await freshDecisionFence(cancellationToken);
         mutate(order, now);
         if (order.Version != versionBefore + 1 || order.Id != row.Id || order.CompanyId != companyId || order.Lines.Count != lineRows.Count
-            || order.Acceptances.Count != acceptanceRows.Count || order.ServiceMemberships.Count != membershipCountBefore)
+            || order.Acceptances.Count != acceptanceRows.Count || order.ServiceMemberships.Count != membershipCountBefore
+            || (membershipCountBefore > 0 && order.Status != PurchaseOrderStatus.Draft))
         {
             throw new InvalidOperationException("Bir komut tam olarak bir sürüm ilerletir; satır ve kabul payı eklemez.");
         }

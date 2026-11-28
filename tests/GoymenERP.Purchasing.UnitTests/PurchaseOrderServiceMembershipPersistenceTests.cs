@@ -73,6 +73,16 @@ public sealed class PurchaseOrderServiceMembershipPersistenceTests
     }
 
     [Fact]
+    public void Legacy_absence_is_not_a_membership_but_an_unexplained_version_gap_is_corruption()
+    {
+        var f = Fixture(); f.Header.Version = 2; f.Header.UpdatedAtUtc = At;
+        var legacy = PurchasingStore.RestoreOrder(f.Header, [f.Line]);
+        Assert.Equal(2L, legacy.Version); Assert.Empty(legacy.ServiceMemberships);
+        f.Header.Version = 3;
+        Assert.Throws<InvalidOperationException>(() => PurchasingStore.RestoreOrder(f.Header, [f.Line]));
+    }
+
+    [Fact]
     public void Model_pins_company_child_once_and_exact_prepared_revision_without_cascade_or_shadow_identity()
     {
         var f = Fixture(); using var db = Context(f.Header.CompanyId);
@@ -102,6 +112,7 @@ public sealed class PurchaseOrderServiceMembershipPersistenceTests
         }
         else
         {
+            db.Attach(f.Prepared);
             if (changed == "approved") { db.Attach(f.Header); f.Header.Status = (int)PurchaseOrderStatus.Approved; }
             db.OrderServiceMemberships.Add(member);
         }
