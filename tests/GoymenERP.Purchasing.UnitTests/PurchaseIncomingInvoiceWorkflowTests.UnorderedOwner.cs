@@ -151,7 +151,7 @@ public sealed partial class PurchaseIncomingInvoiceWorkflowTests
     private static PurchaseUnorderedAcceptanceServiceV1 UnorderedService(World world, UnorderedMemoryStore store,
         UnorderedPrerequisites? prerequisite = null) => new(world.Company, world.User, world.Authority, new Correlation(), store, new Clock(), prerequisite);
     // Service contract test double only: it makes no relational transaction or Audit guarantee.
-    private sealed class UnorderedMemoryStore : IPurchaseUnorderedAcceptanceStoreV1
+    private sealed partial class UnorderedMemoryStore : IPurchaseUnorderedAcceptanceStoreV1
     {
         public PurchaseUnorderedAcceptanceWriteV1? Saved { get; private set; }
         public int Calls { get; private set; }
