@@ -2364,7 +2364,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Finish numbered over-delivery frontend/publication; risk selected owner/source/Host/UI and remaining Work flows6/10/11. Cari62 remains native single-step. All64 runtime semantics unverified; actualSQL/HTTP/browser/pins/fullCI/twoK3/business acceptance pending.",
+      "next_action": "Complete risk Work Host/UI and remaining flows6/10/11 using native owner commands. Cari62 remains approved native single-step. All64 runtime semantics unverified; actualSQL/HTTP/browser/pins/fullCI/twoK3 pending.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2483,7 +2483,7 @@
         "activation": "No grants/flags/provider changes"
       },
       "execution": {
-        "source_commit": "ac09c4e124094f241901261e98f90797259a93bd",
+        "source_commit": "2b8a883cd63fdefbaa26929010f57feba67ae783",
         "implemented_kinds": [
           "organization.company-tax-id-change.v1",
           "accounting.invoiced-shipment-cost.v1",
@@ -2614,7 +2614,92 @@
           "quote_floor_discount_mixed_followup": "See existing current checkpoint ref/integrated_floor_quote_discount_mixed_followup for exact heads/durations/counters and retained failures; no aggregate acceptance claim.",
           "floor_discount_over_delivery": "See WORK_ONAY_KAPSAM_HARITASI_v1.json#quote_work_host_and_mixed_preparation_checkpoint/floor_discount_and_over_delivery_followup; separate exact heads, source scopes and retained failures, not aggregate acceptance.",
           "discount_pair_and_native_boundaries": "See64-flow map checkpoint discount_paired_publication_and_native_boundaries; retained exact heads and failures, not aggregate runtime acceptance.",
-          "numbered_over_delivery_work_host": "1223 controlled WorkSales/WorkDecisionHost/IdentityDTO/PurchasingRequest cases PASS0skip at ac09; separate API refresh at2d8. First1222-case result1221PASS1FAIL retained; exact source metadata fixture isolated without production change. ActualSQL/runtime acceptance NOT_RUN."
+          "numbered_over_delivery_work_host": "1223 controlled WorkSales/WorkDecisionHost/IdentityDTO/PurchasingRequest cases PASS0skip at ac09; separate API refresh at2d8. First1222-case result1221PASS1FAIL retained; exact source metadata fixture isolated without production change. ActualSQL/runtime acceptance NOT_RUN.",
+          "risk_owner_and_over_delivery_pair": {
+            "source_commit": "2b8a883cd63fdefbaa26929010f57feba67ae783",
+            "preserved_frontend_first_run": {
+              "head": "95ccb2e20",
+              "total": 3244,
+              "passed": 3242,
+              "failed": 2,
+              "skipped": 0,
+              "artifact": "risk-owner-over-ui-frontend-fixed-20261128/frontend.json"
+            },
+            "test_only_correction": "c744 aligns max-version native rejectionSupported=false with absent rejection control and retains disabled approval/no POST; 403 follows existing shell capability invalidation to neutral not-found. No production change. Initial syntax failure at68582 retained separately in risk-owner-over-ui-frontend-20261128; corrected95ccb. Fresh focused tests only; full integrated CI remains pending.",
+            "scope": "BOUNDED_LOCAL_NOT_RUNTIME_ACCEPTANCE",
+            "sales": {
+              "seconds": 60.7566473,
+              "head": "68582f1fc5670fcf60916bef23edc78c0e8b13a2",
+              "freeGiB": 3.8065032958984375,
+              "exit": 0,
+              "artifact": "risk-owner-over-ui-integrated-20261128/sales",
+              "total": 2934,
+              "passed": 2934,
+              "failed": 0,
+              "skipped": 0
+            },
+            "api_refresh": {
+              "seconds": 21.8778295,
+              "head": "68582f1fc5670fcf60916bef23edc78c0e8b13a2",
+              "freeGiB": 3.6813926696777344,
+              "exit": 0,
+              "artifact": "risk-owner-over-ui-integrated-20261128/api_refresh"
+            },
+            "controlled_host": {
+              "seconds": 70.177698,
+              "head": "68582f1fc5670fcf60916bef23edc78c0e8b13a2",
+              "freeGiB": 3.63897705078125,
+              "exit": 0,
+              "artifact": "risk-owner-over-ui-integrated-20261128/host",
+              "total": 1243,
+              "passed": 1243,
+              "failed": 0,
+              "skipped": 0
+            },
+            "provider_tuple": {
+              "freeGiB": 3.8186912536621094,
+              "exit": 0,
+              "seconds": 74.7360395,
+              "head": "2b8a883cd63fdefbaa26929010f57feba67ae783",
+              "artifact": "over-delivery-provider-tuple-fixed-20261128/host",
+              "total": 1,
+              "passed": 1,
+              "failed": 0,
+              "skipped": 0
+            },
+            "provider_first_failure": {
+              "head": "c7442172f",
+              "total": 1,
+              "failed": 1,
+              "artifact": "over-delivery-provider-tuple-20261128/host.trx",
+              "cause": "Existing exact expected capability list lacked the newly published over-delivery tuple. Exact tuple added without weakening collection equality; production unchanged."
+            },
+            "tsc": {
+              "exit": 0,
+              "head": "c7442172fe1fa9467aa2004f1590e6893c81b108",
+              "seconds": 53.9862208,
+              "freeGiB": 3.620014190673828,
+              "artifact": "over-delivery-frontend-fixtures-20261128/tsc"
+            },
+            "lint": {
+              "exit": 0,
+              "head": "c7442172fe1fa9467aa2004f1590e6893c81b108",
+              "seconds": 0.7897497,
+              "freeGiB": 3.6805877685546875,
+              "artifact": "over-delivery-frontend-fixtures-20261128/lint"
+            },
+            "frontend": {
+              "exit": 0,
+              "head": "c7442172fe1fa9467aa2004f1590e6893c81b108",
+              "seconds": 28.146851,
+              "freeGiB": 3.6839942932128906,
+              "artifact": "over-delivery-frontend-fixtures-20261128/frontend"
+            },
+            "frontend_total": 662,
+            "frontend_skipped": 0,
+            "source_changes": "Numbered over-delivery owner/Host/UI/publication paired. Risk selected source and original receipt, same configured scoped owner aliases and reciprocal whole-read markers composed. Five additional Risk SQL Facts are source-only, not executed.",
+            "limits": "Actual SQL, normal HTTP/browser, aggregate pins, full CI, independent exact-head K3 and business acceptance NOT_RUN. No role/grant/provider/activation."
+          }
         },
         "reuse": [
           "existing FinanceCashAccountService commands and durable receipts",

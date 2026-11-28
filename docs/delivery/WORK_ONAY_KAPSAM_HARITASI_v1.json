@@ -293,13 +293,13 @@
             "host_supported": true,
             "owner_permission": "sales.orders.over-delivery.approve",
             "frontend_inbox_registered": true,
-            "frontend_published": false,
-            "frontend_capability": null,
-            "capability_declared": false,
-            "route": null,
-            "route_parity": null,
-            "inbox_capability": "sales.orders.over-delivery.approve",
-            "inbox_capability_matches_work": null
+            "frontend_published": true,
+            "frontend_capability": "sales.over-delivery-request.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/sales.over-delivery-request.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "sales.over-delivery-request.work-decision",
+            "inbox_capability_matches_work": true
           }
         ],
         "owner_commands": [
@@ -315,15 +315,15 @@
         "native_permissions": [
           "sales.orders.over-delivery.approve"
         ],
-        "status": "BACKEND_WORK_HOST_FRONTEND_UNPUBLISHED",
+        "status": "PAIRED_SOURCE",
         "source": "CHECKED_AT_EXACT_HEAD",
-        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "local_tests": "BOUNDED_LOCAL_PASS_NOT_RUNTIME_ACCEPTANCE",
         "actual_SQL": "NOT_RUN",
         "browser_HTTP": "NOT_RUN",
         "CI": "NO_CURRENT_HEAD_EVIDENCE",
         "K3": "NOT_PERFORMED",
         "map_runtime": "NOT_RUN",
-        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "source_commit": "2b8a883cd63fdefbaa26929010f57feba67ae783",
         "later_deltas": [
           {
             "head": "1c455df97a4f28ac96fb437ca368eca80f43dcb2",
@@ -339,6 +339,11 @@
             "head": "ac09c4e124094f241901261e98f90797259a93bd",
             "note": "Numbered selected request Work Host paired with actual original receipt; frontend not yet published and all runtime semantics remain unverified.",
             "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint/numbered_over_delivery_work_host"
+          },
+          {
+            "head": "2b8a883cd63fdefbaa26929010f57feba67ae783",
+            "note": "Published owner-bound UI and exact capability/route pairing; bounded local evidence separate from runtime acceptance.",
+            "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint/risk_owner_and_over_delivery_pair"
           }
         ]
       }
@@ -374,7 +379,7 @@
           {
             "kind": "sales.risk-exception.v1",
             "source": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesRiskExceptionWorkInboxSourceV1.cs:18",
-            "source_decision_read": false,
+            "source_decision_read": true,
             "host_supported": false,
             "owner_permission": "sales.orders.risk-exception.approve",
             "frontend_inbox_registered": true,
@@ -400,7 +405,7 @@
         "native_permissions": [
           "sales.orders.risk-exception.approve"
         ],
-        "status": "LEGACY_INBOX_NATIVE_COMMAND_NO_WORK_HOST",
+        "status": "SELECTED_OWNER_SOURCE_NO_WORK_HOST",
         "source": "CHECKED_AT_EXACT_HEAD",
         "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
         "actual_SQL": "NOT_RUN",
@@ -408,8 +413,14 @@
         "CI": "NO_CURRENT_HEAD_EVIDENCE",
         "K3": "NOT_PERFORMED",
         "map_runtime": "NOT_RUN",
-        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
-        "later_deltas": []
+        "source_commit": "2b8a883cd63fdefbaa26929010f57feba67ae783",
+        "later_deltas": [
+          {
+            "head": "2b8a883cd63fdefbaa26929010f57feba67ae783",
+            "note": "Native current/original owner facts and same scoped service composed; Work Host/UI still pending.",
+            "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint/risk_owner_and_over_delivery_pair"
+          }
+        ]
       }
     },
     {
@@ -6509,12 +6520,12 @@
       }
     ],
     "audit_sha256": "7b99cf7b328d015372dc2a31cd0afd74c8c40edebd9e72ae822f61d7ee529680",
-    "current_source_commit": "ac09c4e124094f241901261e98f90797259a93bd",
+    "current_source_commit": "2b8a883cd63fdefbaa26929010f57feba67ae783",
     "current_source_summary": {
       "backend_kinds": 60,
-      "frontend_published_kinds": 59,
+      "frontend_published_kinds": 60,
       "backend_supported_flows": 59,
-      "paired_flows": 58,
+      "paired_flows": 59,
       "no_host_flows": [
         5,
         6,
@@ -6531,9 +6542,7 @@
       "native_single_step_no_pending_flows": [
         62
       ],
-      "backend_only_unpublished_flows": [
-        4
-      ]
+      "backend_only_unpublished_flows": []
     }
   },
   "purpose_and_native_merge_checkpoint": {
@@ -7251,6 +7260,91 @@
       "fixture_correction": "ac09 retains malformed-source503 assertion and strict native-only default; only the metadata-corruption scenario explicitly grants the extra tested permission. Adds exact403/noSource/noOwnerIO case. Production authority/gate order unchanged; no assertion deletion or widening.",
       "frontend": "NOT_PUBLISHED; separate owner-bound UI leaf in progress.",
       "limits": "New SQL Facts compiled only. Normal-host aggregate pins, actualSQL/HTTP/browser/fullCI/two independent exact-head K3/business acceptance remain pending. No role/grant/flag/provider activation."
+    },
+    "risk_owner_and_over_delivery_pair": {
+      "source_commit": "2b8a883cd63fdefbaa26929010f57feba67ae783",
+      "preserved_frontend_first_run": {
+        "head": "95ccb2e20",
+        "total": 3244,
+        "passed": 3242,
+        "failed": 2,
+        "skipped": 0,
+        "artifact": "risk-owner-over-ui-frontend-fixed-20261128/frontend.json"
+      },
+      "test_only_correction": "c744 aligns max-version native rejectionSupported=false with absent rejection control and retains disabled approval/no POST; 403 follows existing shell capability invalidation to neutral not-found. No production change. Initial syntax failure at68582 retained separately in risk-owner-over-ui-frontend-20261128; corrected95ccb. Fresh focused tests only; full integrated CI remains pending.",
+      "scope": "BOUNDED_LOCAL_NOT_RUNTIME_ACCEPTANCE",
+      "sales": {
+        "seconds": 60.7566473,
+        "head": "68582f1fc5670fcf60916bef23edc78c0e8b13a2",
+        "freeGiB": 3.8065032958984375,
+        "exit": 0,
+        "artifact": "risk-owner-over-ui-integrated-20261128/sales",
+        "total": 2934,
+        "passed": 2934,
+        "failed": 0,
+        "skipped": 0
+      },
+      "api_refresh": {
+        "seconds": 21.8778295,
+        "head": "68582f1fc5670fcf60916bef23edc78c0e8b13a2",
+        "freeGiB": 3.6813926696777344,
+        "exit": 0,
+        "artifact": "risk-owner-over-ui-integrated-20261128/api_refresh"
+      },
+      "controlled_host": {
+        "seconds": 70.177698,
+        "head": "68582f1fc5670fcf60916bef23edc78c0e8b13a2",
+        "freeGiB": 3.63897705078125,
+        "exit": 0,
+        "artifact": "risk-owner-over-ui-integrated-20261128/host",
+        "total": 1243,
+        "passed": 1243,
+        "failed": 0,
+        "skipped": 0
+      },
+      "provider_tuple": {
+        "freeGiB": 3.8186912536621094,
+        "exit": 0,
+        "seconds": 74.7360395,
+        "head": "2b8a883cd63fdefbaa26929010f57feba67ae783",
+        "artifact": "over-delivery-provider-tuple-fixed-20261128/host",
+        "total": 1,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 0
+      },
+      "provider_first_failure": {
+        "head": "c7442172f",
+        "total": 1,
+        "failed": 1,
+        "artifact": "over-delivery-provider-tuple-20261128/host.trx",
+        "cause": "Existing exact expected capability list lacked the newly published over-delivery tuple. Exact tuple added without weakening collection equality; production unchanged."
+      },
+      "tsc": {
+        "exit": 0,
+        "head": "c7442172fe1fa9467aa2004f1590e6893c81b108",
+        "seconds": 53.9862208,
+        "freeGiB": 3.620014190673828,
+        "artifact": "over-delivery-frontend-fixtures-20261128/tsc"
+      },
+      "lint": {
+        "exit": 0,
+        "head": "c7442172fe1fa9467aa2004f1590e6893c81b108",
+        "seconds": 0.7897497,
+        "freeGiB": 3.6805877685546875,
+        "artifact": "over-delivery-frontend-fixtures-20261128/lint"
+      },
+      "frontend": {
+        "exit": 0,
+        "head": "c7442172fe1fa9467aa2004f1590e6893c81b108",
+        "seconds": 28.146851,
+        "freeGiB": 3.6839942932128906,
+        "artifact": "over-delivery-frontend-fixtures-20261128/frontend"
+      },
+      "frontend_total": 662,
+      "frontend_skipped": 0,
+      "source_changes": "Numbered over-delivery owner/Host/UI/publication paired. Risk selected source and original receipt, same configured scoped owner aliases and reciprocal whole-read markers composed. Five additional Risk SQL Facts are source-only, not executed.",
+      "limits": "Actual SQL, normal HTTP/browser, aggregate pins, full CI, independent exact-head K3 and business acceptance NOT_RUN. No role/grant/provider/activation."
     }
   }
 }
