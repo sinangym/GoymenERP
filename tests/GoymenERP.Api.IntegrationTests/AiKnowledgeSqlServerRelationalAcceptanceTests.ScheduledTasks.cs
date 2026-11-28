@@ -8,6 +8,7 @@ using GoymenERP.Modules.Audit.Infrastructure;
 using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -41,6 +42,7 @@ public sealed partial class AiKnowledgeSqlServerRelationalAcceptanceTests
                 Assert.Single(await restarted.Database.ScheduledTaskRuns.ToArrayAsync());
             }
             Assert.Equal("2", await ScalarAsync(connection, "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType=N'Ai.ScheduledTask'"));
+            Assert.Equal("2", await ScalarAsync(connection, "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType=N'Ai.ScheduledTask' AND SourceChannel=N'Web'"));
         });
     }
 
@@ -101,7 +103,7 @@ public sealed partial class AiKnowledgeSqlServerRelationalAcceptanceTests
             await using var provider = ScheduledServices(connection); await using var owner = new ScheduledScope(provider, connection, new());
             var id = Guid.NewGuid();
             owner.Collector.Enqueue(new AuditEventDraft(TestCompanyIds.CompanyA, "ai.synthetic.caller.v1", "SENTETIK", id.ToString("D"), "Test", null, null,
-                "user", owner.User.UserId, "SENTETIK", [], "{}", "{}", "SENTETIK", null, "none", null, "api", null, null, "caller-correlation", null, "caller-key"));
+                AuditActorTypes.User, owner.User.UserId, "SENTETIK", [], "{}", "{}", "SENTETIK", null, AuditAiInvolvement.None, null, GoymenERP.BuildingBlocks.Observability.SourceChannels.Web, null, null, "caller-correlation", null, "caller-key"));
             Assert.True(owner.Writer.HasPendingDrafts);
             Assert.Equal(503, (await Assert.ThrowsAsync<AiScheduledTaskException>(() => owner.Service.CreateAsync(id, ScheduledDefinition, ScheduledMeta("create")))).Status);
             Assert.True(owner.Writer.HasPendingDrafts); owner.Writer.DiscardPending(); // Caller explicitly ends its own draft.
@@ -117,6 +119,91 @@ public sealed partial class AiKnowledgeSqlServerRelationalAcceptanceTests
             Assert.Empty(await owner.Database.ScheduledTasks.ToArrayAsync()); Assert.Empty(await owner.Database.ScheduledTaskCommands.ToArrayAsync());
         });
     }
+
+    [SqlServerFact]
+    public async Task Scheduled_task_rejects_caller_tracked_stale_state_and_then_reads_actual_pause_or_close_version()
+    {
+        foreach (var close in new[] { false, true })
+        {
+            await WithDatabaseAsync(async connection =>
+            {
+                await using var provider = ScheduledServices(connection); var ports = new ScheduledPorts(); var id = Guid.NewGuid();
+                await using var staleOwner = new ScheduledScope(provider, connection, ports);
+                await staleOwner.Service.CreateAsync(id, ScheduledDefinition, ScheduledMeta("create"));
+                var stale = await staleOwner.Database.ScheduledTasks.SingleAsync(x => x.TaskId == id);
+                Assert.Equal(1, stale.Version); Assert.Equal(EntityState.Unchanged, staleOwner.Database.Entry(stale).State);
+                await using (var other = new ScheduledScope(provider, connection, ports))
+                {
+                    var changed = close
+                        ? await other.Service.CloseAsync(id, 1, ScheduledMeta("close"))
+                        : await other.Service.PauseAsync(id, 1, ScheduledMeta("pause"));
+                    Assert.Equal(2, changed.Task!.Version);
+                }
+                Assert.Equal(503, (await Assert.ThrowsAsync<AiScheduledTaskException>(() => staleOwner.Service.RunCurrentAsync(id,
+                    new(1, ScheduledAt, "settings-1"), ScheduledMeta("run")))).Status);
+                Assert.Equal(1, stale.Version); Assert.Equal(EntityState.Unchanged, staleOwner.Database.Entry(stale).State);
+                Assert.Equal(0, ports.Reads); Assert.Empty(await staleOwner.Database.ScheduledTaskRuns.ToArrayAsync());
+                staleOwner.Database.Entry(stale).State = EntityState.Detached; // Only the caller releases its stale tracking.
+                Assert.Equal(409, (await Assert.ThrowsAsync<AiScheduledTaskException>(() => staleOwner.Service.RunCurrentAsync(id,
+                    new(1, ScheduledAt, "settings-1"), ScheduledMeta("run")))).Status);
+                var current = Assert.IsType<AiScheduledTaskViewV1>(await staleOwner.Service.ReadOwnAsync(id));
+                Assert.Equal(2, current.Version); Assert.Equal(close ? AiScheduledTaskStateV1.Closed : AiScheduledTaskStateV1.Paused, current.State);
+                Assert.Equal(0, ports.Reads); Assert.Equal(2, await staleOwner.Database.ScheduledTaskCommands.CountAsync());
+            });
+        }
+    }
+
+    [SqlServerFact]
+    public async Task Scheduled_task_foreign_callback_entries_and_Audit_remain_caller_owned_before_and_after_native_save()
+    {
+        foreach (var afterSave in new[] { false, true })
+        foreach (var foreignAudit in new[] { false, true })
+        {
+            await WithDatabaseAsync(async connection =>
+            {
+                var phase = new ScheduledSavePhase("task-save"); await using var provider = ScheduledServices(connection);
+                var ports = new ScheduledPorts(); await using var owner = new ScheduledScope(provider, connection, ports, phase);
+                var id = Guid.NewGuid(); var fired = false;
+                var canary = new AiCommandRecordRow { CompanyId = TestCompanyIds.CompanyA, PreviewId = Guid.NewGuid(), ActorId = "SENTETIK-caller",
+                    State = 1, Version = 1, BindingSha256 = new string('a', 64), RecordJson = "{}" };
+                ports.AfterAuthority = () =>
+                {
+                    if (!fired && owner.Database.Database.CurrentTransaction is not null && phase.Fired == afterSave)
+                    {
+                        fired = true;
+                        if (foreignAudit) owner.Collector.Enqueue(ScheduledCallerDraft(id, owner.User.UserId));
+                        else owner.Database.CommandRecords.Add(canary);
+                    }
+                    return true;
+                };
+                Assert.Equal(503, (await Assert.ThrowsAsync<AiScheduledTaskException>(() => owner.Service.CreateAsync(id, ScheduledDefinition, ScheduledMeta("create")))).Status);
+                Assert.True(fired); Assert.Equal(afterSave, phase.Fired);
+                Assert.Empty(await owner.Database.ScheduledTasks.ToArrayAsync()); Assert.Empty(await owner.Database.ScheduledTaskCommands.ToArrayAsync());
+                Assert.Empty(await owner.Database.ScheduledTaskEvents.ToArrayAsync());
+                Assert.Equal("0", await ScalarAsync(connection, "SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityType=N'Ai.ScheduledTask'"));
+                if (foreignAudit)
+                {
+                    Assert.True(owner.Writer.HasPendingDrafts);
+                    // The caller can still persist its exact draft after the scheduled command's proven abort.
+                    await using var caller = await owner.Database.Database.BeginTransactionAsync();
+                    await owner.Writer.WritePendingAsync(caller.GetDbTransaction()); await caller.CommitAsync();
+                    Assert.Equal("1", await ScalarAsync(connection, "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType=N'ai.synthetic.caller.v1'"));
+                }
+                else
+                {
+                    Assert.Equal(EntityState.Added, owner.Database.Entry(canary).State);
+                    Assert.Equal("SENTETIK-caller", canary.ActorId); Assert.Equal("{}", canary.RecordJson);
+                    Assert.Equal("0", await ScalarAsync(connection, "SELECT COUNT(*) FROM ai.CommandRecords"));
+                    owner.Database.Entry(canary).State = EntityState.Detached;
+                }
+            });
+        }
+    }
+
+    private static AuditEventDraft ScheduledCallerDraft(Guid id, string actor) => new(TestCompanyIds.CompanyA,
+        "ai.synthetic.caller.v1", "SENTETIK", id.ToString("D"), "Test", null, null, AuditActorTypes.User, actor, "SENTETIK", [], "{}", "{}",
+        "SENTETIK", null, AuditAiInvolvement.None, null, GoymenERP.BuildingBlocks.Observability.SourceChannels.Web, null, null,
+        "caller-correlation", null, "caller-key");
 
     private static readonly DateTimeOffset ScheduledAt = new(2026, 11, 28, 9, 0, 0, TimeSpan.Zero);
     private static readonly AiScheduledTaskDefinitionV1 ScheduledDefinition = new(AiScheduledTaskPurposesV1.MorningSummary, AiScheduledTaskEffectV1.Read, "settings-1");

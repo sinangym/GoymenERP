@@ -2,6 +2,7 @@ using System.Text.Json;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.AiKnowledge.Domain;
+using GoymenERP.Modules.AiKnowledge.Infrastructure;
 using GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence;
 using GoymenERP.Modules.AiKnowledge.Infrastructure.ScheduledTasks;
 using GoymenERP.Modules.Audit.Application.Contracts;
@@ -171,6 +172,39 @@ public sealed class AiScheduledTaskServiceTests
         else if (changed == "event") evidence.Kind = "changed";
         else { task.OwnerActorId = "foreign-owner"; task.Version = 2; }
         await Assert.ThrowsAsync<InvalidOperationException>(() => db.SaveChangesAsync());
+    }
+    [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task Production_entry_rejects_even_Unchanged_tracked_tasks_without_discard_or_SQL(bool detachDuringAuthority)
+    {
+        var f = new Fixture(); await using var db = new AiKnowledgeDbContext(new DbContextOptionsBuilder<AiKnowledgeDbContext>()
+            .UseSqlServer("Server=unused.invalid;Database=unused;Connect Timeout=1").Options, f.Company);
+        var row = new AiScheduledTaskRow { CompanyId = Company, TaskId = Guid.NewGuid(), OwnerActorId = "SENTETIK-owner",
+            Purpose = AiScheduledTaskPurposesV1.MorningSummary, Effect = 1, State = 1, Version = 1,
+            ScheduleVersion = "settings-1", CreatedAtUtc = At, UpdatedAtUtc = At };
+        db.ScheduledTasks.Attach(row); var drafts = new Drafts(); var writer = new PendingWriter(drafts);
+        var store = new AiScheduledTaskPersistenceV1(db, f.Company, drafts, writer);
+        var service = new AiScheduledTaskServiceV1(f.Company, f.User, TimeProvider.System, store, f.Ports, f.Ports, f.Ports);
+        if (detachDuringAuthority) f.Ports.AfterAuthority = () => db.Entry(row).State = EntityState.Detached;
+        Assert.Equal(503, (await Assert.ThrowsAsync<AiScheduledTaskException>(() => service.RunCurrentAsync(row.TaskId,
+            new(1, At, "settings-1"), Meta("run")))).Status);
+        Assert.Equal(detachDuringAuthority ? EntityState.Detached : EntityState.Unchanged, db.Entry(row).State);
+        Assert.Equal(0, f.Ports.Reads); Assert.Equal(0, writer.Discards);
+    }
+    [Fact]
+    public async Task An_active_scheduled_owner_prevents_C1_save_reentry_without_consuming_its_owned_entities()
+    {
+        var f = new Fixture(); await using var db = new AiKnowledgeDbContext(new DbContextOptionsBuilder<AiKnowledgeDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options, f.Company);
+        var owned = new AiScheduledTaskRow { CompanyId = Company, TaskId = Guid.NewGuid() }; db.ScheduledTasks.Add(owned);
+        db.ScheduledTaskWriteOwner = new HashSet<object>(ReferenceEqualityComparer.Instance) { owned };
+        var c1 = new AiCommandPersistenceV1(db, f.Company); var id = Guid.NewGuid();
+        await Assert.ThrowsAsync<AiCommandPersistenceUnavailableException>(() => c1.TryAddAsync(
+            new(Company, id, "SENTETIK", 1, 1, new string('a', 64), "{}"),
+            [new(Guid.NewGuid(), Company, "SENTETIK", 1, id, null, null, null, null, null, null, "SENTETIK", null, At)]));
+        Assert.Equal(EntityState.Added, db.Entry(owned).State); Assert.Single(db.ChangeTracker.Entries());
+        Assert.Empty(await db.CommandRecords.ToArrayAsync()); Assert.Empty(await db.CommandEvents.ToArrayAsync());
+        db.ScheduledTaskWriteOwner = null;
     }
     private static AiScheduledTaskMetadataV1 Meta(string key) => new(key, "corr-" + key);
     private sealed class Fixture
