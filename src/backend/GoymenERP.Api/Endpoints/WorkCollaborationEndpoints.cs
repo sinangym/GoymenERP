@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using GoymenERP.Api.Contracts;
+using GoymenERP.Api.WorkRuntime;
 using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.BuildingBlocks.Observability;
@@ -74,6 +76,17 @@ public static class WorkCollaborationEndpoints
             .WithName("CreateWorkTaskV1").Accepts<CreateWorkTaskRequestV1>("application/json").WithIdempotencyContract(201, 409)
             .Produces<WorkTaskViewV1>(201);
         Command(create, WorkCollaborationProblemCodesV1.AssigneeRefused)
+            .ProducesErpConflict(WorkCollaborationProblemCodesV1.SameKeyPayloadMismatch, WorkCollaborationProblemCodesV1.ConcurrentChange);
+
+        // Needs are existing Work tasks, never a Party/account command. 503 after dispatch requires the same key/body.
+        var counterpartyNeed = group.MapPost("/counterparty-creation-needs", (HttpContext http,
+                [FromServices] CounterpartyCreationNeedHostV1 service, ICorrelationContext correlation, CancellationToken token) =>
+            CommandAsync<CounterpartyCreationNeedRequestV1, WorkTaskResponseV1>(http, correlation, 201,
+                (request, metadata) => service.CreateAsync(request, metadata, token),
+                response => (response.IsReplay, response.OriginalCorrelationId), response => response.Task, token))
+            .WithName("CreateCounterpartyCreationNeedV1").Accepts<CounterpartyCreationNeedRequestV1>("application/json")
+            .WithIdempotencyContract(201, 409).Produces<WorkTaskViewV1>(201);
+        Command(counterpartyNeed, WorkCollaborationProblemCodesV1.AssigneeRefused)
             .ProducesErpConflict(WorkCollaborationProblemCodesV1.SameKeyPayloadMismatch, WorkCollaborationProblemCodesV1.ConcurrentChange);
 
         var complete = group.MapPost("/tasks/{taskId:guid}/completion", (Guid taskId, HttpContext http,

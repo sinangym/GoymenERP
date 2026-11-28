@@ -24,6 +24,7 @@ public static class WorkCollaborationHostV1
     public static IServiceCollection AddWorkCollaborationHostV1(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddWorkCollaborationV1(configuration);
+        services.AddScoped<CounterpartyCreationNeedHostV1>();
         services.AddScoped<IWorkRecordAccessPortV1, WorkOwnerRecordAccessPortV1>();
         services.AddScoped<IWorkPersonDirectoryV1, WorkIdentityPersonDirectoryV1>();
         // YOL-D25 (WP2): the digest times are a Settings key now (09:00/13:00/17:00 version 0, business days only).
