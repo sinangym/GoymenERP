@@ -1,4 +1,7 @@
 using System.Text.Json;
+using GoymenERP.Api.Ai;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using GoymenERP.Api.Ai.ScheduledTasks;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.BuildingBlocks.Security;
@@ -10,6 +13,16 @@ namespace GoymenERP.Api.IntegrationTests;
 // Controlled adapter contract tests. Work's own DB/grant tests remain separate; no SQL/worker/DI acceptance.
 public sealed class AiScheduledTaskMorningReadAdapterTests
 {
+    [Fact]
+    public void Runtime_registers_only_the_scoped_read_adapter_without_a_scheduled_task_worker()
+    {
+        var services = new ServiceCollection();
+        services.AddAiRuntime(new ConfigurationBuilder().Build());
+        var registration = Assert.Single(services.Where(x => x.ServiceType == typeof(IAiScheduledTaskMorningReadV1)));
+        Assert.Equal(ServiceLifetime.Scoped, registration.Lifetime);
+        Assert.Equal(typeof(AiScheduledTaskMorningReadAdapterV1), registration.ImplementationType);
+        Assert.DoesNotContain(services, x => x.ServiceType == typeof(IAiScheduledTaskServiceV1));
+    }
     private static readonly Guid Company = TestCompanyIds.CompanyA;
     private static readonly DateTimeOffset Slot = new(2026, 11, 28, 6, 0, 0, TimeSpan.Zero);
     [Fact]

@@ -56,6 +56,8 @@ public static class AiRuntimeServiceCollectionExtensions
         services.AddSingleton<IAiAnswerComposerV1>(_ => new FakeAiAnswerComposer(AiModelPlacementV1.OnPremises));
         services.AddScoped<IAiGatewayV1, AiGateway>();
         services.AddScoped<AiAskService>();
+        // C5 read seam only; task authority/settings/worker and all activation gates remain closed.
+        services.TryAddScoped<IAiScheduledTaskMorningReadV1, ScheduledTasks.AiScheduledTaskMorningReadAdapterV1>();
         services.AddScoped<Feedback.AiFeedbackServiceV1>(provider => new(
             provider.GetRequiredService<IOptions<AiRuntimeOptions>>(), provider.GetService<IAiFeedbackPersistenceV1>(),
             provider.GetRequiredService<GoymenERP.BuildingBlocks.Multitenancy.ICompanyContext>(),
