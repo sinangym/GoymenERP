@@ -114,6 +114,7 @@ public static class AccountingModuleExtensions
         services.AddScoped<IAccountingSourceDocumentAdmissionPortV1, AccountingSourceDocumentAdmissionServiceV1>();
         services.AddScoped<IAccountingSourceVoucherStoreV1, AccountingSourceVoucherStoreV1>();
         services.AddScoped<AccountingSourceVoucherServiceV1>();
+        services.AddScoped<IAccountingSourceVoucherDecisionReadV1>(sp => sp.GetRequiredService<AccountingSourceVoucherServiceV1>());
         services.TryAddScoped<IAccountingSourceInvoiceCancellationAuthorityV1, UnavailableAccountingSourceInvoiceCancellationAuthorityV1>();
         services.AddScoped<IAccountingSourceInvoiceCancellationStoreV1, AccountingSourceInvoiceCancellationStoreV1>();
         services.AddScoped<IAccountingSourceInvoiceCancellationPortV1, AccountingSourceInvoiceCancellationServiceV1>();

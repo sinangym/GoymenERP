@@ -76,6 +76,7 @@ public sealed class AccountingNormalApprovalCompositionTests
         Assert.Same(scope.GetRequiredService<AccountingPostingAccountMappingServiceV1>(), scope.GetRequiredService<IAccountingPostingAccountMappingDecisionReadV1>());
         Assert.Same(scope.GetRequiredService<ManufacturingCostDifferenceServiceV1>(), scope.GetRequiredService<IManufacturingCostDifferenceDecisionReadV1>());
         Assert.Same(scope.GetRequiredService<InvoiceLineCogsCorrectionServiceV1>(), scope.GetRequiredService<IInvoiceLineCogsDecisionReadV1>());
+        Assert.Same(scope.GetRequiredService<AccountingSourceVoucherServiceV1>(), scope.GetRequiredService<IAccountingSourceVoucherDecisionReadV1>());
         var collector = scope.GetRequiredService<AuditEventCollector>();
         Assert.Same(collector, scope.GetRequiredService<IAuditEventCollector>());
         var writer = scope.GetRequiredService<IAuditTransactionWriterV1>();
