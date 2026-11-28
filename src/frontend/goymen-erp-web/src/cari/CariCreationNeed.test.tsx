@@ -15,11 +15,13 @@ import type { CreateTaskBody } from '../work/collaborationApi'
 
 const RECIPIENT = '11111111-1111-4111-8111-111111111111'
 interface Call { readonly body: CreateTaskBody; readonly key: string | null; readonly company: string | null }
-function setup(reply?: (call: Call, index: number) => Response | Promise<Response>, capabilities: readonly string[] | (() => readonly string[]) = [WORK_CAPABILITY.assignTask]) {
+function setup(reply?: (call: Call, index: number) => Response | Promise<Response>, capabilities: readonly string[] | (() => readonly string[]) = [WORK_CAPABILITY.assignTask],
+  identity: () => { readonly userId: string; readonly authenticationSessionBinding: string | null } = () => ({ userId: IDENTITY.userId, authenticationSessionBinding: 'quick-create-S1' })) {
   const native = installFetch({ capabilities }), baseFetch = globalThis.fetch
   const calls: Call[] = [], people: string[] = []
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
+    if (url.includes('/identity/me')) return json({ ...IDENTITY, ...identity() })
     if (url.includes('/work/people')) { people.push(url); return json({ companyId: new Headers(init?.headers).get('X-Company-Id'), people: [{ userId: RECIPIENT, displayName: 'Yetkili aday' }], hasMore: false }) }
     if (url.endsWith('/work/counterparty-creation-needs')) {
       const call = { body: JSON.parse(String(init?.body)) as CreateTaskBody, key: new Headers(init?.headers).get('Idempotency-Key'), company: new Headers(init?.headers).get('X-Company-Id') }
@@ -147,4 +149,39 @@ it('closes actual UI access on a revoked Assign capability and recovers only aft
   await userEvent.click(screen.getByRole('button', { name: T.needRetry }))
   await screen.findByText(T.needReplayed)
   expect(log.calls).toHaveLength(2); expect(log.calls[1]).toEqual(log.calls[0])
+})
+it.each(['session', 'actor'] as const)('does not recover the previous task after a real ShellProvider remount changes the %s', async change => {
+  let actor = IDENTITY.userId, binding = 'quick-create-S1'
+  const log = setup(() => problem(503, null), [WORK_CAPABILITY.assignTask], () => ({ userId: actor, authenticationSessionBinding: binding }))
+  const view = mount(); await fill()
+  await userEvent.click(screen.getByRole('button', { name: T.needSend }))
+  await screen.findByText(T.needUnknown)
+  view.unmount()
+  if (change === 'session') binding = 'quick-create-S2'
+  else actor = '33333333-3333-4333-8333-333333333333'
+  mount()
+  await userEvent.click(await screen.findByRole('button', { name: T.needOpen }))
+  expect(screen.queryByRole('button', { name: T.needResume })).toBeNull()
+  expect(screen.queryByRole('button', { name: T.needRetry })).toBeNull()
+  expect(screen.queryByText(T.needUnknown)).toBeNull()
+  expect((screen.getByLabelText(T.needSubject) as HTMLInputElement).value).toBe('')
+  expect((screen.getByLabelText(T.needDetails) as HTMLTextAreaElement).value).toBe('')
+  expect((screen.getByLabelText(T.needRecipient) as HTMLSelectElement).value).toBe('')
+  expect(log.calls).toHaveLength(1)
+})
+it('without a server session binding keeps an active component retry but refuses cross-mount global recovery', async () => {
+  const log = setup(() => problem(503, null), [WORK_CAPABILITY.assignTask], () => ({ userId: IDENTITY.userId, authenticationSessionBinding: null }))
+  const view = mount(); await fill()
+  await userEvent.click(screen.getByRole('button', { name: T.needSend }))
+  await screen.findByText(T.needUnknown)
+  await userEvent.click(screen.getByRole('button', { name: T.needHide }))
+  await userEvent.click(screen.getByRole('button', { name: T.needResume }))
+  await userEvent.click(screen.getByRole('button', { name: T.needRetry }))
+  await screen.findByText(T.needUnknown)
+  expect(log.calls).toHaveLength(2); expect(log.calls[1]).toEqual(log.calls[0])
+  view.unmount(); mount()
+  await userEvent.click(await screen.findByRole('button', { name: T.needOpen }))
+  expect(screen.queryByRole('button', { name: T.needRetry })).toBeNull()
+  expect((screen.getByLabelText(T.needSubject) as HTMLInputElement).value).toBe('')
+  expect(log.calls).toHaveLength(2)
 })
