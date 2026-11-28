@@ -46,6 +46,7 @@ public sealed record WorkDecisionRequestV1(string ExpectedVersion, bool Approve,
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public WorkIdentityAccessGrantSelectionV1? IdentityAccessGrant { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public WorkSalesQuoteConversionSelectionV1? SalesQuoteConversion { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public WorkSalesPriceFloorSelectionV1? SalesPriceFloor { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public WorkSalesDiscountSelectionV1? SalesDiscount { get; init; }
 }
 public sealed record WorkInventoryCostCancellationSelectionV1(string ExpectedProposalVersion);
 public sealed record WorkAccountingPeriodReopeningSelectionV1(string ExpectedPeriodVersion);
@@ -117,6 +118,7 @@ public sealed record WorkDecisionPreviewV1(Guid CompanyId, string Kind, Guid Ite
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public WorkSalesRequestDecisionPreviewV1? SalesRequest { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public WorkSalesQuoteConversionDecisionPreviewV1? SalesQuoteConversion { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public WorkSalesPriceFloorDecisionPreviewV1? SalesPriceFloor { get; init; }
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public WorkSalesDiscountDecisionPreviewV1? SalesDiscount { get; init; }
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public WorkIdentityAccessGrantPreviewV1? IdentityAccessGrant { get; init; }
 }
 public sealed record WorkDecisionResultV1(Guid CompanyId, string Kind, Guid ItemId, string State, bool Replayed, string OriginalCorrelationId);
@@ -190,6 +192,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
 {
     public const string OrganizationCompanyTaxId = OrganizationCompanyTaxIdDecisionBindingV1.KindName;
     public const string SalesRequest = "sales.request.v1";
+    public const string SalesDiscount = SalesDiscountDecisionBindingV1.KindName;
     public const string SalesPriceFloor = SalesPriceFloorDecisionBindingV1.KindName;
     public const string SalesQuoteConversion = "sales.quote-conversion-request.v1";
     public const string IdentityAccessGrant = "identity.access-grant-request.v1";
@@ -243,7 +246,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
     public const string PurchaseInvoiceVariance = "purchasing.incoming-invoice-variance.v1";
     public const string PurchaseServiceOrder = "purchasing.service-order.v1";
     public const string PurchaseOrder = "purchasing.order.v1";
-    public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([SalesPriceFloor, IdentityAccessGrant, SalesQuoteConversion, SalesRequest, OrganizationCompanyTaxId, SourceVoucher, InventoryCostCancellation, InvoicedShipmentCost, PurchaseCostDifference, InvoiceLineCogs, ManufacturingCostDifference, PostingAccountMapping, ApprovedSourceCatalog, JournalReversal, AccountingPeriodOpening, AccountingPeriodReopening, NormalJournalDraft, CreditMovement, CashExchangeBookValue, BankCreditLimit, OpeningBalance, OpeningBalanceReversal, ExpensePayment, ManualBankPaymentReversal, ManualReceiptReversal, OfficialSalesInvoice, OfficialInvoiceImport, PartyCreditLimit, ProductPriceList, ProductPackageStandard, BankAccountIbanChange, ManualBankPayment, LogisticsCustomerReturn, LogisticsDispatchNote, InventoryStockScrap, InventoryStockCount, BankAccount, SupplierReturnCostException, LogisticsWeighingDifference, InventoryTransferOverage, LogisticsPlanExcess, CounterpartyTaxIdentity, CounterpartyLegalName, InventoryTransferLoss, OpeningCost, "finance.cash-account.v1",
+    public static readonly IReadOnlySet<string> Kinds = new HashSet<string>([SalesDiscount, SalesPriceFloor, IdentityAccessGrant, SalesQuoteConversion, SalesRequest, OrganizationCompanyTaxId, SourceVoucher, InventoryCostCancellation, InvoicedShipmentCost, PurchaseCostDifference, InvoiceLineCogs, ManufacturingCostDifference, PostingAccountMapping, ApprovedSourceCatalog, JournalReversal, AccountingPeriodOpening, AccountingPeriodReopening, NormalJournalDraft, CreditMovement, CashExchangeBookValue, BankCreditLimit, OpeningBalance, OpeningBalanceReversal, ExpensePayment, ManualBankPaymentReversal, ManualReceiptReversal, OfficialSalesInvoice, OfficialInvoiceImport, PartyCreditLimit, ProductPriceList, ProductPackageStandard, BankAccountIbanChange, ManualBankPayment, LogisticsCustomerReturn, LogisticsDispatchNote, InventoryStockScrap, InventoryStockCount, BankAccount, SupplierReturnCostException, LogisticsWeighingDifference, InventoryTransferOverage, LogisticsPlanExcess, CounterpartyTaxIdentity, CounterpartyLegalName, InventoryTransferLoss, OpeningCost, "finance.cash-account.v1",
         "finance.cash-account-passivation.v1", "finance.cash-account-reactivation.v1", SalesOrder, SalesInvoice, SalesSubcontractInvoice, PurchaseRequest, PurchaseOrder, PurchaseServiceOrder, PurchaseInvoiceVariance, PurchaseGoodsReceiptBatch, ManufacturingPlan, CreditAccount], StringComparer.Ordinal);
 
     private async Task RequireDecisionAuthorityAsync(string kind,string permission,Guid companyId,string actor,CancellationToken token)
@@ -278,14 +281,14 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         WorkApprovalDecisionSnapshotV1? snapshot;
         try
         {
-            snapshot = (kind is SalesPriceFloor or BankAccountIbanChange or ProductPriceList or InventoryCostCancellation) && selectedOwnerVersion is not null
+            snapshot = (kind is SalesDiscount or SalesPriceFloor or BankAccountIbanChange or ProductPriceList or InventoryCostCancellation) && selectedOwnerVersion is not null
                 ? source is IWorkApprovalDecisionVersionSourceV1 versionSource
                     ? await versionSource.ReadDecisionVersionAsync(context, id, selectedOwnerVersion, token)
                     : throw new InvalidOperationException("The owner cannot select an original native version.")
                 : await source.ReadDecisionAsync(context, id, token);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
-        catch (UnauthorizedAccessException) when (kind is SalesPriceFloor or IdentityAccessGrant or SalesQuoteConversion or SalesRequest or OrganizationCompanyTaxId or SourceVoucher or InventoryCostCancellation or InvoicedShipmentCost or PurchaseCostDifference or InvoiceLineCogs or ManufacturingCostDifference or PostingAccountMapping or ApprovedSourceCatalog or JournalReversal or AccountingPeriodOpening or AccountingPeriodReopening or NormalJournalDraft or CreditMovement or CashExchangeBookValue or BankCreditLimit or OpeningBalance or OpeningBalanceReversal or OfficialInvoiceImport or OfficialSalesInvoice or ManualBankPaymentReversal or ManualReceiptReversal or ExpensePayment) { await Fence(); throw new WorkDecisionException(403); }
+        catch (UnauthorizedAccessException) when (kind is SalesDiscount or SalesPriceFloor or IdentityAccessGrant or SalesQuoteConversion or SalesRequest or OrganizationCompanyTaxId or SourceVoucher or InventoryCostCancellation or InvoicedShipmentCost or PurchaseCostDifference or InvoiceLineCogs or ManufacturingCostDifference or PostingAccountMapping or ApprovedSourceCatalog or JournalReversal or AccountingPeriodOpening or AccountingPeriodReopening or NormalJournalDraft or CreditMovement or CashExchangeBookValue or BankCreditLimit or OpeningBalance or OpeningBalanceReversal or OfficialInvoiceImport or OfficialSalesInvoice or ManualBankPaymentReversal or ManualReceiptReversal or ExpensePayment) { await Fence(); throw new WorkDecisionException(403); }
         catch { await Fence(); throw new WorkDecisionException(503); }
         await Fence();
         if (snapshot is null) throw new WorkDecisionException(404);
@@ -299,6 +302,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             || kind == OrganizationCompanyTaxId && (source.Module != "organization" || source.ApproverPermission != OrganizationCompanyTaxIdPermissionsV1.Approve)
             || kind == IdentityAccessGrant && (source.Module != "identity" || source.ApproverPermission != IdentityPermissionManifestV1.AccessApprove)
             || kind == SalesQuoteConversion && (source.Module != "sales" || source.ApproverPermission != SalesPermissionManifestV1.QuotesExpiredConversionApprove)
+            || kind == SalesDiscount && (source.Module != "sales" || source.ApproverPermission != SalesPermissionManifestV1.OrdersDiscountExceptionApprove)
             || kind == SalesPriceFloor && (source.Module != "sales" || source.ApproverPermission != SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove)
             || kind == SalesRequest && (source.Module != "sales" || source.ApproverPermission != SalesPermissionManifestV1.RequestsApprove)
             || kind == JournalReversal && (source.Module != "accounting" || source.ApproverPermission != AccountingJournalReversalPermissionNamesV1.Approve)
@@ -343,6 +347,10 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
                 && !(kind == SalesQuoteConversion && snapshot.Item.Module == "sales"
                     && source.ApproverPermission == SalesPermissionManifestV1.QuotesExpiredConversionApprove && snapshot.Item.PreparedBy is null
                     && ValidSalesQuoteConversionProof(kind, snapshot))
+                && !(kind == SalesDiscount && snapshot.Item.Module == "sales"
+                    && source.ApproverPermission == SalesPermissionManifestV1.OrdersDiscountExceptionApprove && snapshot.Item.PreparedBy is null
+                    && ValidSalesDiscountProof(kind, snapshot)
+                    && snapshot.SalesDiscountProof!.Lines.All(line => line.PriceListId is null))
                 && !(kind == IdentityAccessGrant && snapshot.Item.Module == "identity"
                     && source.ApproverPermission == IdentityPermissionManifestV1.AccessApprove && snapshot.Item.PreparedBy is null
                     && snapshot.IdentityAccessGrantProof is { RequiresSecondApproval: false } && ValidIdentityAccessGrantProof(kind, snapshot)))
@@ -352,8 +360,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             || snapshot.Item.Rules is null || snapshot.Item.Rules.Count > WorkInboxRulesV1.MaxRulesPerItem
             || snapshot.Item.Rules.Any(rule => !WorkInboxRulesV1.IsValidRule(source.Module, rule))
             || !ValidSalesPriceFloorProof(kind, snapshot)
-            // The selected discount owner is registered, but its paired Work host is not published yet.
-            || snapshot.SalesDiscountProof is not null
+            || !ValidSalesDiscountProof(kind, snapshot)
             || !ValidSalesQuoteConversionProof(kind, snapshot)
             || !ValidSalesRequestProof(kind, snapshot)
             || !ValidIdentityAccessGrantProof(kind, snapshot)
@@ -467,10 +474,11 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         var cashExchangeBookValuePreview = kind == CashExchangeBookValue ? await CashExchangeBookValueHumanPreviewAsync(snapshot, actor!, token) : null;
         var bankCreditLimitPreview = kind == BankCreditLimit ? await BankCreditLimitHumanPreviewAsync(snapshot, actor!, token) : null;
         var openingPreview = kind is OpeningBalance or OpeningBalanceReversal ? await OpeningBalanceHumanPreviewAsync(snapshot, actor!, token) : null;
-        // Floor optional price disclosure is the final awaited read; no later await can re-expose revoked prices.
+        // These exact-kind optional price disclosures are the final awaited read; no later await can re-expose revoked prices.
         var floorPreview = kind == SalesPriceFloor ? await SalesPriceFloorHumanPreviewAsync(snapshot, actor!, token) : null;
+        var discountPreview = kind == SalesDiscount ? await SalesDiscountHumanPreviewAsync(snapshot, actor!, token) : null;
         return new(snapshot.CompanyId, kind, id, snapshot.Item.DocumentLabel, snapshot.SourceVersion, snapshot.Pending,
-            kind is ProductPackageStandard or InventoryStockScrap or InventoryStockCount or OpeningCost or PurchaseServiceOrder or PurchaseInvoiceVariance or InventoryTransferLoss or InventoryTransferOverage, snapshot.Item.References, rules, kind == IdentityAccessGrant ? snapshot.Pending : kind == SalesQuoteConversion ? salesQuoteConversionPreview!.RejectionSupported && SalesQuoteConversionDecisionBindingV1.TryVersion(snapshot.SalesQuoteConversionProof!.RequestVersion, out var quoteRejectVersion) && quoteRejectVersion < long.MaxValue : kind == SalesRequest ? salesRequestPreview!.RejectionSupported : kind is not (SalesPriceFloor or SourceVoucher or InventoryCostCancellation or InvoicedShipmentCost or PurchaseCostDifference or InvoiceLineCogs or ManufacturingCostDifference or PostingAccountMapping or ApprovedSourceCatalog or JournalReversal or AccountingPeriodOpening or AccountingPeriodReopening or NormalJournalDraft or ExpensePayment or OfficialInvoiceImport or PurchaseOrder or PurchaseServiceOrder or PurchaseInvoiceVariance or LogisticsPlanExcess or LogisticsWeighingDifference or LogisticsDispatchNote or BankAccount or BankAccountIbanChange or ManualBankPayment or ProductPriceList)
+            kind is ProductPackageStandard or InventoryStockScrap or InventoryStockCount or OpeningCost or PurchaseServiceOrder or PurchaseInvoiceVariance or InventoryTransferLoss or InventoryTransferOverage, snapshot.Item.References, rules, kind == IdentityAccessGrant ? snapshot.Pending : kind == SalesQuoteConversion ? salesQuoteConversionPreview!.RejectionSupported && SalesQuoteConversionDecisionBindingV1.TryVersion(snapshot.SalesQuoteConversionProof!.RequestVersion, out var quoteRejectVersion) && quoteRejectVersion < long.MaxValue : kind == SalesRequest ? salesRequestPreview!.RejectionSupported : kind is not (SalesDiscount or SalesPriceFloor or SourceVoucher or InventoryCostCancellation or InvoicedShipmentCost or PurchaseCostDifference or InvoiceLineCogs or ManufacturingCostDifference or PostingAccountMapping or ApprovedSourceCatalog or JournalReversal or AccountingPeriodOpening or AccountingPeriodReopening or NormalJournalDraft or ExpensePayment or OfficialInvoiceImport or PurchaseOrder or PurchaseServiceOrder or PurchaseInvoiceVariance or LogisticsPlanExcess or LogisticsWeighingDifference or LogisticsDispatchNote or BankAccount or BankAccountIbanChange or ManualBankPayment or ProductPriceList)
                 && !(kind == ManufacturingPlan && rules.Any(rule => rule.RuleCode == "manufacturing.plan-reapproval-after-order-cancel")),
             snapshot.ManufacturingPlanReapproval, snapshot.InventoryTransferLoss,
             snapshot.CounterpartyTaxIdentityChange, snapshot.CounterpartyLegalNameChange, logisticsPreview,
@@ -482,7 +490,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             kind == InventoryStockScrap ? snapshot.InventoryStockScrapProof!.Scrap : null,
             kind == LogisticsDispatchNote ? snapshot.LogisticsDispatchNoteProof!.Note : null,
             kind == LogisticsCustomerReturn ? snapshot.LogisticsCustomerReturnProof!.Return : null,
-            kind == SalesPriceFloor ? floorPreview!.ApprovalSupported
+            kind == SalesDiscount ? discountPreview!.ApprovalSupported
+                : kind == SalesPriceFloor ? floorPreview!.ApprovalSupported
                 : kind == IdentityAccessGrant ? snapshot.Pending && identityPreview!.TargetActive && identityPreview.RoleActive
                 && IdentityAccessGrantDecisionBindingV1.TryVersion(snapshot.SourceVersion, out var identityVersion) && identityVersion < long.MaxValue
                 : kind == SalesQuoteConversion ? salesQuoteConversionPreview!.ApprovalSupported && SalesQuoteConversionDecisionBindingV1.TryVersion(snapshot.SourceVersion, out var quoteApproveVersion) && quoteApproveVersion < long.MaxValue
@@ -492,13 +501,14 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
                 : kind == AccountingPeriodReopening ? !accountingPeriodReopeningPreview!.LaterPeriodClosed
                 : kind == OrganizationCompanyTaxId ? companyTaxIdPreview!.IsCurrent && companyTaxIdPreview.CompanyVersion != long.MaxValue.ToString(System.Globalization.CultureInfo.InvariantCulture) : null,
             ibanPreview, kind == ProductPackageStandard ? snapshot.ProductPackageStandardProof!.Table : null, priceListPreview,
-            kind == PartyCreditLimit ? snapshot.PartyCreditLimitProof!.Proposal : null, importPreview, officialSalesPreview, paymentReversalPreview, receiptReversalPreview, expensePreview, bankCreditLimitPreview, openingPreview, creditMovementPreview, cashExchangeBookValuePreview, normalJournalDraftPreview, accountingPeriodOpeningPreview, accountingPeriodReopeningPreview, journalReversalPreview, approvedSourceCatalogPreview, postingAccountMappingPreview, manufacturingCostDifferencePreview) { InvoiceLineCogs = invoiceLineCogsPreview, InventoryCost = inventoryCostPreview, InventoryCostCancellation = inventoryCostCancellationPreview, SourceVoucher = sourceVoucherPreview, OrganizationCompanyTaxId = companyTaxIdPreview, SalesRequest = salesRequestPreview, SalesQuoteConversion = salesQuoteConversionPreview, IdentityAccessGrant = identityPreview, SalesPriceFloor = floorPreview };
+            kind == PartyCreditLimit ? snapshot.PartyCreditLimitProof!.Proposal : null, importPreview, officialSalesPreview, paymentReversalPreview, receiptReversalPreview, expensePreview, bankCreditLimitPreview, openingPreview, creditMovementPreview, cashExchangeBookValuePreview, normalJournalDraftPreview, accountingPeriodOpeningPreview, accountingPeriodReopeningPreview, journalReversalPreview, approvedSourceCatalogPreview, postingAccountMappingPreview, manufacturingCostDifferencePreview) { InvoiceLineCogs = invoiceLineCogsPreview, InventoryCost = inventoryCostPreview, InventoryCostCancellation = inventoryCostCancellationPreview, SourceVoucher = sourceVoucherPreview, OrganizationCompanyTaxId = companyTaxIdPreview, SalesRequest = salesRequestPreview, SalesQuoteConversion = salesQuoteConversionPreview, IdentityAccessGrant = identityPreview, SalesPriceFloor = floorPreview, SalesDiscount = discountPreview };
     }
 
     public async Task<WorkDecisionResultV1> DecideAsync(string kind, Guid id, WorkDecisionRequestV1 request, string key, CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(request);
-        if (!ValidSalesPriceFloorRequest(kind, request)
+        if (!ValidSalesDiscountRequest(kind, request)
+            || !ValidSalesPriceFloorRequest(kind, request)
             || !ValidSalesQuoteConversionRequest(kind, request)
             || !ValidIdentityAccessGrantRequest(kind, request)
             || !ValidSalesRequestRequest(kind, request)
@@ -531,11 +541,13 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             throw new WorkDecisionException(400, "work_decision_invalid");
         if (kind == BankAccountIbanChange && (!request.Approve || request.Reason is not null || !BankAccountVersion(request.ExpectedVersion)))
             throw new WorkDecisionException(400, "work_decision_invalid");
+        if (kind == SalesDiscount)
+            request = request with { SalesDiscount = new(Array.AsReadOnly(request.SalesDiscount!.Lines.ToArray())) };
         if (kind == SalesPriceFloor)
             request = request with { SalesPriceFloor = new(Array.AsReadOnly(request.SalesPriceFloor!.Lines.ToArray())) };
         var actor = user.UserId;
         var snapshot = await SnapshotAsync(kind, id, token, request.InventoryTransferLoss?.RequestNumber, request.InventoryTransferOverage?.RequestNumber,
-            kind is SalesPriceFloor or BankAccountIbanChange or ProductPriceList or InventoryCostCancellation ? request.ExpectedVersion : null);
+            kind is SalesDiscount or SalesPriceFloor or BankAccountIbanChange or ProductPriceList or InventoryCostCancellation ? request.ExpectedVersion : null);
         if (user.UserId != actor) throw new WorkDecisionException(403);
         if (kind == PartyCreditLimit && !ValidPartyCreditLimitRequest(request)
             || request.ProductPackageStandard is not null && kind != ProductPackageStandard
@@ -589,6 +601,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
         }
         if (!await Verify(token)) throw new WorkDecisionException(403);
         using var lease = executionFence.Enter(Verify);
+        if (kind == SalesDiscount)
+            return await DecideSalesDiscountAsync(id, request, key, snapshot, actor!, token);
         if (kind == SalesPriceFloor)
             return await DecideSalesPriceFloorAsync(id, request, key, snapshot, actor!, token);
         if (kind == IdentityAccessGrant)
