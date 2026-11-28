@@ -264,18 +264,22 @@ public sealed class AiAskService(
         {
             case AiGatewayStatusV1.Answered when composed.Answer is { } answer:
                 Guid? answerId = null;
-                if (!generalChat)
                 {
-                    if (!answer.Grounded || answerReceipts is null) return AiAskResultV1.Of(AiAskStatusV1.Unavailable);
+                    if ((!generalChat && !answer.Grounded) || answerReceipts is null) return AiAskResultV1.Of(AiAskStatusV1.Unavailable);
                     async Task ReceiptFence(CancellationToken ct)
                     {
+                        ct.ThrowIfCancellationRequested();
                         if (!await RemainsCurrentAsync(actorId, companyId, releasedTools ?? [], ct))
                             throw new AiAnswerReceiptAuthorityLostException();
+                        ct.ThrowIfCancellationRequested();
                     }
                     try
                     {
-                        answerId = await answerReceipts.RecordAsync(companyId, actorId, correlationContext.CorrelationId,
-                            answer, ReceiptFence, cancellationToken);
+                        answerId = generalChat
+                            ? await answerReceipts.RecordGeneralChatAsync(companyId, actorId, correlationContext.CorrelationId,
+                                answer, ReceiptFence, cancellationToken)
+                            : await answerReceipts.RecordAsync(companyId, actorId, correlationContext.CorrelationId,
+                                answer, ReceiptFence, cancellationToken);
                     }
                     catch (AiAnswerReceiptAuthorityLostException)
                     {
@@ -285,6 +289,7 @@ public sealed class AiAskService(
                     }
                     catch (Exception exception) when (exception is not OperationCanceledException)
                     { return AiAskResultV1.Of(AiAskStatusV1.Unavailable); }
+                    cancellationToken.ThrowIfCancellationRequested();
                     if (answerId is null || answerId == Guid.Empty) return AiAskResultV1.Of(AiAskStatusV1.Unavailable);
                     // The owner fences the durable receipt, but authority can change during its commit await.
                     // A persisted receipt is not proof that this response was released to the caller.
@@ -294,6 +299,7 @@ public sealed class AiAskService(
                             companyId, actorId, ErpPermissions.AiPanelUse, null, cancellationToken);
                         return AiAskResultV1.Of(AiAskStatusV1.Refused);
                     }
+                    cancellationToken.ThrowIfCancellationRequested();
                 }
                 return AiAskResultV1.Answered(new AiAskResponseV1(AiAskOutcomesV1.Answered, results,
                     new AiAnswerV1(answer.Text,
