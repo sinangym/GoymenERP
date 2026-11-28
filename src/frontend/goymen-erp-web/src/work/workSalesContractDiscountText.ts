@@ -3,6 +3,7 @@ export const SALES_CONTRACT_DISCOUNT_WORK_TEXT = {
   readOnly: 'Kayıtlı sözleşmenin tamamı ve sunucunun karar uygunluğu gösterilir. Fiyatlar yalnız mevcut fiyat okuma yetkisiyle görünür.',
   retained: 'Önceki sözleşme kararınız özgün anahtarı, sürümü ve hazırlanmış gerekçesiyle doğrulanıyor. Güncel sözleşme bu isteğin yerine kullanılmıyor.',
   canonicalReason: 'Ret gerekçesi onaydan önce başındaki ve sonundaki boşluklardan arındırılır; aynı gerekçe karar isteğinde korunur.',
+  preparedReason: 'Gönderilecek ret gerekçesi',
   none: 'Yok', yes: 'Evet', no: 'Hayır', withheld: 'Fiyat okuma yetkisiyle sınırlı',
   installments: 'Kayıtlı taksit planı', rules: 'Kayıtlı iskonto kuralları',
   states: {PendingDiscountApproval: 'İskonto onayı bekliyor', Active: 'Etkin', DiscountRejected: 'İskonto reddedildi'},
