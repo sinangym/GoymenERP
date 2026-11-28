@@ -65,6 +65,8 @@ public sealed partial class SalesStore(
         ArgumentNullException.ThrowIfNull(build);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
+        if (ownedCustomerReturnDecision is not null || contractDiscountDecisionReadFence is not null)
+            throw new InvalidOperationException("Selected return decision or contract read cannot dispatch a foreign draft mutation.");
         var companyId = RequireResolvedCompany();
 
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
@@ -149,6 +151,7 @@ public sealed partial class SalesStore(
         RequireDiscountApprovalCommand(envelope, requestHash, commandName, writes: false);
         RequireRemainderDecisionCommand(envelope, requestHash, commandName, writes: false);
         RequireContractDiscountDecisionCommand(envelope, requestHash, commandName, writes: false);
+        if (ownedCustomerReturnDecision is not null) RequireCustomerReturnDecisionCommand(envelope, requestHash, commandName, writes: false);
         await PriceFloorApprovalFenceAsync(cancellationToken);
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
@@ -201,11 +204,14 @@ public sealed partial class SalesStore(
         ArgumentNullException.ThrowIfNull(refusal);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
+        if (ownedCustomerReturnDecision is not null || contractDiscountDecisionReadFence is not null)
+            throw new InvalidOperationException("Selected return decision or contract read cannot dispatch a foreign draft mutation.");
         RequireCommand(commandName);
         RequirePriceFloorApprovalCommand(envelope, requestHash, commandName, writes: true);
         RequireDiscountApprovalCommand(envelope, requestHash, commandName, writes: true);
         RequireRemainderDecisionCommand(envelope, requestHash, commandName, writes: true);
         RequireContractDiscountDecisionCommand(envelope, requestHash, commandName, writes: true);
+        if (ownedCustomerReturnDecision is not null) RequireCustomerReturnDecisionCommand(envelope, requestHash, commandName, writes: true);
         await PriceFloorApprovalFenceAsync(cancellationToken);
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
@@ -323,6 +329,8 @@ public sealed partial class SalesStore(
         ArgumentNullException.ThrowIfNull(audit);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
+        if (ownedCustomerReturnDecision is not null || contractDiscountDecisionReadFence is not null)
+            throw new InvalidOperationException("Selected return decision or contract read cannot dispatch a foreign draft mutation.");
         RequireCommand(commandName);
         if (!SalesDraftCommands.IsStateCommand(commandName))
         {
@@ -576,10 +584,13 @@ public sealed partial class SalesStore(
         ArgumentNullException.ThrowIfNull(audit);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
+        if (ownedCustomerReturnDecision is not null || contractDiscountDecisionReadFence is not null)
+            throw new InvalidOperationException("Selected return decision or contract read cannot dispatch a foreign draft mutation.");
         RequirePriceFloorApprovalCommand(envelope, requestHash, commandName, writes: true);
         RequireDiscountApprovalCommand(envelope, requestHash, commandName, writes: true);
         RequireRemainderDecisionCommand(envelope, requestHash, commandName, writes: true);
         RequireContractDiscountDecisionCommand(envelope, requestHash, commandName, writes: true);
+        if (ownedCustomerReturnDecision is not null) RequireCustomerReturnDecisionCommand(envelope, requestHash, commandName, writes: true);
         await PriceFloorApprovalFenceAsync(cancellationToken);
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
@@ -1069,6 +1080,8 @@ public sealed partial class SalesStore(
         ArgumentNullException.ThrowIfNull(beforeWrite);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
+        if (ownedCustomerReturnDecision is not null || contractDiscountDecisionReadFence is not null)
+            throw new InvalidOperationException("Selected return decision or contract read cannot dispatch a foreign draft mutation.");
         RequireCommand(commandName);
         if (commandName != SalesDraftCommands.RescheduleDeliveryV1)
         {
@@ -1234,6 +1247,8 @@ public sealed partial class SalesStore(
         ArgumentNullException.ThrowIfNull(beforeWrite);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
+        if (ownedCustomerReturnDecision is not null || contractDiscountDecisionReadFence is not null)
+            throw new InvalidOperationException("Selected return decision or contract read cannot dispatch a foreign draft mutation.");
         RequireCommand(commandName);
         if (commandName != SalesDraftCommands.CancelV1)
         {
@@ -1416,6 +1431,8 @@ public sealed partial class SalesStore(
         ArgumentNullException.ThrowIfNull(beforeWrite);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
+        if (ownedCustomerReturnDecision is not null || contractDiscountDecisionReadFence is not null)
+            throw new InvalidOperationException("Selected return decision or contract read cannot dispatch a foreign draft mutation.");
         RequireCommand(commandName);
         if (commandName != SalesDraftCommands.ForceCloseV1)
         {
@@ -1558,6 +1575,8 @@ public sealed partial class SalesStore(
         ArgumentNullException.ThrowIfNull(beforeWrite);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
+        if (ownedCustomerReturnDecision is not null || contractDiscountDecisionReadFence is not null)
+            throw new InvalidOperationException("Selected return decision or contract read cannot dispatch a foreign draft mutation.");
         RequireCommand(commandName);
         if (commandName != SalesDraftCommands.ApproveOverDeliveryV1)
         {
@@ -1702,6 +1721,8 @@ public sealed partial class SalesStore(
         ArgumentNullException.ThrowIfNull(beforeWrite);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
+        if (ownedCustomerReturnDecision is not null || contractDiscountDecisionReadFence is not null)
+            throw new InvalidOperationException("Selected return decision or contract read cannot dispatch a foreign draft mutation.");
         RequireCommand(commandName);
         if (commandName != SalesDraftCommands.CloseLineV1)
         {
@@ -1854,9 +1875,12 @@ public sealed partial class SalesStore(
         ArgumentNullException.ThrowIfNull(beforeWrite);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
+        if (ownedCustomerReturnDecision is not null || contractDiscountDecisionReadFence is not null)
+            throw new InvalidOperationException("Selected return decision or contract read cannot dispatch a foreign draft mutation.");
         RequireCommand(commandName);
         RequireRemainderDecisionCommand(envelope, requestHash, commandName, writes: true);
         RequireContractDiscountDecisionCommand(envelope, requestHash, commandName, writes: true);
+        if (ownedCustomerReturnDecision is not null) RequireCustomerReturnDecisionCommand(envelope, requestHash, commandName, writes: true);
         if (!SalesDraftCommands.IsRemainderCommand(commandName))
         {
             throw new ArgumentException("Yalnız kalan değişikliği komutları satır kalanını değiştirir.", nameof(commandName));

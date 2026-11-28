@@ -25,6 +25,7 @@ public sealed partial class SalesStore : ISalesContractStore
         RequireHash(requestHash);
         RequireContractCommand(commandName);
         RequireContractDiscountDecisionCommand(envelope, requestHash, commandName, writes: false);
+        if (ownedCustomerReturnDecision is not null) RequireCustomerReturnDecisionCommand(envelope, requestHash, commandName, writes: false);
         RequireResolvedCompany();
         var attempt = await FindContractAttemptAsync(commandName, IdempotencyKeyHash(envelope.IdempotencyKey), cancellationToken);
         if (attempt is null)
@@ -47,6 +48,7 @@ public sealed partial class SalesStore : ISalesContractStore
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
         var actorId = envelope.ActorId.Trim();
         RequireContractDiscountDecisionCommand(envelope, requestHash, SalesContractCommands.CreateV1, writes: true);
+        if (ownedCustomerReturnDecision is not null) RequireCustomerReturnDecisionCommand(envelope, requestHash, SalesContractCommands.CreateV1, writes: true);
         var attempt = await FindContractAttemptAsync(SalesContractCommands.CreateV1, keyHash, cancellationToken);
         if (attempt is not null)
         {
@@ -81,6 +83,7 @@ public sealed partial class SalesStore : ISalesContractStore
         RequireHash(requestHash);
         RequireContractCommand(commandName);
         RequireContractDiscountDecisionCommand(envelope, requestHash, commandName, writes: true);
+        if (ownedCustomerReturnDecision is not null) RequireCustomerReturnDecisionCommand(envelope, requestHash, commandName, writes: true);
         if (commandName == SalesContractCommands.CreateV1)
         {
             throw new ArgumentException("Yalnız bir iskonto kararı terminal ret kaydeder; reddedilen kayıt hiçbir şey kaydetmez.", nameof(commandName));
@@ -120,6 +123,7 @@ public sealed partial class SalesStore : ISalesContractStore
         RequireHash(requestHash);
         RequireContractCommand(commandName);
         RequireContractDiscountDecisionCommand(envelope, requestHash, commandName, writes: true);
+        if (ownedCustomerReturnDecision is not null) RequireCustomerReturnDecisionCommand(envelope, requestHash, commandName, writes: true);
         if (commandName == SalesContractCommands.CreateV1)
         {
             throw new ArgumentException("Kayıt kendi mağaza yöntemini kullanır.", nameof(commandName));

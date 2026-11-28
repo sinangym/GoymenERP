@@ -126,7 +126,7 @@ public sealed partial class SalesStore : ISalesContractDiscountDecisionSafetySto
 
     private async Task ContractDiscountDecisionFenceAsync(CancellationToken token)
     {
-        if (ownedContractDiscountDecision is not { } state) { await ContractDiscountDecisionSourceFenceAsync(token); return; }
+        if (ownedContractDiscountDecision is not { } state) { await ContractDiscountDecisionSourceFenceAsync(token); await CustomerReturnDecisionFenceAsync(token); return; }
         token.ThrowIfCancellationRequested(); RequireCompany(state.CompanyId);
         await state.FreshFence(token);
         token.ThrowIfCancellationRequested(); RequireCompany(state.CompanyId);

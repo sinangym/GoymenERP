@@ -139,7 +139,7 @@ public sealed partial class SalesStore : ISalesCustomerReturnDecisionSafetyStore
         if (writes && (ownedContractDiscountDecision is not null || ownedRemainderDecision is not null || ownedPriceFloorApproval is not null
             || ownedDiscountApproval is not null || ownedOverDeliveryRequestApproval is not null || ownedRiskExceptionDecision is not null
             || ownedRequestApproval is not null || ownedQuoteApproval is not null || overDeliveryRequestDecisionReadFence is not null
-            || riskExceptionDecisionReadFence is not null || remainderDecisionReadFence is not null || quoteDecisionReadFence is not null))
+            || riskExceptionDecisionReadFence is not null || remainderDecisionReadFence is not null || contractDiscountDecisionReadFence is not null || quoteDecisionReadFence is not null))
             throw new InvalidOperationException("Başka karar veya salt okuma kapsamı müşteri iadesi komutu yazamaz.");
         if (ownedCustomerReturnDecision is not { } state) return;
         if (state.Command != command || state.Hash != hash || state.Envelope.PermissionCode != envelope.PermissionCode || state.Envelope.ActorId != envelope.ActorId
