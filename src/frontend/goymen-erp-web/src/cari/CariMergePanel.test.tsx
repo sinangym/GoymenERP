@@ -328,23 +328,33 @@ describe('F-027 / EK-18 #76-#77 Cari duplicate merge', () => {
     expect((screen.getByLabelText(T.confirmLabel) as HTMLInputElement).disabled).toBe(true)
     expect(puts(calls)).toHaveLength(0)
   })
-  it('hides late/cached current preview and does not reread it to retry a frozen unknown PUT', async () => {
+  it('does not reread human facts while retrying the exact frozen unknown PUT, and refreshes native state after applied', async () => {
     let attempts = 0
+    let applied = false
+    let finishRetry: (response: Response) => void = () => { throw new Error('Retry was not sent') }
     const calls = install(call => {
-      if (call.method !== 'PUT') return json(view({ candidates: attempts > 1 ? [] : [candidate] }))
+      if (call.method !== 'PUT') return json(view({ candidates: applied ? [] : [candidate] }))
       attempts++; if (attempts === 1) throw new TypeError('lost reply')
-      return noContent()
+      return new Promise<Response>(resolve => { finishRetry = resolve })
     })
     renderPanel(); const user = userEvent.setup(); await fillAndApprove(user)
     await screen.findByText(T.unknownOutcome)
     expect(screen.queryByRole('region', { name: I.heading })).toBeNull()
     const previewsBeforeRetry = calls.filter(call => call.url.endsWith('/preview')).length
+    const readsBeforeRetry = reads(calls).length
     await user.click(screen.getByRole('button', { name: T.retrySame }))
-    await screen.findByText(T.approved)
+    await waitFor(() => expect(puts(calls)).toHaveLength(2))
+    // The second native response is still pending. No current human read can replace the original attempt.
     expect(calls.filter(call => call.url.endsWith('/preview'))).toHaveLength(previewsBeforeRetry)
-    expect(puts(calls)).toHaveLength(2)
+    expect(reads(calls)).toHaveLength(readsBeforeRetry)
+    expect(screen.queryByRole('region', { name: I.heading })).toBeNull()
     expect(puts(calls)[1].body).toEqual(puts(calls)[0].body)
     expect(puts(calls)[1].headers['Idempotency-Key']).toBe(puts(calls)[0].headers['Idempotency-Key'])
+    await act(async () => { applied = true; finishRetry(noContent()) })
+    await screen.findByText(T.approved)
+    await screen.findByText(T.noCandidates)
+    expect(reads(calls).length).toBeGreaterThan(readsBeforeRetry)
+    // Re-enabling queries AFTER the applied answer may refresh cached native/impact data; that is not a retry prerequisite.
   })
 
   it('hides a cached current native response received after the original command became unknown', async () => {
