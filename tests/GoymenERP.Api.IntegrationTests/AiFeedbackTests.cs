@@ -76,7 +76,8 @@ public sealed class AiFeedbackTests
             Assert.Null(events.FindProperty(name));
         Assert.NotNull(identities.FindProperty("ActorId")); Assert.Null(identities.FindProperty("Text"));
         Assert.False(db.Database.HasPendingModelChanges());
-        Assert.EndsWith("_AddAiAnswerFeedback", db.Database.GetMigrations().Last());
+        Assert.Single(db.Database.GetMigrations(), id => id.EndsWith("_AddAiAnswerFeedback", StringComparison.Ordinal));
+        Assert.False(db.Database.HasPendingModelChanges());
         var migration = new AddAiAnswerFeedback();
         Assert.Equal(new[] { "FeedbackEvents", "FeedbackIdentities" }, migration.UpOperations.OfType<CreateTableOperation>().Select(x => x.Name));
         Assert.DoesNotContain(migration.UpOperations, operation => operation is SqlOperation);
