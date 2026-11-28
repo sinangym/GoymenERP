@@ -35,6 +35,7 @@ public static partial class CounterpartyEndpoints
             if (context.Request.Query.Count != 0)
                 return ValidationProblem("Birleştirme önizlemesi geçersiz.", "Sorgu parametresi kabul edilmez.");
             var companyId = company.CompanyId; var actor = user.UserId; var correlationId = correlation.CorrelationId;
+            if (!user.IsAuthenticated || string.IsNullOrWhiteSpace(actor)) return Results.Problem(statusCode: 403);
             try
             {
                 var answer = await purpose.PreviewPurposeAsync(partyId, command,
