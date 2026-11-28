@@ -140,7 +140,7 @@ it('pairs exactly one organization VKN purpose without a duplicate inbox row or 
  expect(cap).toBe('organization.company-tax-id-change.work-decision');expect(CAPABILITY_ROUTE[cap]).toBe(path)
  expect(ORGANIZATION_ROUTE[ORGANIZATION_CAPABILITY.companyTaxIdWorkDecision]).toBe(path);expect(CAPABILITY_NAV_LABEL[cap]).toBe('')
  expect(WORK_INBOX_KINDS.filter(row=>row.kind===kind)).toEqual([{kind,module:'organization',capability:cap}])
- expect(WORK_INBOX_KINDS).toHaveLength(69);expect(new Set(WORK_INBOX_KINDS.map(row=>row.kind)).size).toBe(69)
+ expect(WORK_INBOX_KINDS).toHaveLength(70);expect(new Set(WORK_INBOX_KINDS.map(row=>row.kind)).size).toBe(70)
  const routes=workRoutes.filter(route=>route.path===path.slice(1));expect(routes).toHaveLength(1)
  expect(matchRoutes(shellRoutes,path.replace(':approvalId','ac590000-0000-4000-8000-000000000001'))?.at(-1)?.route).toBe(routes[0])
  expect(ORGANIZATION_ROUTE[ORGANIZATION_CAPABILITY.companyTaxId]).toBe('/ayarlar/organizasyon/sirket-vergi-no')

@@ -11,7 +11,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { matchPath, matchRoutes } from 'react-router'
-import { CAPABILITY, CAPABILITY_ROUTE } from './capabilities'
+import { CAPABILITY, CAPABILITY_ROUTE, CAPABILITY_NAV_LABEL } from './capabilities'
 import { SALES_WORK_DECISION_CAPABILITY, SALES_WORK_DECISION_ROUTE, SALES_CAPABILITY, SALES_POOL_CAPABILITY_ID, SALES_POOL_ROUTE, SALES_ROUTE, salesDetailPath } from '../sales/capabilities'
 import { shellRoutes } from './router'
 import { workRoutes } from '../work/workRoutes'
@@ -204,4 +204,15 @@ it('keeps the native risk control/order route separate from the standalone price
  expect(SALES_WORK_DECISION_CAPABILITY.riskException).toBe('sales.risk-exception.work-decision');expect(SALES_WORK_DECISION_ROUTE.riskException).toBe('/onaylarim/sales.risk-exception.v1/:approvalId')
  expect(matchRoutes(shellRoutes,'/satis/siparisler/cccccccc-0000-4000-8000-0000000000f1')?.at(-1)?.route.path).toBe('satis/siparisler/:draftId')
  expect(NAV_CAPABILITIES).not.toContain(SALES_WORK_DECISION_CAPABILITY.riskException)
+})
+
+
+it('publishes exactly one quantity-only remainder purpose beside the unchanged native order route',()=>{
+ expect(SALES_WORK_DECISION_CAPABILITY.remainderChange).toBe('sales.remainder-change.work-decision')
+ expect(SALES_WORK_DECISION_ROUTE.remainderChange).toBe('/onaylarim/sales.remainder-change.v1/:approvalId')
+ expect(CAPABILITY_ROUTE[CAPABILITY.salesRemainderChangeWorkDecision]).toBe(SALES_WORK_DECISION_ROUTE.remainderChange)
+ expect(CAPABILITY_NAV_LABEL[CAPABILITY.salesRemainderChangeWorkDecision]).toBe('')
+ expect(NAV_CAPABILITIES).not.toContain(CAPABILITY.salesRemainderChangeWorkDecision)
+ expect(matchRoutes(shellRoutes,'/onaylarim/sales.remainder-change.v1/cccccccc-0000-4000-8000-0000000000f1')?.at(-1)?.route.path).toBe('onaylarim/sales.remainder-change.v1/:approvalId')
+ expect(matchRoutes(shellRoutes,'/satis/siparisler/cccccccc-0000-4000-8000-0000000000f1')?.at(-1)?.route.path).toBe('satis/siparisler/:draftId')
 })

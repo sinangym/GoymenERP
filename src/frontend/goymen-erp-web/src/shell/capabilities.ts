@@ -159,6 +159,7 @@ export const CAPABILITY = {
   salesDraftsList: 'sales.drafts.list',
   /** Sales-owned purpose routes mounted by Work; no browse grant required. */
   identityAccessGrantWorkDecision: 'identity.access-grant-request.work-decision',
+  salesRemainderChangeWorkDecision: 'sales.remainder-change.work-decision',
   salesRiskExceptionWorkDecision: 'sales.risk-exception.work-decision',
   salesOverDeliveryRequestWorkDecision: 'sales.over-delivery-request.work-decision',
   salesDiscountWorkDecision: 'sales.discount-exception.work-decision',
@@ -548,6 +549,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.organizationCompanyTaxIdWorkDecision]: '/onaylarim/organization.company-tax-id-change.v1/:approvalId',
   [CAPABILITY.salesDraftsList]: '/satis/siparisler',
   [CAPABILITY.identityAccessGrantWorkDecision]: '/onaylarim/identity.access-grant-request.v1/:approvalId',
+  [CAPABILITY.salesRemainderChangeWorkDecision]: '/onaylarim/sales.remainder-change.v1/:approvalId',
   [CAPABILITY.salesRiskExceptionWorkDecision]: '/onaylarim/sales.risk-exception.v1/:approvalId',
   [CAPABILITY.salesOverDeliveryRequestWorkDecision]: '/onaylarim/sales.over-delivery-request.v1/:approvalId',
   [CAPABILITY.salesDiscountWorkDecision]: '/onaylarim/sales.discount-exception.v1/:approvalId',

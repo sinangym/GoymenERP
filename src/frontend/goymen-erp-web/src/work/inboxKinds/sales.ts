@@ -6,6 +6,7 @@ import type { WorkInboxKind } from './types'
 
 /** Sales approval kinds of the Work inbox (one file per module so packages add their kinds without touching the others). */
 export const SALES_INBOX_KINDS: readonly WorkInboxKind[] = [
+  { kind: 'sales.remainder-change.v1', module: 'sales', capability: SALES_WORK_DECISION_CAPABILITY.remainderChange },
   { kind: 'sales.price-floor-exception.v1', module: 'sales', capability: SALES_WORK_DECISION_CAPABILITY.priceFloor },
   { kind: 'sales.discount-exception.v1', module: 'sales', capability: SALES_WORK_DECISION_CAPABILITY.discount },
   { kind: 'sales.risk-exception.v1', module: 'sales', capability: SALES_WORK_DECISION_CAPABILITY.riskException },

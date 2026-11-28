@@ -8,7 +8,7 @@ afterEach(()=>vi.unstubAllGlobals())
 const decode=(v:unknown)=>decodeWorkDecisionPreview(v,COMPANY_A,kind,id)
 const record=(v:unknown)=>v as Record<string,unknown>
 describe('Risk owner-bound full10/13 human and exact native four-field protocol',()=>{
- it('publishes exactly one Risk purpose beside all existing60 kinds',()=>{expect(WORK_DECISION_KINDS).toHaveLength(61);expect(WORK_DECISION_KINDS.filter(k=>k===kind)).toEqual([kind])})
+ it('publishes exactly one Risk purpose beside all existing60 kinds',()=>{expect(WORK_DECISION_KINDS).toHaveLength(62);expect(WORK_DECISION_KINDS.filter(k=>k===kind)).toEqual([kind])})
  it('preserves all native fields,100ns UTC, rawreason and independent lossless order/exception versions',()=>{
   const v=fixture(COMPANY_A),before=JSON.stringify(v),d=decode(v);expect(d).not.toBeNull();expect(JSON.stringify(v)).toBe(before)
   expect(Object.keys(d!.salesRiskException!)).toHaveLength(10);expect(Object.keys(d!.salesRiskException!.exception)).toHaveLength(13)

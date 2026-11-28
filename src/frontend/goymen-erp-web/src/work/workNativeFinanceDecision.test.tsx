@@ -34,7 +34,7 @@ afterEach(()=>{cleanup();vi.unstubAllGlobals();sessionStorage.clear()})
 describe('three native Finance Work human contracts',()=>{
   it.each(kinds)('publishes each native purpose once with lossless owner fields: %s',kind=>{
     const value=preview(kind);expect(decodeWorkDecisionPreview(value,COMPANY_A,kind,id)).toEqual(value)
-    expect(WORK_DECISION_KINDS).toHaveLength(61);expect(WORK_DECISION_KINDS.filter(k=>k===kind)).toEqual([kind])
+    expect(WORK_DECISION_KINDS).toHaveLength(62);expect(WORK_DECISION_KINDS.filter(k=>k===kind)).toEqual([kind])
   })
   it.each(kinds)('rejects malformed, cross-kind and foreign evidence: %s',kind=>{
     const value=preview(kind)

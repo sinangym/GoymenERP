@@ -55,9 +55,10 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    // 1.35: price-free Risk decisions use only their existing native approval authority.
-    public const string OwnerContractVersion = "1.35";
+    // 1.36: quantity-only remainder decisions retain native OrdersApprove and SAT-D2 persona rules.
+    public const string OwnerContractVersion = "1.36";
     public const string RiskExceptionWorkDecisionCapabilityId = "sales.risk-exception.work-decision";
+    public const string RemainderChangeWorkDecisionCapabilityId = "sales.remainder-change.work-decision";
     public const string OverDeliveryRequestWorkDecisionCapabilityId = "sales.over-delivery-request.work-decision";
     public const string DiscountWorkDecisionCapabilityId = "sales.discount-exception.work-decision";
     public const string PriceFloorWorkDecisionCapabilityId = "sales.price-floor-exception.work-decision";
@@ -309,6 +310,10 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
         return
         [
         // WP8: purpose decision routes require the native command names, with no browse/read grant added.
+        new ShellCapabilityDeclaration(RemainderChangeWorkDecisionCapabilityId,"sales-remainder-change-work-decision",
+            "/onaylarim/sales.remainder-change.v1/:approvalId","W-SALES-REMAINDER-CHANGE-01",ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            ShellCapabilityContextRequirement.SingleCompany,ShellCapabilityScopeRequirement.CompanyWide,
+            [SalesPermissionManifestV1.OrdersApprove],ImplementationAvailable:true),
         new ShellCapabilityDeclaration(RiskExceptionWorkDecisionCapabilityId,"sales-risk-exception-work-decision",
             "/onaylarim/sales.risk-exception.v1/:approvalId","W-SALES-RISK-EXCEPTION-01",ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
             ShellCapabilityContextRequirement.SingleCompany,ShellCapabilityScopeRequirement.CompanyWide,

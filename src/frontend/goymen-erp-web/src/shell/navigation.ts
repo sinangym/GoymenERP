@@ -275,6 +275,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'organization.company-tax-id-change.work-decision': '',
   'sales.drafts.list': 'Satış Siparişleri',
   'identity.access-grant-request.work-decision': '',
+  'sales.remainder-change.work-decision': '',
   'sales.risk-exception.work-decision': '',
   'sales.over-delivery-request.work-decision': '',
   'sales.discount-exception.work-decision': '',

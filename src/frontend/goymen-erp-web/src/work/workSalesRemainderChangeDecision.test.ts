@@ -1,5 +1,5 @@
 import {afterEach,describe,expect,it,vi} from 'vitest'
-import {decodeWorkDecisionPreview,isWorkDecisionRequest,isWorkPackageEffectiveDate,exactNativeClrAmount,sendWorkDecision,workDecisionReasonLimit} from './workDecisionApi'
+import {decodeWorkDecisionPreview,isWorkDecisionRequest,isWorkPackageEffectiveDate,exactNativeClrAmount,sendWorkDecision,workDecisionReasonLimit,WORK_DECISION_KINDS} from './workDecisionApi'
 import {SALES_REMAINDER_CHANGE_WORK_KIND as kind,decodeWorkSalesRemainderChangePreview as human,salesRemainderChangeWorkCommand} from './workSalesRemainderChangeDecision'
 import {salesRemainderChangeFixture as fixture,salesRemainderChangeHuman,salesRemainderChangeId as id} from './salesRemainderChangeDecisionFixture'
 import {COMPANY_A,COMPANY_B,json,problem} from '../settings/testHarness'
@@ -8,6 +8,7 @@ afterEach(()=>vi.unstubAllGlobals())
 const decode=(v:unknown)=>decodeWorkDecisionPreview(v,COMPANY_A,kind,id)
 const record=(v:unknown)=>v as Record<string,unknown>
 describe('remainder native quantity-only Work profile',()=>{
+ it('publishes one remainder purpose beside all existing61 kinds',()=>{expect(WORK_DECISION_KINDS).toHaveLength(62);expect(WORK_DECISION_KINDS.filter(k=>k===kind)).toEqual([kind])})
  it('preserves complete10/19/9 facts and raw text without mutation, calculations or a numeric version',()=>{
   const v=fixture(COMPANY_A),before=JSON.stringify(v),d=decode(v);expect(d).not.toBeNull();expect(JSON.stringify(v)).toBe(before)
   const h=d!.salesRemainderChange!;expect(Object.keys(h)).toHaveLength(10);expect(Object.keys(h.change)).toHaveLength(19);expect(Object.keys(h.line)).toHaveLength(9)

@@ -47,8 +47,8 @@ describe('WP4 Sales inbox kinds', () => {
     expect(WORK_INBOX_CAPABILITIES).not.toContain(SALES_OVER_DELIVERY_APPROVE_CAPABILITY)
     expect(WORK_INBOX_CAPABILITIES).not.toContain(SALES_POOL_CAPABILITY_ID.quotesApproveExpired)
     expect(WORK_INBOX_CAPABILITIES).not.toContain(SALES_POOL_CAPABILITY_ID.requestsDecide)
-    expect(WORK_INBOX_KINDS).toHaveLength(69)
-    expect(SALES_INBOX_KINDS).toHaveLength(11)
+    expect(WORK_INBOX_KINDS).toHaveLength(70)
+    expect(SALES_INBOX_KINDS).toHaveLength(12)
     // S-11 is not routed: holding only the contract discount permission does not open the inbox route.
     expect(WORK_INBOX_CAPABILITIES).not.toContain('sales.contracts.discount-approve')
   })
@@ -92,11 +92,19 @@ it('replaces the Discount inbox capability with its standalone purpose without d
  expect(discount).toEqual([{kind:'sales.discount-exception.v1',module:'sales',capability:SALES_WORK_DECISION_CAPABILITY.discount}])
  expect(WORK_INBOX_CAPABILITIES).toContain(SALES_WORK_DECISION_CAPABILITY.discount)
  expect(WORK_INBOX_CAPABILITIES).not.toContain('sales.orders.discount-exception.approve')
- expect(WORK_INBOX_KINDS).toHaveLength(69);expect(SALES_INBOX_KINDS).toHaveLength(11)
+ expect(WORK_INBOX_KINDS).toHaveLength(70);expect(SALES_INBOX_KINDS).toHaveLength(12)
 })
 
 it('replaces the native Risk control with exactly one standalone price-free purpose inbox row',()=>{
  expect(WORK_INBOX_KINDS.filter(x=>x.kind==='sales.risk-exception.v1')).toEqual([{kind:'sales.risk-exception.v1',module:'sales',capability:SALES_WORK_DECISION_CAPABILITY.riskException}])
  expect(WORK_INBOX_CAPABILITIES).toContain(SALES_WORK_DECISION_CAPABILITY.riskException);expect(WORK_INBOX_CAPABILITIES).not.toContain('sales.orders.risk-exception.approve')
- expect(WORK_INBOX_KINDS).toHaveLength(69);expect(SALES_INBOX_KINDS).toHaveLength(11)
+ expect(WORK_INBOX_KINDS).toHaveLength(70);expect(SALES_INBOX_KINDS).toHaveLength(12)
+})
+
+it('adds the native remainder purpose once without granting order browsing or prices',()=>{
+ expect(WORK_INBOX_KINDS.filter(x=>x.kind==='sales.remainder-change.v1')).toEqual([{kind:'sales.remainder-change.v1',module:'sales',capability:SALES_WORK_DECISION_CAPABILITY.remainderChange}])
+ expect(inboxKindText('sales.remainder-change.v1')).toBe('Satır kalanı değişikliği')
+ expect(inboxRuleText('sales.remainder-change-requested')).not.toBe('sales.remainder-change-requested')
+ expect(inboxRoleText('sales-order-line')).toBe('Sipariş satırı')
+ expect(WORK_INBOX_CAPABILITIES).toContain(SALES_WORK_DECISION_CAPABILITY.remainderChange)
 })

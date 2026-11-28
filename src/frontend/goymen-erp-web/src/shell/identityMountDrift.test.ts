@@ -41,7 +41,7 @@ describe('shell ↔ Identity access-view contract', () => {
 it('pairs one standalone access-grant purpose while keeping native access/role routes and no new sidebar item',()=>{
  const kind='identity.access-grant-request.v1',cap=CAPABILITY.identityAccessGrantWorkDecision,path=`/onaylarim/${kind}/:approvalId`
  expect(cap).toBe('identity.access-grant-request.work-decision');expect(CAPABILITY_ROUTE[cap]).toBe(path);expect(CAPABILITY_NAV_LABEL[cap]).toBe('');expect(NAV_CAPABILITIES).not.toContain(cap)
- expect(WORK_INBOX_KINDS.filter(row=>row.kind===kind)).toEqual([{kind,module:'identity',capability:cap}]);expect(WORK_INBOX_KINDS).toHaveLength(69);expect(new Set(WORK_INBOX_KINDS.map(row=>row.kind)).size).toBe(69)
+ expect(WORK_INBOX_KINDS.filter(row=>row.kind===kind)).toEqual([{kind,module:'identity',capability:cap}]);expect(WORK_INBOX_KINDS).toHaveLength(70);expect(new Set(WORK_INBOX_KINDS.map(row=>row.kind)).size).toBe(70)
  const routes=workRoutes.filter(route=>route.path===path.slice(1));expect(routes).toHaveLength(1)
  expect(matchRoutes(shellRoutes,path.replace(':approvalId','d4580000-0000-4000-8000-000000000058'))?.at(-1)?.route).toBe(routes[0])
  expect(IDENTITY_ROUTE[IDENTITY_CAPABILITY.accessList]).toBe('/ayarlar/kullanicilar-ve-yetkiler');expect(IDENTITY_ROUTE[IDENTITY_CAPABILITY.roleDetail]).toBe('/ayarlar/kullanicilar-ve-yetkiler/roller/:roleId')

@@ -10,6 +10,7 @@ internal sealed partial class SalesRemainderChangeWorkInboxSourceV1(ICompanyCont
     : SalesWorkInboxSourceBaseV1(companyContext, currentUser, authority), IWorkApprovalDecisionVersionSourceV1
 {
     public const string KindName = SalesRemainderChangeDecisionBindingV1.KindName;
+    public const string WorkDecisionPath = "/onaylarim/sales.remainder-change.v1";
     public const string NativeScreenPath = "/satis/siparisler/:draftId";
     public override string Kind => KindName;
     public override string ApproverPermission => SalesPermissionManifestV1.OrdersApprove;

@@ -17,7 +17,7 @@ public sealed partial class SalesDraftServiceTests
         var source = RemainderSource(w); var answer = await ((IWorkInboxSourceV1)source).ListPendingAsync(RemainderContext(), 10, default);
         Assert.Equal(NativeApprovalQueueOutcomeV1.Found, answer.Outcome); var item = Assert.Single(answer.Items!);
         Assert.Equal((order.Id, Actor, order.PendingRemainderChange!.Request.RequestedAtUtc), (item.ItemId, item.PreparedBy, item.WaitingSinceUtc));
-        Assert.Equal($"/satis/siparisler/{order.Id:D}", item.Link); Assert.False(answer.HasMore);
+        Assert.Equal($"{SalesRemainderChangeWorkInboxSourceV1.WorkDecisionPath}/{order.Id:D}", item.Link); Assert.False(answer.HasMore);
         if (support) Assert.Equal(Actor, Assert.Single(item.ExcludedDeciders!)); else Assert.Null(item.ExcludedDeciders);
         var rule = Assert.Single(item.Rules); Assert.Equal(SalesRemainderChangeDecisionBindingV1.RequestedRule, rule.RuleCode); Assert.Null(rule.Actual); Assert.Null(rule.Threshold); Assert.Null(rule.Deviation); Assert.Null(rule.Unit);
         Assert.DoesNotContain("SENTETIK kalan", JsonSerializer.Serialize(item, SalesDraftJson.Options), StringComparison.Ordinal);

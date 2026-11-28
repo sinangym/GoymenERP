@@ -30,7 +30,7 @@ public static class SalesRemainderChangeDecisionBindingV1
     {
         var document = SalesWorkInboxItemsV1.RequireLabel(p.DocumentNo); var label = SalesWorkInboxItemsV1.RequireLabel($"{document} #{p.ChangeNo.ToString(CultureInfo.InvariantCulture)}");
         var excluded = p.ApplyPersonaRestriction ? new[] { p.RequestedBy, p.DraftCreatedBy }.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!).Distinct(StringComparer.Ordinal).ToArray() : null;
-        return new("sales", KindName, p.DraftId, label, p.RequestedAtUtc, SalesWorkInboxItemsV1.OrderLink(p.DraftId), p.RequestedBy,
+        return new("sales", KindName, p.DraftId, label, p.RequestedAtUtc, SalesRemainderChangeWorkInboxSourceV1.WorkDecisionPath + "/" + p.DraftId.ToString("D"), p.RequestedBy,
             [new(RequestedRule, null, null, null, null)], [SalesWorkInboxItemsV1.OrderReference(p.DraftId, document),
                 new("sales-order-line", "Sipariş satırı", p.LineId, SalesWorkInboxItemsV1.OrderLink(p.DraftId))], ExcludedDeciders: excluded);
     }

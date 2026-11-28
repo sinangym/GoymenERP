@@ -6,6 +6,7 @@
  */
 
 export const SALES_INBOX_KIND_TEXT: Readonly<Record<string, string>> = {
+  'sales.remainder-change.v1': 'Satır kalanı değişikliği',
   'sales.request.v1': 'Satış talebi onayı',
   'sales.invoice.v1': 'Satış faturası onayı',
   'sales.subcontract-invoice.v1': 'Fason hizmet faturası onayı',
@@ -16,6 +17,7 @@ export const SALES_INBOX_KIND_TEXT: Readonly<Record<string, string>> = {
 }
 
 export const SALES_INBOX_RULE_TEXT: Readonly<Record<string, string>> = {
+  'sales.remainder-change-requested': 'Kayıtlı satır kalanı değişikliği karar bekliyor',
   'sales.request-approval-required': 'Her satış talebi kaydedildiği anda onay bekler',
   'sales.invoice-approval-required': 'Fatura onaya gönderildi; hazırlayan ve gönderen dışında bir kişinin onayını bekliyor',
   'sales.subcontract-invoice-approval-required':
@@ -29,6 +31,7 @@ export const SALES_INBOX_RULE_TEXT: Readonly<Record<string, string>> = {
 }
 
 export const SALES_INBOX_ROLE_TEXT: Readonly<Record<string, string>> = {
+  'sales-order-line': 'Sipariş satırı',
   'sales-request': 'Satış talebi',
   'sales-invoice': 'Satış faturası',
   'sales-subcontract-invoice': 'Fason hizmet faturası',
