@@ -620,7 +620,7 @@
       "backlog_parent": "W2-SATINALMA",
       "title": "Mal/hizmet/gider karma alışın asgari sözleşmesi",
       "group": "FIRST_USE",
-      "status": "SOURCE_REVIEW_REQUIRED",
+      "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
       "priority": "P0",
       "risk": "K3",
       "scope": "ALS-D129: belge onayı sonrası kısmi mal/hizmet kabulü ve fatura; mevcut mal/hizmet servisleri ortak çalışma alanından kullanılır. Tek belge arkasındaki owner kaynakları ve numara bağları spec ile sabitlenir.",
@@ -658,19 +658,23 @@
       "existing_tests": [
         "tests/GoymenERP.Purchasing.UnitTests/PurchasingServiceTests.cs",
         "tests/GoymenERP.Purchasing.UnitTests/PurchaseIncomingInvoiceWorkflowTests.cs",
-        "tests/GoymenERP.Api.IntegrationTests/SettingsReferenceListSqlServerRelationalAcceptanceTests.cs"
+        "tests/GoymenERP.Api.IntegrationTests/SettingsReferenceListSqlServerRelationalAcceptanceTests.cs",
+        "tests/GoymenERP.Purchasing.UnitTests/PurchaseMixedOrderApprovalTests.cs",
+        "tests/GoymenERP.Api.IntegrationTests/PurchasingSqlServerRelationalAcceptanceTests.MixedInvoiceMatching.cs"
       ],
       "technical_acceptance": [
         "Değişen davranış, negatif şirket/yetki ve stale version; gerekiyorsa replay/rollback/concurrency kanıtı.",
         "K3 mutation/migration: gerçek SQL; ilgili UI: gerçek owner API ile tarayıcı ve erişim iptali.",
-        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı."
+        "Mevcut testler korunur; tren head inde pin/tam zorunlu CI ve gerekli bağımsız exact-head review; NOT_RUN ayrı.",
+        "Durable membership must restore without incrementing parent/child versions or replaying decisions; one native OrdersApprove transaction persists both owner results and original audit/attempt. Company+service ownership uniqueness, stale child version, rollback and replay require actualSQL.",
+        "Native UI and Work must show the actual complete goods/service membership before approval. No invisible child approval; frozen selection/version and original receipt bind the membership rather than reconstructing it from later current state."
       ],
       "business_acceptance": [
         "HRC+motor+montaj: gerekli sipariş onayı sonrası doğru mal/hizmet kabulü, kısmi fatura ve tek borç; bağımsız satır onay motoru yok."
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Bind existing goods PO and service owner through explicit immutable company/supplier/account/currency/version/line membership and same native OrdersApprove transaction. First domain/application contract increment is in progress; no API, persistence or mixed runtime approval is enabled. Reuse existing partial acceptance/invoice owners.",
+      "next_action": "Reuse the existing native service approval async preparation through an owner-read port, then connect parent-owned durable membership/atomic approval with fresh source/reference/tax authority and original replay proof. Until persistence/API/UI and Work preview are connected the mixed path stays closed. Partial goods/service/invoice owners are reused.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -681,7 +685,14 @@
         "tests/GoymenERP.Purchasing.UnitTests/PurchaseIncomingInvoiceWorkflowTests.cs",
         "tests/GoymenERP.Purchasing.UnitTests/PurchasingServiceTests.cs"
       ],
-      "change_files": [],
+      "change_files": [
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/Contracts/PurchaseMixedOrderApprovalV1.cs",
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchaseMixedOrderBindingV1.cs",
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Domain/Orders/PurchaseOrder.ServiceMembership.cs",
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Domain/Orders/PurchaseOrder.SupplierRevision.cs",
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Domain/Orders/PurchaseOrder.cs",
+        "tests/GoymenERP.Purchasing.UnitTests/PurchaseMixedOrderApprovalTests.cs"
+      ],
       "execution": {
         "mixed_invoice_source_checkpoint": {
           "source_commit": "e39493db1",
@@ -691,7 +702,25 @@
           "real_Finance_debt": "NOT_RUN",
           "new_runtime_command": false
         },
-        "shared_commercial_order_contract": "IN_PROGRESS_IN_SEPARATE_AUTHOR_BRANCH_NOT_INTEGRATED"
+        "shared_commercial_order_contract": {
+          "source_commit": "48d14810886a0af4b12c68d30bfe77da3e66d52e",
+          "state": "STAGED_SERVER_ONLY_DOMAIN_AND_APPLICATION_CONTRACT",
+          "purchasing_unit_passed": 1450,
+          "failed": 0,
+          "skipped": 0,
+          "seconds": 37.5897849,
+          "artifact": "mixed-membership-contract-20261128",
+          "runtime_participant": "UNREGISTERED_DEFAULT_503",
+          "legacy_body_and_hash": "UNCHANGED",
+          "persistence_API_UI_actualSQL": "NOT_IMPLEMENTED_OR_NOT_RUN"
+        },
+        "native_service_approval_preparation": "IN_PROGRESS_IN_SEPARATE_AUTHOR_BRANCH_NOT_INTEGRATED"
+      },
+      "delivery_tracking": {
+        "kodlandi": "PARTIAL_SOURCE_CONTRACT_ONLY",
+        "yerel_test_gecti": "BOUNDED_SCOPES_AT_RECORDED_HEADS_ONLY",
+        "butunlesik_kabul_gecti": false,
+        "tamamlandi": false
       }
     },
     {
