@@ -452,7 +452,23 @@
       "runtime_acceptance": "NOT_RUN",
       "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
       "implementation_evidence": {
-        "bindings": [],
+        "bindings": [
+          {
+            "kind": "sales.remainder-change.v1",
+            "source": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesRemainderChangeWorkInboxSourceV1.cs:10",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "sales.orders.approve",
+            "frontend_inbox_registered": false,
+            "frontend_published": false,
+            "frontend_capability": null,
+            "capability_declared": false,
+            "route": null,
+            "route_parity": null,
+            "inbox_capability": null,
+            "inbox_capability_matches_work": null
+          }
+        ],
         "owner_commands": [
           {
             "call": "SalesDraftService.ApproveRemainderChangeAsync",
@@ -466,7 +482,7 @@
         "native_permissions": [
           "sales.orders.approve"
         ],
-        "status": "NATIVE_AXIS_NO_INBOX_KIND",
+        "status": "BACKEND_WORK_HOST_FRONTEND_UNPUBLISHED",
         "source": "CHECKED_AT_EXACT_HEAD",
         "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
         "actual_SQL": "NOT_RUN",
@@ -474,8 +490,8 @@
         "CI": "NO_CURRENT_HEAD_EVIDENCE",
         "K3": "NOT_PERFORMED",
         "map_runtime": "NOT_RUN",
-        "note": "Native changeNo/version axis exists; no separate Inbox kind/source. Generic order approval is not remainder approval.",
-        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "note": "Dedicated native DraftId/ChangeNo/version-aware owner source and Work Host now exist; generic order approval remains distinct. Paired frontend and runtime acceptance pending.",
+        "source_commit": "ae882cec8e7a554758a8e150a5327cd94674c987",
         "later_deltas": [
           {
             "head": "7029f23afa7767de82af561a4bd1dd6f05ff607f",
@@ -486,6 +502,11 @@
             "head": "d3d7fbfde4732dc4b8b3c27ce94724202be99bd4",
             "note": "Selected current/original owner and version-aware Work source composed; exact line identity and native persona exception retained. Host/UI pending.",
             "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint/remainder_contract_mixed_participant"
+          },
+          {
+            "head": "ae882cec8e7a554758a8e150a5327cd94674c987",
+            "note": "Flow6 DraftId/ChangeNo/line/expectedN selection reaches the same native SalesDraftService; genuine original N to N+1 receipt stays distinct from current response N+k. Current quantity-only human view, raw optional rejection reason, exact typed owner proof, original-key replay, live authority/WP3 and native SAT-D2 persona exclusions. Global maker behavior unchanged for every other exact kind.",
+            "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint/remainder_work_host"
           }
         ]
       }
@@ -6547,14 +6568,13 @@
       }
     ],
     "audit_sha256": "7b99cf7b328d015372dc2a31cd0afd74c8c40edebd9e72ae822f61d7ee529680",
-    "current_source_commit": "11d997cfa1bb9805e853dacf2b346367dd56c933",
+    "current_source_commit": "ae882cec8e7a554758a8e150a5327cd94674c987",
     "current_source_summary": {
-      "backend_kinds": 61,
+      "backend_kinds": 62,
       "frontend_published_kinds": 61,
-      "backend_supported_flows": 60,
+      "backend_supported_flows": 61,
       "paired_flows": 60,
       "no_host_flows": [
-        6,
         10,
         11,
         62
@@ -6568,7 +6588,9 @@
       "native_single_step_no_pending_flows": [
         62
       ],
-      "backend_only_unpublished_flows": []
+      "backend_only_unpublished_flows": [
+        6
+      ]
     }
   },
   "purpose_and_native_merge_checkpoint": {
@@ -7567,6 +7589,52 @@
         "cause": "CS1537 local Quantity alias duplicated existing global alias; test-only duplicate removal at d3d7fbfde. Sales3016 passed at priorhead; Purchasing/API/Host not executed then."
       },
       "limits": "3 Mixed downstream,4 Remainder owner/source and14 Contract SQL source facts registered/compiled, not executed. Remainder/Contract Work Host/UI incomplete. ActualSQL/normalHTTP/browser/aggregatepins/fullCI/two independent exact-head K3/business acceptance NOT_RUN. Prior broad frontend3342pass1fail retained; isolated449pass does not clear it."
+    },
+    "remainder_work_host": {
+      "source_commit": "ae882cec8e7a554758a8e150a5327cd94674c987",
+      "scope": "BOUNDED_LOCAL_NOT_RUNTIME_ACCEPTANCE",
+      "sales": {
+        "exit": 0,
+        "freeGiB": 3.9804916381835938,
+        "head": "ae882cec8e7a554758a8e150a5327cd94674c987",
+        "seconds": 60.3720849,
+        "artifact": "remainder-work-host-integrated-20261128/sales",
+        "total": 3016,
+        "passed": 3016,
+        "failed": 0,
+        "skipped": 0
+      },
+      "work": {
+        "exit": 0,
+        "freeGiB": 3.851917266845703,
+        "head": "ae882cec8e7a554758a8e150a5327cd94674c987",
+        "seconds": 17.016174,
+        "artifact": "remainder-work-host-integrated-20261128/work",
+        "total": 195,
+        "passed": 195,
+        "failed": 0,
+        "skipped": 0
+      },
+      "api_refresh": {
+        "exit": 0,
+        "freeGiB": 3.8844947814941406,
+        "head": "ae882cec8e7a554758a8e150a5327cd94674c987",
+        "seconds": 22.4368162,
+        "artifact": "remainder-work-host-integrated-20261128/api_refresh"
+      },
+      "host": {
+        "exit": 0,
+        "freeGiB": 3.8897171020507812,
+        "head": "ae882cec8e7a554758a8e150a5327cd94674c987",
+        "seconds": 76.2927745,
+        "artifact": "remainder-work-host-integrated-20261128/host",
+        "total": 1405,
+        "passed": 1405,
+        "failed": 0,
+        "skipped": 0
+      },
+      "source_scope": "Flow6 DraftId/ChangeNo/line/expectedN selection reaches the same native SalesDraftService; genuine original N to N+1 receipt stays distinct from current response N+k. Current quantity-only human view, raw optional rejection reason, exact typed owner proof, original-key replay, live authority/WP3 and native SAT-D2 persona exclusions. Global maker behavior unchanged for every other exact kind.",
+      "limits": "Frontend pairing is not published yet. ActualSQL/normalHTTP/browser/aggregatepins/fullCI/two independent exact-head K3/business acceptance NOT_RUN. Broad frontend3342pass1fail and isolated449pass diagnostic remain separate evidence; unresolved failure not cleared."
     }
   }
 }

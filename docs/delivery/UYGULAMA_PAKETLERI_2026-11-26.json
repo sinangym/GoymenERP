@@ -2488,7 +2488,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Complete remainder6/customer-return10/contract-discount11 Work Host and paired UI. Cari62 remains native single-step. Preserve all pending SQL/browser/pin/CI/K3 gates and retained broad frontend failure.",
+      "next_action": "Finish remainder6 paired frontend/publication, customer-return10 and contract-discount11 owner/Host/UI. Cari62 remains native single-step. Retain all pending SQL/browser/pin/CI/K3 gates and unresolved broad frontend failure.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2607,7 +2607,7 @@
         "activation": "No grants/flags/provider changes"
       },
       "execution": {
-        "source_commit": "d3d7fbfde4732dc4b8b3c27ce94724202be99bd4",
+        "source_commit": "ae882cec8e7a554758a8e150a5327cd94674c987",
         "implemented_kinds": [
           "organization.company-tax-id-change.v1",
           "accounting.invoiced-shipment-cost.v1",
@@ -2669,7 +2669,8 @@
           "sales.price-floor-exception.v1",
           "sales.discount-exception.v1",
           "sales.over-delivery-request.v1",
-          "sales.risk-exception.v1"
+          "sales.risk-exception.v1",
+          "sales.remainder-change.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -3020,6 +3021,52 @@
               "cause": "CS1537 local Quantity alias duplicated existing global alias; test-only duplicate removal at d3d7fbfde. Sales3016 passed at priorhead; Purchasing/API/Host not executed then."
             },
             "limits": "3 Mixed downstream,4 Remainder owner/source and14 Contract SQL source facts registered/compiled, not executed. Remainder/Contract Work Host/UI incomplete. ActualSQL/normalHTTP/browser/aggregatepins/fullCI/two independent exact-head K3/business acceptance NOT_RUN. Prior broad frontend3342pass1fail retained; isolated449pass does not clear it."
+          },
+          "remainder_work_host": {
+            "source_commit": "ae882cec8e7a554758a8e150a5327cd94674c987",
+            "scope": "BOUNDED_LOCAL_NOT_RUNTIME_ACCEPTANCE",
+            "sales": {
+              "exit": 0,
+              "freeGiB": 3.9804916381835938,
+              "head": "ae882cec8e7a554758a8e150a5327cd94674c987",
+              "seconds": 60.3720849,
+              "artifact": "remainder-work-host-integrated-20261128/sales",
+              "total": 3016,
+              "passed": 3016,
+              "failed": 0,
+              "skipped": 0
+            },
+            "work": {
+              "exit": 0,
+              "freeGiB": 3.851917266845703,
+              "head": "ae882cec8e7a554758a8e150a5327cd94674c987",
+              "seconds": 17.016174,
+              "artifact": "remainder-work-host-integrated-20261128/work",
+              "total": 195,
+              "passed": 195,
+              "failed": 0,
+              "skipped": 0
+            },
+            "api_refresh": {
+              "exit": 0,
+              "freeGiB": 3.8844947814941406,
+              "head": "ae882cec8e7a554758a8e150a5327cd94674c987",
+              "seconds": 22.4368162,
+              "artifact": "remainder-work-host-integrated-20261128/api_refresh"
+            },
+            "host": {
+              "exit": 0,
+              "freeGiB": 3.8897171020507812,
+              "head": "ae882cec8e7a554758a8e150a5327cd94674c987",
+              "seconds": 76.2927745,
+              "artifact": "remainder-work-host-integrated-20261128/host",
+              "total": 1405,
+              "passed": 1405,
+              "failed": 0,
+              "skipped": 0
+            },
+            "source_scope": "Flow6 DraftId/ChangeNo/line/expectedN selection reaches the same native SalesDraftService; genuine original N to N+1 receipt stays distinct from current response N+k. Current quantity-only human view, raw optional rejection reason, exact typed owner proof, original-key replay, live authority/WP3 and native SAT-D2 persona exclusions. Global maker behavior unchanged for every other exact kind.",
+            "limits": "Frontend pairing is not published yet. ActualSQL/normalHTTP/browser/aggregatepins/fullCI/two independent exact-head K3/business acceptance NOT_RUN. Broad frontend3342pass1fail and isolated449pass diagnostic remain separate evidence; unresolved failure not cleared."
           }
         },
         "reuse": [
