@@ -51,7 +51,7 @@ public sealed partial class PurchasingService
         await Fence(token); var disclosure = await DiscloseAsync(scope, token); token.ThrowIfCancellationRequested();
         if (!SameMixedContext(scope)) throw new PurchasingServiceException(403, "forbidden");
         return new(disclosure == PurchasingPriceDisclosureV1.Visible ? original.Visible : original.Withheld, answer.IsReplay, original.OriginalCorrelationId);
-        Task<PurchaseOrderResponse> Refusal(string code) => TerminalAsync(scope, permission, envelope, hash, PurchasingCommands.OrderSupplierReviseV1,
+        Task<PurchaseOrderResponse> Refusal(string code) => TerminalAsync<PurchaseOrderResponse>(scope, permission, envelope, hash, PurchasingCommands.OrderSupplierReviseV1,
             // A recorded winner of a refusal race is not its CURRENT row. Same-key retry enters the genuine original codec.
             new PurchasingTerminalRefusal(409, code, [new("order", code)]), _ => throw new PurchasingServiceException(503, "service_unavailable"), token);
         async Task Fence(CancellationToken ct)
