@@ -44,6 +44,27 @@ public sealed class AiDocumentDraftService(
 
     public async Task<AiDocumentDraftResultV1> DraftAsync(AiDocumentDraftRequestV1? request, CancellationToken cancellationToken = default)
     {
+        try
+        {
+            var result = await DraftCoreAsync(request, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            return result;
+        }
+        catch (CapturedAuthorityRefused refusal)
+        {
+            await RefuseAsync(refusal.Permission is null ? SecurityEventTypesV1.AiRequestRefused : SecurityEventTypesV1.AiAuthorizationDenied,
+                refusal.Permission is null ? SecurityEventReasonCodesV1.CompanyContextMismatch : SecurityEventReasonCodesV1.PermissionMissing,
+                refusal.CompanyId, refusal.ActorId, refusal.Permission, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            return AiDocumentDraftResultV1.Of(AiDocumentDraftStatusV1.Refused);
+        }
+        catch (CapturedAuthorityUnavailable)
+        { return AiDocumentDraftResultV1.Of(AiDocumentDraftStatusV1.Unavailable); }
+    }
+
+    private async Task<AiDocumentDraftResultV1> DraftCoreAsync(AiDocumentDraftRequestV1? request, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
         if (!correlationContext.IsResolved) return AiDocumentDraftResultV1.Of(AiDocumentDraftStatusV1.Unavailable);
 
         var runtimeEnabled = AiRuntimeOptionsReader.TryRead(runtimeOptions, out var runtime) && runtime!.Enabled;
@@ -70,10 +91,17 @@ public sealed class AiDocumentDraftService(
         }
 
         var permissions = RequiredPermissions(kind);
-        if (await FirstMissingPermissionAsync(permissions, companyId, cancellationToken) is { } missing)
+        if (await FirstMissingPermissionAsync(permissions, companyId, actorId, cancellationToken) is { } missing)
         {
             await RefuseAsync(SecurityEventTypesV1.AiAuthorizationDenied, SecurityEventReasonCodesV1.PermissionMissing, companyId, actorId, missing, cancellationToken);
             return AiDocumentDraftResultV1.Of(AiDocumentDraftStatusV1.Refused);
+        }
+
+        async Task Fence()
+        {
+            if (await FirstMissingPermissionAsync(permissions, companyId, actorId, cancellationToken) is { } lost)
+                throw new CapturedAuthorityRefused(companyId, actorId, lost);
+            RequireCaptured(companyId, actorId, cancellationToken);
         }
 
         if (!TryReadInput(request, limits, out var input, out var invalidField))
@@ -89,7 +117,7 @@ public sealed class AiDocumentDraftService(
 
         var sha256 = Convert.ToHexStringLower(SHA256.HashData(input.Bytes));
         var storedAt = timeProvider.GetUtcNow().ToUniversalTime();
-        if (!await sourceStore.TryStoreAsync(companyId, input.Bytes, sha256, cancellationToken))
+        if (!await GuardedAsync(() => sourceStore.TryStoreAsync(companyId, input.Bytes, sha256, cancellationToken), Fence))
         {
             logger.LogWarning("AI document draft source could not be stored. Kind {DraftKind}.", kind);
             return AiDocumentDraftResultV1.Of(AiDocumentDraftStatusV1.Unavailable);
@@ -98,7 +126,7 @@ public sealed class AiDocumentDraftService(
         Reading reading;
         try
         {
-            reading = await ReadAsync(input, limits, cancellationToken);
+            reading = await GuardedAsync(() => ReadAsync(input, limits, cancellationToken), Fence);
         }
         catch (System.Text.RegularExpressions.RegexMatchTimeoutException)
         {
@@ -115,12 +143,16 @@ public sealed class AiDocumentDraftService(
         if (limits.LocalModelEnabled && localModel.IsAvailable && reading.Text is { } quarantined
             && reading.Document.OpenHeaderFields() is { Count: > 0 } open)
         {
-            var response = await localModel.SuggestAsync(new AiLocalModelFieldRequestV1(quarantined, open), cancellationToken);
+            var response = await GuardedAsync(() => localModel.SuggestAsync(new AiLocalModelFieldRequestV1(quarantined, open), cancellationToken), Fence);
             if (!AiExternalContentQuarantineV1.AdmitModelOutput(response?.ToolCalls?.Count ?? 0) || response?.Fields is null)
             {
                 // A steered model: nothing it returned is used, and the attempt is recorded.
                 extraFindings.Add(ModelToolCallRefusedFinding);
-                await RefuseAsync(SecurityEventTypesV1.AiRequestRefused, SecurityEventReasonCodesV1.AiToolNotAllowed, companyId, actorId, null, cancellationToken);
+                await GuardedAsync(async () =>
+                {
+                    await RefuseAsync(SecurityEventTypesV1.AiRequestRefused, SecurityEventReasonCodesV1.AiToolNotAllowed, companyId, actorId, null, cancellationToken);
+                    return true;
+                }, Fence);
             }
             else
             {
@@ -138,7 +170,7 @@ public sealed class AiDocumentDraftService(
         AiDocumentDraftResponseV1 draft;
         try
         {
-            matches = await MatchAsync(kind, reading.Document, cancellationToken);
+            matches = await MatchAsync(kind, reading.Document, Fence, cancellationToken);
         }
         catch (System.Text.RegularExpressions.RegexMatchTimeoutException)
         {
@@ -146,7 +178,7 @@ public sealed class AiDocumentDraftService(
         }
 
         // Fence: nothing is released if the actor lost a permission while the document was read.
-        if (await FirstMissingPermissionAsync(permissions, companyId, cancellationToken) is { } revoked)
+        if (await FirstMissingPermissionAsync(permissions, companyId, actorId, cancellationToken) is { } revoked)
         {
             await RefuseAsync(SecurityEventTypesV1.AiAuthorizationDenied, SecurityEventReasonCodesV1.PermissionMissing, companyId, actorId, revoked, cancellationToken);
             return AiDocumentDraftResultV1.Of(AiDocumentDraftStatusV1.Refused);
@@ -175,6 +207,7 @@ public sealed class AiDocumentDraftService(
             + "source {SourceSha256} retention {RetentionDecision} passivate after {PassivateAfterUtc:O}.",
             kind, draft.ReadingTier, draft.Lines.Count, draft.QuarantineFindings.Count, sha256, draft.Source.RetentionDecision,
             draft.Source.PassivateAfterUtc);
+        RequireCaptured(companyId, actorId, cancellationToken);
         return AiDocumentDraftResultV1.Drafted(draft);
     }
 
@@ -263,7 +296,7 @@ public sealed class AiDocumentDraftService(
         return new Reading(AiDocumentReadingTiersV1.StructuredFile, document, quarantined.Findings, quarantined);
     }
 
-    private async Task<AiDraftMatchesV1> MatchAsync(string kind, AiExtractedDocumentV1 document, CancellationToken cancellationToken)
+    private async Task<AiDraftMatchesV1> MatchAsync(string kind, AiExtractedDocumentV1 document, Func<Task> fence, CancellationToken cancellationToken)
     {
         var role = kind == AiDocumentDraftKindsV1.SalesOrder ? AiDraftCounterpartyRoleV1.Customer : AiDraftCounterpartyRoleV1.Supplier;
         AiCounterpartyMatchV1? counterparty = null;
@@ -271,7 +304,7 @@ public sealed class AiDocumentDraftService(
             && AiDocumentDraftValidator.TaxIdentity.Check(taxId.Value.Trim()) is null
             && AiExternalContentQuarantineV1.Screen(taxId.Value).Count == 0)
         {
-            counterparty = await counterpartyMatcher.MatchByTaxIdAsync(taxId.Value.Trim(), role, cancellationToken);
+            counterparty = await GuardedAsync(() => counterpartyMatcher.MatchByTaxIdAsync(taxId.Value.Trim(), role, cancellationToken), fence);
         }
 
         var effectiveOn = DateOnly.FromDateTime(timeProvider.GetUtcNow().UtcDateTime);
@@ -285,7 +318,7 @@ public sealed class AiDocumentDraftService(
                 continue;
             }
 
-            products[index + 1] = await productMatcher.MatchByCodeAsync(code.Value.Trim(), role, effectiveOn, cancellationToken);
+            products[index + 1] = await GuardedAsync(() => productMatcher.MatchByCodeAsync(code.Value.Trim(), role, effectiveOn, cancellationToken), fence);
         }
 
         return new AiDraftMatchesV1(counterparty, products);
@@ -348,16 +381,53 @@ public sealed class AiDocumentDraftService(
         return true;
     }
 
-    private async Task<string?> FirstMissingPermissionAsync(IReadOnlyList<string> permissions, Guid companyId, CancellationToken cancellationToken)
+    private async Task<string?> FirstMissingPermissionAsync(IReadOnlyList<string> permissions, Guid companyId,
+        string actorId, CancellationToken cancellationToken)
     {
         foreach (var permission in permissions)
         {
-            var scope = await authority.RevalidatePermissionScopeAsync(permission, companyId, cancellationToken);
+            RequireCaptured(companyId, actorId, cancellationToken);
+            PermissionScope scope;
+            try { scope = await authority.RevalidatePermissionScopeAsync(permission, companyId, cancellationToken); }
+            catch (OperationCanceledException) { throw; }
+            catch
+            {
+                RequireCaptured(companyId, actorId, cancellationToken);
+                throw new CapturedAuthorityUnavailable();
+            }
+            RequireCaptured(companyId, actorId, cancellationToken);
             if (scope is not { IsGranted: true, IsCompanyWide: true }) return permission;
         }
-
         return null;
     }
+
+    // ICompanyContext exposes no revision. Check observable state at every boundary, never infer a hidden
+    // callback-local A→B→A epoch. The source object stays in its captured company; no rollback is claimed.
+    private void RequireCaptured(Guid companyId, string actorId, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        if (ResolveActorId() != actorId || ResolvedCompanyOrNull() != companyId)
+            throw new CapturedAuthorityRefused(companyId, actorId, null);
+    }
+
+    private static async Task<T> GuardedAsync<T>(Func<Task<T>> read, Func<Task> fence)
+    {
+        await fence();
+        T value;
+        try { value = await read(); }
+        catch (OperationCanceledException) { throw; }
+        catch { await fence(); throw; }
+        await fence();
+        return value;
+    }
+
+    private sealed class CapturedAuthorityRefused(Guid companyId, string actorId, string? permission) : Exception
+    {
+        public Guid CompanyId { get; } = companyId;
+        public string ActorId { get; } = actorId;
+        public string? Permission { get; } = permission;
+    }
+    private sealed class CapturedAuthorityUnavailable : Exception;
 
     private string? ResolveActorId() =>
         currentUser.IsAuthenticated && Guid.TryParse(currentUser.UserId, out var userId) && userId != Guid.Empty
