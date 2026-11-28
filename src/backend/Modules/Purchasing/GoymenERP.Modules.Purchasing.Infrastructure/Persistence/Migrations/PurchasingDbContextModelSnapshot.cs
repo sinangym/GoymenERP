@@ -1496,6 +1496,60 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseOrderServiceMembershipRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ServiceOrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CompanyAccountId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("CurrencyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("LineIdsJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("MemberCount")
+                        .HasColumnType("int");
+
+                    b.Property<int>("MemberNo")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("OrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long>("OrderVersionAfter")
+                        .HasColumnType("bigint");
+
+                    b.Property<long>("PreparedVersion")
+                        .HasColumnType("bigint");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("SupplierPartyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("CompanyId", "ServiceOrderId");
+
+                    b.HasIndex("CompanyId", "ServiceOrderId", "PreparedVersion");
+
+                    b.HasIndex("CompanyId", "OrderId", "OrderVersionAfter", "MemberNo")
+                        .IsUnique();
+
+                    b.ToTable("PurchaseOrderServiceMemberships", "purchasing", t =>
+                        {
+                            t.HasCheckConstraint("CK_PurchaseOrderServiceMemberships_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [OrderId] <> '00000000-0000-0000-0000-000000000000' AND [ServiceOrderId] <> '00000000-0000-0000-0000-000000000000' AND [SupplierPartyId] <> '00000000-0000-0000-0000-000000000000' AND [CompanyAccountId] <> '00000000-0000-0000-0000-000000000000' AND [CurrencyId] <> '00000000-0000-0000-0000-000000000000' AND [PreparedVersion] > 0 AND [OrderVersionAfter] > 1 AND [MemberNo] > 0 AND [MemberCount] >= [MemberNo]");
+
+                            t.HasCheckConstraint("CK_PurchaseOrderServiceMemberships_Snapshot", "ISJSON([LineIdsJson]) = 1 AND LEFT(LTRIM([LineIdsJson]), 1) = N'[' AND DATEPART(TZOFFSET, [RecordedAtUtc]) = 0");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseReceiptAdjustmentBatchRow", b =>
                 {
                     b.Property<Guid>("CompanyId")
@@ -2662,6 +2716,22 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations
                         .HasForeignKey("CompanyId", "SourceRequestId")
                         .HasPrincipalKey("CompanyId", "Id")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseOrderServiceMembershipRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseOrderRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "OrderId")
+                        .HasPrincipalKey("CompanyId", "Id")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseServiceOrderRevisionRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "ServiceOrderId", "PreparedVersion")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("GoymenERP.Modules.Purchasing.Infrastructure.Persistence.PurchaseReceiptAdjustmentBatchRow", b =>

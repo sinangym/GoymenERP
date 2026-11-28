@@ -16,6 +16,25 @@ public sealed class PurchaseOrderServiceMembershipPersistenceTests
     private static readonly DateTimeOffset At = new(2026, 11, 28, 9, 0, 0, TimeSpan.Zero);
 
     [Fact]
+    public void Migration_is_additive_and_refuses_to_drop_retained_membership_history()
+    {
+        var migration = new GoymenERP.Modules.Purchasing.Infrastructure.Persistence.Migrations.AddPurchaseOrderServiceMemberships();
+        var table = Assert.Single(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.CreateTableOperation>());
+        Assert.Equal("PurchaseOrderServiceMemberships", table.Name);
+        Assert.Equal("purchasing", table.Schema);
+        Assert.Empty(migration.UpOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Equal(PurchasingDbContext.ServiceMembershipIdentityCheck,
+            Assert.Single(table.CheckConstraints, x => x.Name.EndsWith("_Identity", StringComparison.Ordinal)).Sql);
+        Assert.Equal(PurchasingDbContext.ServiceMembershipSnapshotCheck,
+            Assert.Single(table.CheckConstraints, x => x.Name.EndsWith("_Snapshot", StringComparison.Ordinal)).Sql);
+        var guard = Assert.IsType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 52361", guard.Sql, StringComparison.Ordinal);
+        Assert.Contains("[purchasing].[PurchaseOrderServiceMemberships]", guard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.SqlOperation>());
+        Assert.Equal(table.Name, Assert.Single(migration.DownOperations.OfType<Microsoft.EntityFrameworkCore.Migrations.Operations.DropTableOperation>()).Name);
+    }
+
+    [Fact]
     public void Draft_binding_roundtrips_its_recorded_slot_and_exact_prepared_revision_without_reapproving()
     {
         var f = Fixture(); var restored = Restore(f);

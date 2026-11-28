@@ -592,3 +592,7 @@ records (forward fix); an empty store can roll back. No existing records are rew
 The prerequisite bridge remains unavailable until its real owner evidence is connected. These facts alone
 do not create stock, match an invoice or affect Finance. Generated migration/model and SQL test sources
 are present; actual SQL acceptance remains NOT_RUN until the train closure.
+
+## MIXED-MIN — explicit Draft service membership prerequisite
+
+`20261128042229_AddPurchaseOrderServiceMemberships` is additive EF-generated DDL. A company-scoped native service belongs to one parent; the exact prepared revision, complete recorded batch and original parent version slot are retained. Down first refuses with `THROW 52361` while any membership history exists (forward fix); empty history can roll back. No existing rows are rewritten. Restore runs no approval command and does not increment the recorded version. Mixed approval admission remains unavailable until one owner transaction, complete native UI/Work preview and original parent/child receipts are connected. Actual SQL acceptance remains NOT_RUN; pins and full closure checks follow the existing train rules.
