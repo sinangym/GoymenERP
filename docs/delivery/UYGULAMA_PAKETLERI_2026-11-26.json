@@ -173,6 +173,18 @@
         "next_action": "Extend existing final visible producer receipt/feedback binding, first general-chat then document-draft. Internal Gateway steps are not independently counted as user answers. Preserve separate90day identity/receipt retention and current authority; no raw document copy, automatic policy or ERP undo.",
         "source_complete_candidate_rejected": true,
         "SQL_runtime_acceptance": "NOT_RUN"
+      },
+      "document_draft_captured_authority_checkpoint": {
+        "source_commits": [
+          "233ae8700",
+          "0238b806c"
+        ],
+        "head": "0e7dfb75260c7dec54726dae8ee26c1fdda1eeb6",
+        "artifact": "b3-captured-authority-20261128",
+        "result": "API build0errors0warnings; AiDocumentDraftServiceTests60/60PASS0skip;91.4414764s including builds.",
+        "scope": "Captured actor/company/fresh companywide permissions before/after source storage, OCR/read, local model and each matcher; cancellation and unavailable authority fail closed. Existing stored source is not claimed rolled back/deleted. Observable boundary checks do not imply hidden ABA epochs.",
+        "peer": "Full three-file source review unread0/no concreteP1/P2; not formalK3.",
+        "remaining": "B3 final output receipt and new real SQL/browser/aggregate train acceptance pending; no package/backlog promotion."
       }
     },
     "sql_readonly_preflight_20261128": {
@@ -7247,6 +7259,44 @@
           "retained_failure": "Initial41 cohort had40pass/1fail: new-session403 expected unknown UI instead of actual route not-found after real authreport. Only test expectation fixed; new-session isolation and exact GET/POST assertions retained. Earlier result is not relabelled green.",
           "peer": "Four-file full diff and critical hook/session dependencies read; no open concreteP1/P2, not formalK3 or real browser/SQL.",
           "remaining": "Actual SQL/normal HTTP/browser, retention/history/count/Down/replay acceptance and aggregate train gates remain pending."
+        },
+        "general_chat_receipt_checkpoint": {
+          "source_commits": [
+            "89855ae41",
+            "1ddc0af5f",
+            "5a4c9f87a",
+            "1d490ee88",
+            "17898ad73",
+            "0e7dfb752"
+          ],
+          "reuse": "Existing immutable receipt/identity persistence,90-day retention, scoped feedback command journal and feedback panel. Explicit ungrounded general-chat profile; original grounded ERP hash and source requirements preserved. No new permission, provider or feature activation.",
+          "backend": {
+            "head": "1d490ee88bd0bb5082ce3af8e91ceff872b7b9dd",
+            "artifact": "c9-general-chat-import-fixed-20261128",
+            "passed": 182,
+            "total": 182,
+            "failed": 0,
+            "skipped": 0,
+            "seconds": 73.835823,
+            "scope": "Controlled receipt/Ask cohort; integration assembly compiled. New actual SQL general-chat feedback journey compiled only, NOT_RUN."
+          },
+          "frontend": {
+            "head": "0e7dfb75260c7dec54726dae8ee26c1fdda1eeb6",
+            "artifact": "c9-general-chat-ui-20261128",
+            "files": 4,
+            "passed": 163,
+            "total": 163,
+            "failed": 0,
+            "pending": 0,
+            "tsc_exit": 0,
+            "lint_exit": 0,
+            "lint_warnings": 1,
+            "seconds": 115.4166519,
+            "scope": "aiContract/AiPanel/AiFeedbackPanel/aiFeedbackApi. Existing November15 optional-chaining warning at AiPanel.test.tsx:126; no new lint error. Controlled UI, not browser acceptance."
+          },
+          "retained_failure": "First test compilation at5a4c9f87a failed CS0103 missing AiModelPlacementV1 import; one existing-type using added in1d490ee88. Original log retained; no assertion loosened.",
+          "peer": "Full backend/FE source diffs and required callers reviewed by nonauthors, unread0/no concrete P1/P2; not formal K3.",
+          "remaining": "C9 stays SOURCE_PARTIALLY_IMPLEMENTED_LOCAL: B3 typed final draft still lacks independent feedback receipt; Document native feature exists but current SQL receipt constraint is Panel-only. General-chat SQL/real HTTP/browser/fullCI/two exact-head K3 NOT_RUN."
         }
       }
     },

@@ -423,3 +423,5 @@ YOL-D40 üretim zincirinde kaynak/registration eksiği bulunmadı: yalnız kayna
 
 Satış normal kapanışının mevcut stok/tek-bağlı üretim modelindeki native kaynak ve finans bağlantıları da kaynakta tamam: kısmi kaynak sayısı 16 → 15. SAT-D478 ortak-pay kuralı korunur; mevcut model ortak üretim desteği gibi sunulmaz. SQL/tarayıcı/CI/K3 bekler.
 C9 kaynakta kısmi kalır: grounded Ask zinciri bağlı olsa da genel sohbet/B3 çıktılarının makbuz/geri bildirim bağı eksik; bu fark mevcut C9 paketinde kapatılıyor. Yeni paket veya işletme politikası oluşturulmadı.
+
+28 Kasım genel sohbet geri bildirimi: gerçek sunucu AnswerId makbuzu mevcut C9 paneline bağlandı. Kontrollü backend182/182 (1d490ee88), arayüz163/163 ve TSC0/lint0 (0e7dfb752); eski test satırında1 lint uyarısı korunur. B3 yakalanmış şirket/kullanıcı/yetki sınırları aynı0e7dfb752 sürümünde API0hata0uyarı ve60/60test0skip ile doğrulandı. Ayrı kohortlar toplanmaz; ilk eksik namespace derleme hatası saklanır. C9 hâlâ kısmi: B3 typed çıktı makbuzu ve gerçekSQL/tarayıcı/tamCI/ikiK3 bekler. Yeni paket/grant/aktivasyon yok.

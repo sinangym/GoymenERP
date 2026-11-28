@@ -1725,8 +1725,8 @@
           "path": "src/backend/GoymenERP.Api/Ai/DocumentDrafts/AiDocumentDraftService.cs",
           "line": 45,
           "anchor": "public async Task<AiDocumentDraftResultV1> DraftAsync(AiDocumentDraftRequestV1? request, CancellationToken cancellationToken = default)",
-          "sha256": "f86e52b67a9466fca1bc133305705aa93df8468aa70b8f8e7c8ff6ec849fc2f8",
-          "git_blob": "f8ad6c5e411260218971a0a4578c0a2061407176"
+          "sha256": "fc9072a616c72eb1116777efa11cca023fd10b41567e49d1bd6f60f00bef6997",
+          "git_blob": "cf423342d816acd48de70176a567b18e366f5e86"
         }
       ],
       "tests": [
@@ -1734,11 +1734,11 @@
           "path": "tests/GoymenERP.Api.IntegrationTests/AiDocumentDraftServiceTests.cs",
           "line": 35,
           "anchor": "public async Task An_e_invoice_is_read_from_its_fields_by_the_owner_reader_matched_and_creates_no_record()",
-          "sha256": "2105487706f6f844af4faa1d42ad91d7febe8e1ef1e310c60e2912bdc5125b6a",
-          "git_blob": "ab4276122c6436aa669e9de01db7d209f8507df6"
+          "sha256": "3ab2cabe30525a26d89bf6e9211e388a35f3888ddc91dd8114a1a5f6c922aef5",
+          "git_blob": "da25cc92eaaafda02fb9c29f6fd13eb7879ac255"
         }
       ],
-      "source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "source_commit": "0e7dfb75260c7dec54726dae8ee26c1fdda1eeb6",
       "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
       "historical_ci_url": null,
@@ -1761,7 +1761,14 @@
         "AI-D40",
         "AI-D41"
       ],
-      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı."
+      "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı.",
+      "prior_source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
+      "local_verification": {
+        "head": "0e7dfb75260c7dec54726dae8ee26c1fdda1eeb6",
+        "artifact": "b3-captured-authority-20261128",
+        "result": "API build0errors0warnings;60/60controlled draft tests PASS0skip. ActualSQL/browser/CI/K3 NOT_RUN.",
+        "additional_tests": "tests/GoymenERP.Api.IntegrationTests/AiDocumentDraftServiceTests.CapturedAuthority.cs"
+      }
     },
     {
       "id": "REF-DOC-01",
