@@ -40,6 +40,7 @@ public sealed partial class AccountingInventoryCostServiceFenceTests
     }
     [Theory]
     [InlineData("company")] [InlineData("outer")] [InlineData("cancel-id")] [InlineData("maker")] [InlineData("pending")] [InlineData("source")] [InlineData("hash")] [InlineData("facts")] [InlineData("time")]
+    [InlineData("current-components-null")] [InlineData("current-components-empty")] [InlineData("current-component-null")]
     public async Task Cancellation_owner_malformed_retained_facts_fail_closed(string fault)
     {
         var d=CancellationDecisionDetail();d=fault switch{
@@ -48,6 +49,9 @@ public sealed partial class AccountingInventoryCostServiceFenceTests
             "cancel-id"=>d with{Cancellation=d.Cancellation with{Id=Guid.NewGuid()}},
             "maker"=>d with{Cancellation=d.Cancellation with{ApprovedBy=d.PreparedCancellation.PreparedBy}},
             "pending"=>d with{Pending=true},"source"=>d with{SourceCancellation=d.SourceCancellation with{SourceDocumentId=Guid.NewGuid()}},
+            "current-components-null"=>d with{Cancellation=d.Cancellation with{Components=null!}},
+            "current-components-empty"=>d with{Cancellation=d.Cancellation with{Components=[]}},
+            "current-component-null"=>d with{Cancellation=d.Cancellation with{Components=[null!]}},
             "hash"=>d with{PreviewDigest=new string('A',64)},"facts"=>d with{PreparedCancellation=d.PreparedCancellation with{Reason="other"}},
             _=>d with{PreparedRecordedAtUtc=d.PreparedRecordedAtUtc.ToOffset(TimeSpan.FromHours(1))}};
         Assert.Equal(AccountingApiStatus.Unavailable,(await CancellationDecisionService(new(d)).ReadCancellationDecisionAsync(SafetyId,1,_=>Task.CompletedTask)).Status);

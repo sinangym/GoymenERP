@@ -54,6 +54,7 @@ public sealed partial class AccountingInventoryCostServiceV1 : IAccountingInvent
             || before.PeriodId == Guid.Empty || before.AccountingDate == default || before.TransactionDate == default || before.InvoiceLineRevision < 0
             || string.IsNullOrWhiteSpace(before.Reason) || before.Reason != before.Reason.Trim() || before.Reason.Length > 1000
             || before.Components is not { Count: > 0 } || before.MoneyProfiles is not { Count: > 0 }
+            || c.Components is not { Count: > 0 } || c.Components.Any(x => x is null)
             || before.Components.Any(x => x is null || x.ReversingJournalId is not null || !(x.EconomicKey is { Length: 64 } && x.EconomicKey.All(Uri.IsHexDigit))
                 || string.IsNullOrWhiteSpace(x.Origin) || x.JournalSourceId == Guid.Empty || x.CurrencyId == Guid.Empty
                 || x.CogsAccountId == Guid.Empty || x.CounterAccountId == Guid.Empty || x.CogsAccountId == x.CounterAccountId
@@ -68,7 +69,7 @@ public sealed partial class AccountingInventoryCostServiceV1 : IAccountingInvent
             || source.DocumentKind != AccountingSourceDocumentKindsV1.SalesInvoice || source.CancelledBy == Guid.Empty
             || source.CancelledAtUtc.Offset != TimeSpan.Zero || source.RecordedAtUtc.Offset != TimeSpan.Zero
             || !DecisionDigest(source.RequestHash) || string.IsNullOrWhiteSpace(source.CorrelationId)) return false;
-        var normalized = c with { Version = before.Version, Status = "Prepared", Components = c.Components?.Select(x => x with { ReversingJournalId = null }).ToArray()!, ApprovedBy = null, ApprovedAtUtc = null };
+        var normalized = c with { Version = before.Version, Status = "Prepared", Components = c.Components.Select(x => x with { ReversingJournalId = null }).ToArray(), ApprovedBy = null, ApprovedAtUtc = null };
         if (JsonSerializer.Serialize(normalized, Json) != JsonSerializer.Serialize(before, Json)) return false;
         if (c.Status == "Prepared") { if (c.Version != before.Version || c.ApprovedBy is not null || c.ApprovedAtUtc is not null) return false; }
         else if (c.Status != "Approved" || before.Version == long.MaxValue || c.Version != before.Version + 1
