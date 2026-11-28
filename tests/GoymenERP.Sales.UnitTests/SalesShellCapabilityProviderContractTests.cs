@@ -295,8 +295,15 @@ public sealed class SalesShellCapabilityProviderContractTests
             Assert.Contains($"'{expected.Id}'", source);
         }
 
+        // The standalone request purpose belongs to the pool permission boundary too; it is not an order declaration.
+        // Keep its exact native permission checked here, rather than weakening the exclusion for other declarations.
+        var requestPurpose = Assert.Single(declarations, item => item.CapabilityId == SalesShellCapabilityProvider.RequestWorkDecisionCapabilityId);
+        Assert.Equal([SalesPermissionManifestV1.RequestsApprove], requestPurpose.RequiredPermissions);
+        Assert.Null(requestPurpose.ParentCapabilityId);
+        Assert.Contains($"'{requestPurpose.CapabilityId}'", source);
         // No pool declaration asks for an order name it does not use, and no draft/order declaration gained a pool name.
         var poolIds = routes.Select(item => item.Id).Concat(controls.Select(item => item.Id)).ToHashSet(StringComparer.Ordinal);
+        Assert.True(poolIds.Add(requestPurpose.CapabilityId));
         var poolNames = new[]
         {
             SalesPermissionManifestV1.RequestsRead, SalesPermissionManifestV1.RequestsWrite, SalesPermissionManifestV1.RequestsApprove,
