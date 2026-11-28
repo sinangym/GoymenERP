@@ -421,9 +421,8 @@ public sealed partial class SalesQuoteSqlServerRelationalAcceptanceTests
     }
     private sealed class QuoteRollbackProbe:DbTransactionInterceptor
     {
-        internal bool Fail;internal int Rollbacks;internal Action? AfterRollback;
+        internal bool Fail;internal int Rollbacks;
         public override ValueTask<InterceptionResult> TransactionRollingBackAsync(DbTransaction transaction,TransactionEventData data,InterceptionResult result,CancellationToken cancellationToken=default){Rollbacks++;if(Fail)throw new InvalidOperationException("SENTETIK rollback fault");return ValueTask.FromResult(result);}
-        public override Task TransactionRolledBackAsync(DbTransaction transaction,TransactionEndEventData data,CancellationToken cancellationToken=default){AfterRollback?.Invoke();return Task.CompletedTask;}
     }
     private static AuditEventDraft QuoteCallerAudit()=>new(CompanyA,"SENTETIK.quote.caller.v1","Sales.Quote","SENTETIK","Caller",null,null,AuditActorTypes.User,"SENTETIK",SalesPermissionManifestV1.QuotesExpiredConversionApprove,[],"{}","{}","SENTETIK caller",null,AuditAiInvolvement.None,null,"test",null,null,"SENTETIK",null,"SENTETIK-caller");
 }
