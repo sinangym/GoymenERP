@@ -31,7 +31,8 @@ public static class SalesRemainderChangeDecisionBindingV1
         var document = SalesWorkInboxItemsV1.RequireLabel(p.DocumentNo); var label = SalesWorkInboxItemsV1.RequireLabel($"{document} #{p.ChangeNo.ToString(CultureInfo.InvariantCulture)}");
         var excluded = p.ApplyPersonaRestriction ? new[] { p.RequestedBy, p.DraftCreatedBy }.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x!).Distinct(StringComparer.Ordinal).ToArray() : null;
         return new("sales", KindName, p.DraftId, label, p.RequestedAtUtc, SalesWorkInboxItemsV1.OrderLink(p.DraftId), p.RequestedBy,
-            [new(RequestedRule, null, null, null, null)], [SalesWorkInboxItemsV1.OrderReference(p.DraftId, document)], ExcludedDeciders: excluded);
+            [new(RequestedRule, null, null, null, null)], [SalesWorkInboxItemsV1.OrderReference(p.DraftId, document),
+                new("sales-order-line", "Sipariş satırı", p.LineId, SalesWorkInboxItemsV1.OrderLink(p.DraftId))], ExcludedDeciders: excluded);
     }
     public static bool ValidProof(WorkSalesRemainderChangeProofV1? p) => p is { CompanyId: var company, DraftId: var id, LineId: var line, ChangeNo: > 0, RequestRevision: >= 0,
         SelectedExpectedVersion: > 0, ObservedCurrentVersion: > 0 } && company != Guid.Empty && id != Guid.Empty && line != Guid.Empty

@@ -34,6 +34,11 @@ public sealed partial class SalesDraftServiceTests
         var detail = (await w.Service().WithRemainderDecisionSafety().ReadRemainderDecisionAsync(order.Id, _ => Task.CompletedTask)).Detail!;
         Assert.True(SalesRemainderChangeDecisionBindingV1.MatchesDecisionItem(snapshot.Item, detail));
         Assert.True(SalesRemainderChangeDecisionBindingV1.MatchesDecisionProof(snapshot.Item, proof));
+        var lineReference = Assert.Single(snapshot.Item.References, x => x.Role == "sales-order-line");
+        Assert.Equal(proof.LineId, lineReference.RecordId); Assert.True(WorkInboxRulesV1.IsValidReference(lineReference));
+        Assert.False(SalesRemainderChangeDecisionBindingV1.MatchesDecisionProof(snapshot.Item, proof with { LineId = Guid.NewGuid() }));
+        Assert.False(SalesRemainderChangeDecisionBindingV1.MatchesDecisionProof(snapshot.Item with
+        { References = [snapshot.Item.References[0], lineReference with { RecordId = Guid.NewGuid() }] }, proof));
         Assert.False(SalesRemainderChangeDecisionBindingV1.MatchesDecisionProof(snapshot.Item with { ItemId = Guid.NewGuid() }, proof));
         Assert.False(SalesRemainderChangeDecisionBindingV1.MatchesDecisionProof(snapshot.Item with { DocumentLabel = "SENTETIK yanlış" }, proof));
         Assert.False(SalesRemainderChangeDecisionBindingV1.MatchesDecisionProof(snapshot.Item with { References = [snapshot.Item.References[0] with { RecordId = Guid.NewGuid() }] }, proof));
