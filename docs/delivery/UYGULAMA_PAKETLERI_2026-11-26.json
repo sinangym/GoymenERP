@@ -1035,6 +1035,145 @@
             },
             "source_scope": "Mixed approved service price revision panel mounted only on the actual current order/company context, existing OrdersRevise-backed UI control, native command-detail decoder reused; same-key retained unknown and scope isolation. Complete new codecs/panel tests plus purchase detail/native codec/supplier revision references.",
             "limits": "Synthetic DOM/transport only. Actual HTTP startup, browser, real SQL, aggregate pins, full CI and independent K3 remain pending; no grant/activation."
+          },
+          "mixed_intent_and_cleanup_release": {
+            "contract_frontend": {
+              "source_commit": "85502d57ede255934c6dc05381a5657b29df2413",
+              "scope": "BOUNDED_LOCAL_NOT_RUNTIME_ACCEPTANCE",
+              "checks": {
+                "tsc": {
+                  "seconds": 54.6003526,
+                  "head": "85502d57ede255934c6dc05381a5657b29df2413",
+                  "freeGiB": 4.025394439697266,
+                  "exit": 0,
+                  "artifact": "contract-paired-frontend-20261128/tsc"
+                },
+                "lint": {
+                  "seconds": 0.5596303,
+                  "head": "85502d57ede255934c6dc05381a5657b29df2413",
+                  "freeGiB": 3.8857192993164062,
+                  "exit": 0,
+                  "artifact": "contract-paired-frontend-20261128/lint"
+                },
+                "frontend": {
+                  "seconds": 296.6945677,
+                  "head": "85502d57ede255934c6dc05381a5657b29df2413",
+                  "freeGiB": 3.8314781188964844,
+                  "exit": 0,
+                  "total": 3489,
+                  "passed": 3489,
+                  "failed": 0,
+                  "skipped": 0,
+                  "artifact": "contract-paired-frontend-20261128/frontend"
+                }
+              }
+            },
+            "return_host_and_mixed_cleanup": {
+              "source_commit": "dd78bfe91209cdda419df11812134862f49e80e4",
+              "scope": "BOUNDED_LOCAL_NOT_RUNTIME_ACCEPTANCE",
+              "checks": {
+                "sales": {
+                  "freeGiB": 3.8051376342773438,
+                  "seconds": 60.7756465,
+                  "head": "dd78bfe91209cdda419df11812134862f49e80e4",
+                  "exit": 0,
+                  "total": 3121,
+                  "passed": 3121,
+                  "failed": 0,
+                  "skipped": 0,
+                  "artifact": "return-host-morning-mixed-release-fixed-20261128/sales"
+                },
+                "purchasing": {
+                  "freeGiB": 3.694477081298828,
+                  "seconds": 26.6390145,
+                  "head": "dd78bfe91209cdda419df11812134862f49e80e4",
+                  "exit": 0,
+                  "total": 1618,
+                  "passed": 1618,
+                  "failed": 0,
+                  "skipped": 0,
+                  "artifact": "return-host-morning-mixed-release-fixed-20261128/purchasing"
+                },
+                "work": {
+                  "freeGiB": 3.6002464294433594,
+                  "seconds": 14.3852377,
+                  "head": "dd78bfe91209cdda419df11812134862f49e80e4",
+                  "exit": 0,
+                  "total": 209,
+                  "passed": 209,
+                  "failed": 0,
+                  "skipped": 0,
+                  "artifact": "return-host-morning-mixed-release-fixed-20261128/work"
+                },
+                "api_refresh": {
+                  "freeGiB": 3.173114776611328,
+                  "seconds": 23.4004388,
+                  "head": "dd78bfe91209cdda419df11812134862f49e80e4",
+                  "exit": 0,
+                  "artifact": "return-host-morning-mixed-release-fixed-20261128/api_refresh"
+                },
+                "host": {
+                  "freeGiB": 3.742877960205078,
+                  "seconds": 76.2298546,
+                  "head": "dd78bfe91209cdda419df11812134862f49e80e4",
+                  "exit": 0,
+                  "total": 1580,
+                  "passed": 1580,
+                  "failed": 0,
+                  "skipped": 0,
+                  "artifact": "return-host-morning-mixed-release-fixed-20261128/host"
+                }
+              }
+            },
+            "mixed_intent_and_morning_owner_release": {
+              "source_commit": "3975911f88b46b0499be4c61cb2e19f827848785",
+              "scope": "BOUNDED_LOCAL_NOT_RUNTIME_ACCEPTANCE",
+              "checks": {
+                "work": {
+                  "seconds": 20.4199126,
+                  "head": "3975911f88b46b0499be4c61cb2e19f827848785",
+                  "exit": 0,
+                  "freeGiB": 3.903839111328125,
+                  "total": 210,
+                  "passed": 210,
+                  "failed": 0,
+                  "skipped": 0,
+                  "artifact": "mixed-intent-c5-owner-release-20261128/work"
+                },
+                "tsc": {
+                  "seconds": 55.147462,
+                  "head": "3975911f88b46b0499be4c61cb2e19f827848785",
+                  "exit": 0,
+                  "freeGiB": 3.825397491455078,
+                  "artifact": "mixed-intent-c5-owner-release-20261128/tsc"
+                },
+                "lint": {
+                  "seconds": 0.0980789,
+                  "head": "3975911f88b46b0499be4c61cb2e19f827848785",
+                  "exit": 0,
+                  "freeGiB": 3.8956947326660156,
+                  "artifact": "mixed-intent-c5-owner-release-20261128/lint"
+                },
+                "frontend": {
+                  "seconds": 18.5359128,
+                  "head": "3975911f88b46b0499be4c61cb2e19f827848785",
+                  "exit": 0,
+                  "freeGiB": 3.894786834716797,
+                  "total": 183,
+                  "passed": 183,
+                  "failed": 0,
+                  "skipped": 0,
+                  "artifact": "mixed-intent-c5-owner-release-20261128/frontend"
+                }
+              }
+            },
+            "limits": "Different exact source heads are explicitly retained; counts are not summed or transferred. Genuine SQL sources compiled but SQL NOT_RUN. Normal HTTP/browser/aggregate pins/full CI/two independent exact-head K3/business acceptance NOT_RUN.",
+            "retained_failures": "Initial return-host phase: Sales3118passed/3failed, including stale published-link expectation2 and malformed-null fixture serialization1; da9d corrected fixture/link without weakening admission. Initial mixed-intent frontend182passed/1failed due synchronous cached-query render expectation;397591 awaited actual refreshed field. Original artifacts retained.",
+            "source_scope": "Contract11 paired UI publication with native full human preview and canonical prepared reason. Return10 typed owner/current-original read and native Host, mandatory ReturnsApprove+OrdersPriceRead, true original immutable decision separated from current replay; foreign-write guards and native factory safety composed. Mixed price full-preview intent binding plus native cleanup release fence. C5 read cancellation and final owner-grant revalidation; scheduled lifecycle remains separate incomplete work.",
+            "open_safety_followups": [
+              "Return selected-read Contract mutation admission gap under independent correction; source cannot be marked accepted before its canaries/SQL.",
+              "Other owned Sales Work kinds can potentially return403 after native commit; current generic refused transport needs a bounded unknown-result review before closure."
+            ]
           }
         }
       },
@@ -2579,7 +2718,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Finish contract11 paired frontend and return10 native owner/Host/UI; Cari62 remains native single-step. Preserve all SQL/browser/aggregate pin/CI/K3 gates.",
+      "next_action": "Finish Return10 paired frontend and remaining source safety findings; Cari62 remains native single-step without pending approval. Then actual SQL/HTTP/browser/aggregate pins/full CI/two independent exact-head K3. Source kinds do not prove 64 runtime flows.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2762,7 +2901,8 @@
           "sales.over-delivery-request.v1",
           "sales.risk-exception.v1",
           "sales.remainder-change.v1",
-          "sales.contract-discount.v1"
+          "sales.contract-discount.v1",
+          "sales.customer-return.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -3278,6 +3418,145 @@
             },
             "source_scope": "Flow11 native contract owner current/original read, genuine Attempt/Audit receipt, same scoped aliases, Work Host canonical frozen rejection transport and complete native human view with optional price disclosure. Flow10 owned return decision safety source and shared foreign-write guards remain factory-off; current/original source under development. Approved mixed service price revision API and separate current native preview are composed; no replacement order engine.",
             "limits": "All genuine SQL source tests are compilation-only; SQL NOT_RUN. New mixed normalHTTP tests not run while existing startup shell owner pins await aggregate closure; no HTTP/DI acceptance claimed. Contract frontend not yet published. Browser/aggregatepins/fullCI/two independent exact-head K3/business acceptance NOT_RUN."
+          },
+          "return_contract_mixed_c5_checkpoint": {
+            "contract_frontend": {
+              "source_commit": "85502d57ede255934c6dc05381a5657b29df2413",
+              "scope": "BOUNDED_LOCAL_NOT_RUNTIME_ACCEPTANCE",
+              "checks": {
+                "tsc": {
+                  "seconds": 54.6003526,
+                  "head": "85502d57ede255934c6dc05381a5657b29df2413",
+                  "freeGiB": 4.025394439697266,
+                  "exit": 0,
+                  "artifact": "contract-paired-frontend-20261128/tsc"
+                },
+                "lint": {
+                  "seconds": 0.5596303,
+                  "head": "85502d57ede255934c6dc05381a5657b29df2413",
+                  "freeGiB": 3.8857192993164062,
+                  "exit": 0,
+                  "artifact": "contract-paired-frontend-20261128/lint"
+                },
+                "frontend": {
+                  "seconds": 296.6945677,
+                  "head": "85502d57ede255934c6dc05381a5657b29df2413",
+                  "freeGiB": 3.8314781188964844,
+                  "exit": 0,
+                  "total": 3489,
+                  "passed": 3489,
+                  "failed": 0,
+                  "skipped": 0,
+                  "artifact": "contract-paired-frontend-20261128/frontend"
+                }
+              }
+            },
+            "return_host_and_mixed_cleanup": {
+              "source_commit": "dd78bfe91209cdda419df11812134862f49e80e4",
+              "scope": "BOUNDED_LOCAL_NOT_RUNTIME_ACCEPTANCE",
+              "checks": {
+                "sales": {
+                  "freeGiB": 3.8051376342773438,
+                  "seconds": 60.7756465,
+                  "head": "dd78bfe91209cdda419df11812134862f49e80e4",
+                  "exit": 0,
+                  "total": 3121,
+                  "passed": 3121,
+                  "failed": 0,
+                  "skipped": 0,
+                  "artifact": "return-host-morning-mixed-release-fixed-20261128/sales"
+                },
+                "purchasing": {
+                  "freeGiB": 3.694477081298828,
+                  "seconds": 26.6390145,
+                  "head": "dd78bfe91209cdda419df11812134862f49e80e4",
+                  "exit": 0,
+                  "total": 1618,
+                  "passed": 1618,
+                  "failed": 0,
+                  "skipped": 0,
+                  "artifact": "return-host-morning-mixed-release-fixed-20261128/purchasing"
+                },
+                "work": {
+                  "freeGiB": 3.6002464294433594,
+                  "seconds": 14.3852377,
+                  "head": "dd78bfe91209cdda419df11812134862f49e80e4",
+                  "exit": 0,
+                  "total": 209,
+                  "passed": 209,
+                  "failed": 0,
+                  "skipped": 0,
+                  "artifact": "return-host-morning-mixed-release-fixed-20261128/work"
+                },
+                "api_refresh": {
+                  "freeGiB": 3.173114776611328,
+                  "seconds": 23.4004388,
+                  "head": "dd78bfe91209cdda419df11812134862f49e80e4",
+                  "exit": 0,
+                  "artifact": "return-host-morning-mixed-release-fixed-20261128/api_refresh"
+                },
+                "host": {
+                  "freeGiB": 3.742877960205078,
+                  "seconds": 76.2298546,
+                  "head": "dd78bfe91209cdda419df11812134862f49e80e4",
+                  "exit": 0,
+                  "total": 1580,
+                  "passed": 1580,
+                  "failed": 0,
+                  "skipped": 0,
+                  "artifact": "return-host-morning-mixed-release-fixed-20261128/host"
+                }
+              }
+            },
+            "mixed_intent_and_morning_owner_release": {
+              "source_commit": "3975911f88b46b0499be4c61cb2e19f827848785",
+              "scope": "BOUNDED_LOCAL_NOT_RUNTIME_ACCEPTANCE",
+              "checks": {
+                "work": {
+                  "seconds": 20.4199126,
+                  "head": "3975911f88b46b0499be4c61cb2e19f827848785",
+                  "exit": 0,
+                  "freeGiB": 3.903839111328125,
+                  "total": 210,
+                  "passed": 210,
+                  "failed": 0,
+                  "skipped": 0,
+                  "artifact": "mixed-intent-c5-owner-release-20261128/work"
+                },
+                "tsc": {
+                  "seconds": 55.147462,
+                  "head": "3975911f88b46b0499be4c61cb2e19f827848785",
+                  "exit": 0,
+                  "freeGiB": 3.825397491455078,
+                  "artifact": "mixed-intent-c5-owner-release-20261128/tsc"
+                },
+                "lint": {
+                  "seconds": 0.0980789,
+                  "head": "3975911f88b46b0499be4c61cb2e19f827848785",
+                  "exit": 0,
+                  "freeGiB": 3.8956947326660156,
+                  "artifact": "mixed-intent-c5-owner-release-20261128/lint"
+                },
+                "frontend": {
+                  "seconds": 18.5359128,
+                  "head": "3975911f88b46b0499be4c61cb2e19f827848785",
+                  "exit": 0,
+                  "freeGiB": 3.894786834716797,
+                  "total": 183,
+                  "passed": 183,
+                  "failed": 0,
+                  "skipped": 0,
+                  "artifact": "mixed-intent-c5-owner-release-20261128/frontend"
+                }
+              }
+            },
+            "limits": "Different exact source heads are explicitly retained; counts are not summed or transferred. Genuine SQL sources compiled but SQL NOT_RUN. Normal HTTP/browser/aggregate pins/full CI/two independent exact-head K3/business acceptance NOT_RUN.",
+            "retained_failures": "Initial return-host phase: Sales3118passed/3failed, including stale published-link expectation2 and malformed-null fixture serialization1; da9d corrected fixture/link without weakening admission. Initial mixed-intent frontend182passed/1failed due synchronous cached-query render expectation;397591 awaited actual refreshed field. Original artifacts retained.",
+            "source_scope": "Contract11 paired UI publication with native full human preview and canonical prepared reason. Return10 typed owner/current-original read and native Host, mandatory ReturnsApprove+OrdersPriceRead, true original immutable decision separated from current replay; foreign-write guards and native factory safety composed. Mixed price full-preview intent binding plus native cleanup release fence. C5 read cancellation and final owner-grant revalidation; scheduled lifecycle remains separate incomplete work.",
+            "open_safety_followups": [
+              "Return selected-read Contract mutation admission gap under independent correction; source cannot be marked accepted before its canaries/SQL.",
+              "Other owned Sales Work kinds can potentially return403 after native commit; current generic refused transport needs a bounded unknown-result review before closure."
+            ]
           }
         },
         "reuse": [
@@ -6371,7 +6650,50 @@
           "dbcfb5090"
         ],
         "http": "GET /api/v1/work/morning-summary; current recipient only, no company/user/model arguments; typed200or204null, sharedNoStore/code-lessproblems.8 real-host contract cases SOURCE_ONLY/normal-host pins deferred.",
-        "frontend": "Agent frozen0fc4b6a7a3fdd0821812c4cabdc52278589028b0: 7 complete test files691/691 passed, skip0 (C5 API34/component12/WorkQueue12/WorkInbox38/WorkDecisionAPI298/Page289/LogisticsMount8),69.73s; fulltsc exit0/50.59s; seven-file lint0warnings/exit0. Root b28/dbcf retains same frontend source. Technical digest/schedule evidence is in a closed native details element. Synthetic transport/UI, not actual browser/owner HTTP."
+        "frontend": "Agent frozen0fc4b6a7a3fdd0821812c4cabdc52278589028b0: 7 complete test files691/691 passed, skip0 (C5 API34/component12/WorkQueue12/WorkInbox38/WorkDecisionAPI298/Page289/LogisticsMount8),69.73s; fulltsc exit0/50.59s; seven-file lint0warnings/exit0. Root b28/dbcf retains same frontend source. Technical digest/schedule evidence is in a closed native details element. Synthetic transport/UI, not actual browser/owner HTTP.",
+        "morning_owner_release_checkpoint": {
+          "source_commit": "3975911f88b46b0499be4c61cb2e19f827848785",
+          "scope": "BOUNDED_LOCAL_NOT_RUNTIME_ACCEPTANCE",
+          "checks": {
+            "work": {
+              "seconds": 20.4199126,
+              "head": "3975911f88b46b0499be4c61cb2e19f827848785",
+              "exit": 0,
+              "freeGiB": 3.903839111328125,
+              "total": 210,
+              "passed": 210,
+              "failed": 0,
+              "skipped": 0,
+              "artifact": "mixed-intent-c5-owner-release-20261128/work"
+            },
+            "tsc": {
+              "seconds": 55.147462,
+              "head": "3975911f88b46b0499be4c61cb2e19f827848785",
+              "exit": 0,
+              "freeGiB": 3.825397491455078,
+              "artifact": "mixed-intent-c5-owner-release-20261128/tsc"
+            },
+            "lint": {
+              "seconds": 0.0980789,
+              "head": "3975911f88b46b0499be4c61cb2e19f827848785",
+              "exit": 0,
+              "freeGiB": 3.8956947326660156,
+              "artifact": "mixed-intent-c5-owner-release-20261128/lint"
+            },
+            "frontend": {
+              "seconds": 18.5359128,
+              "head": "3975911f88b46b0499be4c61cb2e19f827848785",
+              "exit": 0,
+              "freeGiB": 3.894786834716797,
+              "total": 183,
+              "passed": 183,
+              "failed": 0,
+              "skipped": 0,
+              "artifact": "mixed-intent-c5-owner-release-20261128/frontend"
+            }
+          }
+        },
+        "management_decision_source": "AI-D30 in SINAN_KARARLARI_2026-11-22_WORK_AI_DALGALAR.md includes both memory and scheduled tasks; AI-D39 includes both. Separate management permission is not assigned automatically. No new business decision is inferred."
       }
     },
     {

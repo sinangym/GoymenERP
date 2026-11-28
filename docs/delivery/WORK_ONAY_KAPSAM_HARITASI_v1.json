@@ -780,8 +780,8 @@
           {
             "kind": "sales.customer-return.v1",
             "source": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesCustomerReturnWorkInboxSourceV1.cs:14",
-            "source_decision_read": false,
-            "host_supported": false,
+            "source_decision_read": true,
+            "host_supported": true,
             "owner_permission": "sales.returns.approve",
             "frontend_inbox_registered": true,
             "frontend_published": false,
@@ -804,9 +804,10 @@
           }
         ],
         "native_permissions": [
-          "sales.returns.approve"
+          "sales.returns.approve",
+          "sales.orders.price.read"
         ],
-        "status": "LEGACY_INBOX_NATIVE_COMMAND_NO_WORK_HOST",
+        "status": "BACKEND_WORK_HOST_FRONTEND_UNPUBLISHED",
         "source": "CHECKED_AT_EXACT_HEAD",
         "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
         "actual_SQL": "NOT_RUN",
@@ -814,8 +815,9 @@
         "CI": "NO_CURRENT_HEAD_EVIDENCE",
         "K3": "NOT_PERFORMED",
         "map_runtime": "NOT_RUN",
-        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
-        "later_deltas": []
+        "source_commit": "dd78bfe91209cdda419df11812134862f49e80e4",
+        "later_deltas": [],
+        "note": "Current/original owner and native decision Host composed; frontend queued; runtime0. Additional source safety finding remains under correction."
       }
     },
     {
@@ -849,13 +851,13 @@
             "host_supported": true,
             "owner_permission": "sales.contracts.discount.approve",
             "frontend_inbox_registered": true,
-            "frontend_published": false,
-            "frontend_capability": null,
-            "capability_declared": false,
-            "route": null,
-            "route_parity": null,
-            "inbox_capability": null,
-            "inbox_capability_matches_work": null
+            "frontend_published": true,
+            "frontend_capability": "sales.contract-discount.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/sales.contract-discount.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "sales.contract-discount.work-decision",
+            "inbox_capability_matches_work": true
           }
         ],
         "owner_commands": [
@@ -871,7 +873,7 @@
         "native_permissions": [
           "sales.contracts.discount.approve"
         ],
-        "status": "BACKEND_WORK_HOST_FRONTEND_UNPUBLISHED",
+        "status": "PAIRED_SOURCE_LOCAL_NOT_RUNTIME_ACCEPTANCE",
         "source": "CHECKED_AT_EXACT_HEAD",
         "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
         "actual_SQL": "NOT_RUN",
@@ -879,7 +881,7 @@
         "CI": "NO_CURRENT_HEAD_EVIDENCE",
         "K3": "NOT_PERFORMED",
         "map_runtime": "NOT_RUN",
-        "source_commit": "af90ecc1991cc07b143bd58b207d110490cff09b",
+        "source_commit": "85502d57ede255934c6dc05381a5657b29df2413",
         "later_deltas": [
           {
             "head": "d3d7fbfde4732dc4b8b3c27ce94724202be99bd4",
@@ -892,7 +894,7 @@
             "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint/contract_work_return_guards_mixed_price_api"
           }
         ],
-        "note": "Current/original native contract owner and native decision Host exist; standalone frontend publication and runtime acceptance pending."
+        "note": "Native owner/Host and paired frontend published;3489 local frontend cases at recorded head, no runtime acceptance."
       }
     },
     {
@@ -6574,14 +6576,13 @@
       }
     ],
     "audit_sha256": "7b99cf7b328d015372dc2a31cd0afd74c8c40edebd9e72ae822f61d7ee529680",
-    "current_source_commit": "af90ecc1991cc07b143bd58b207d110490cff09b",
+    "current_source_commit": "dd78bfe91209cdda419df11812134862f49e80e4",
     "current_source_summary": {
-      "backend_kinds": 63,
-      "frontend_published_kinds": 62,
-      "backend_supported_flows": 62,
-      "paired_flows": 61,
+      "backend_kinds": 64,
+      "frontend_published_kinds": 63,
+      "backend_supported_flows": 63,
+      "paired_flows": 62,
       "no_host_flows": [
-        10,
         62
       ],
       "frontend_staged_flows": [],
@@ -6594,7 +6595,7 @@
         62
       ],
       "backend_only_unpublished_flows": [
-        11
+        10
       ]
     }
   },
@@ -7759,6 +7760,145 @@
       },
       "source_scope": "Flow11 native contract owner current/original read, genuine Attempt/Audit receipt, same scoped aliases, Work Host canonical frozen rejection transport and complete native human view with optional price disclosure. Flow10 owned return decision safety source and shared foreign-write guards remain factory-off; current/original source under development. Approved mixed service price revision API and separate current native preview are composed; no replacement order engine.",
       "limits": "All genuine SQL source tests are compilation-only; SQL NOT_RUN. New mixed normalHTTP tests not run while existing startup shell owner pins await aggregate closure; no HTTP/DI acceptance claimed. Contract frontend not yet published. Browser/aggregatepins/fullCI/two independent exact-head K3/business acceptance NOT_RUN."
+    },
+    "return_contract_mixed_c5_checkpoint": {
+      "contract_frontend": {
+        "source_commit": "85502d57ede255934c6dc05381a5657b29df2413",
+        "scope": "BOUNDED_LOCAL_NOT_RUNTIME_ACCEPTANCE",
+        "checks": {
+          "tsc": {
+            "seconds": 54.6003526,
+            "head": "85502d57ede255934c6dc05381a5657b29df2413",
+            "freeGiB": 4.025394439697266,
+            "exit": 0,
+            "artifact": "contract-paired-frontend-20261128/tsc"
+          },
+          "lint": {
+            "seconds": 0.5596303,
+            "head": "85502d57ede255934c6dc05381a5657b29df2413",
+            "freeGiB": 3.8857192993164062,
+            "exit": 0,
+            "artifact": "contract-paired-frontend-20261128/lint"
+          },
+          "frontend": {
+            "seconds": 296.6945677,
+            "head": "85502d57ede255934c6dc05381a5657b29df2413",
+            "freeGiB": 3.8314781188964844,
+            "exit": 0,
+            "total": 3489,
+            "passed": 3489,
+            "failed": 0,
+            "skipped": 0,
+            "artifact": "contract-paired-frontend-20261128/frontend"
+          }
+        }
+      },
+      "return_host_and_mixed_cleanup": {
+        "source_commit": "dd78bfe91209cdda419df11812134862f49e80e4",
+        "scope": "BOUNDED_LOCAL_NOT_RUNTIME_ACCEPTANCE",
+        "checks": {
+          "sales": {
+            "freeGiB": 3.8051376342773438,
+            "seconds": 60.7756465,
+            "head": "dd78bfe91209cdda419df11812134862f49e80e4",
+            "exit": 0,
+            "total": 3121,
+            "passed": 3121,
+            "failed": 0,
+            "skipped": 0,
+            "artifact": "return-host-morning-mixed-release-fixed-20261128/sales"
+          },
+          "purchasing": {
+            "freeGiB": 3.694477081298828,
+            "seconds": 26.6390145,
+            "head": "dd78bfe91209cdda419df11812134862f49e80e4",
+            "exit": 0,
+            "total": 1618,
+            "passed": 1618,
+            "failed": 0,
+            "skipped": 0,
+            "artifact": "return-host-morning-mixed-release-fixed-20261128/purchasing"
+          },
+          "work": {
+            "freeGiB": 3.6002464294433594,
+            "seconds": 14.3852377,
+            "head": "dd78bfe91209cdda419df11812134862f49e80e4",
+            "exit": 0,
+            "total": 209,
+            "passed": 209,
+            "failed": 0,
+            "skipped": 0,
+            "artifact": "return-host-morning-mixed-release-fixed-20261128/work"
+          },
+          "api_refresh": {
+            "freeGiB": 3.173114776611328,
+            "seconds": 23.4004388,
+            "head": "dd78bfe91209cdda419df11812134862f49e80e4",
+            "exit": 0,
+            "artifact": "return-host-morning-mixed-release-fixed-20261128/api_refresh"
+          },
+          "host": {
+            "freeGiB": 3.742877960205078,
+            "seconds": 76.2298546,
+            "head": "dd78bfe91209cdda419df11812134862f49e80e4",
+            "exit": 0,
+            "total": 1580,
+            "passed": 1580,
+            "failed": 0,
+            "skipped": 0,
+            "artifact": "return-host-morning-mixed-release-fixed-20261128/host"
+          }
+        }
+      },
+      "mixed_intent_and_morning_owner_release": {
+        "source_commit": "3975911f88b46b0499be4c61cb2e19f827848785",
+        "scope": "BOUNDED_LOCAL_NOT_RUNTIME_ACCEPTANCE",
+        "checks": {
+          "work": {
+            "seconds": 20.4199126,
+            "head": "3975911f88b46b0499be4c61cb2e19f827848785",
+            "exit": 0,
+            "freeGiB": 3.903839111328125,
+            "total": 210,
+            "passed": 210,
+            "failed": 0,
+            "skipped": 0,
+            "artifact": "mixed-intent-c5-owner-release-20261128/work"
+          },
+          "tsc": {
+            "seconds": 55.147462,
+            "head": "3975911f88b46b0499be4c61cb2e19f827848785",
+            "exit": 0,
+            "freeGiB": 3.825397491455078,
+            "artifact": "mixed-intent-c5-owner-release-20261128/tsc"
+          },
+          "lint": {
+            "seconds": 0.0980789,
+            "head": "3975911f88b46b0499be4c61cb2e19f827848785",
+            "exit": 0,
+            "freeGiB": 3.8956947326660156,
+            "artifact": "mixed-intent-c5-owner-release-20261128/lint"
+          },
+          "frontend": {
+            "seconds": 18.5359128,
+            "head": "3975911f88b46b0499be4c61cb2e19f827848785",
+            "exit": 0,
+            "freeGiB": 3.894786834716797,
+            "total": 183,
+            "passed": 183,
+            "failed": 0,
+            "skipped": 0,
+            "artifact": "mixed-intent-c5-owner-release-20261128/frontend"
+          }
+        }
+      },
+      "limits": "Different exact source heads are explicitly retained; counts are not summed or transferred. Genuine SQL sources compiled but SQL NOT_RUN. Normal HTTP/browser/aggregate pins/full CI/two independent exact-head K3/business acceptance NOT_RUN.",
+      "retained_failures": "Initial return-host phase: Sales3118passed/3failed, including stale published-link expectation2 and malformed-null fixture serialization1; da9d corrected fixture/link without weakening admission. Initial mixed-intent frontend182passed/1failed due synchronous cached-query render expectation;397591 awaited actual refreshed field. Original artifacts retained.",
+      "source_scope": "Contract11 paired UI publication with native full human preview and canonical prepared reason. Return10 typed owner/current-original read and native Host, mandatory ReturnsApprove+OrdersPriceRead, true original immutable decision separated from current replay; foreign-write guards and native factory safety composed. Mixed price full-preview intent binding plus native cleanup release fence. C5 read cancellation and final owner-grant revalidation; scheduled lifecycle remains separate incomplete work.",
+      "open_safety_followups": [
+        "Return selected-read Contract mutation admission gap under independent correction; source cannot be marked accepted before its canaries/SQL.",
+        "Other owned Sales Work kinds can potentially return403 after native commit; current generic refused transport needs a bounded unknown-result review before closure."
+      ]
     }
   }
 }
