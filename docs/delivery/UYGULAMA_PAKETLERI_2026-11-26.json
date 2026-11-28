@@ -72,7 +72,108 @@
         "artifact": "period-page-user-retry-recovery-20261128/frontend",
         "result": "449/449 passed;failed0/pending0;63.0556223s. Whole WorkDecisionPage cohort after user-event retry and early frozen POST/body/key assertions; no production retry logic or timeout changed. Previous1158-case failure retained, not relabelled PASS; no full1158/full frontend rerun."
       },
-      "source_status_reconciliation": "MIXED-MIN and QUICK-CREATE advanced to SOURCE_IMPLEMENTED_LOCAL after bounded remaining-gap review;17 source-partial packages remain. No integrated/completed claim or canonical backlog change."
+      "source_status_reconciliation": "Earlier MIXED-MIN/QUICK-CREATE reconciliation moved 19 to17 source-partial packages. Current bounded YOL-D40 and CLOSURE-AXES source reconciliation moves17 to15; no integrated/completed claim or canonical backlog change. C9 remains partial: non-grounded/general-chat and document-draft producer receipt coverage is a real source gap.",
+      "nopo_native_occurrence_20261128": {
+        "source_head": "e9e84bb49eb2b7845526bb9be00d8d92b215ced1",
+        "scope": "Versioned explicit BusinessDate/raw optional Reason occurrence; actual Documents content/hash witness; original v1 receipt/JSON retained; no fake PO, stock, matching or payment effect.",
+        "purchasing_unit": {
+          "artifact": "nopo-v2-owner-unit-20261128",
+          "passed": 1636,
+          "total": 1636,
+          "failed": 0,
+          "skipped": 0
+        },
+        "controlled_document_and_read_hosts": {
+          "head": "9827c1c106baf233a8ba3faf045255cba85ba9ed",
+          "artifact": "nopo-api-fixture-compile-fixed-20261128",
+          "passed": 41,
+          "shell_drift_failures": 3,
+          "total": 44,
+          "skipped": 0
+        },
+        "normal_http_and_shell": {
+          "head": "718cc37f40a65608dfd71784695e0b11ca30ea6f",
+          "artifact": "nopo-transport-privacy-fixed-20261128",
+          "passed": 23,
+          "total": 23,
+          "failed": 0,
+          "skipped": 0,
+          "scope": "19 occurrence HTTP transport cases, three exact shell tuples and one existing order transport regression; controlled owners, not real SQL effects."
+        },
+        "typed_client": {
+          "head": "4c0ed01ded9358b7732db99fe40d4096770a9e7c",
+          "tsc_artifact": "nopo-typed-client-20261128",
+          "tsc_exit": 0,
+          "test_artifact": "nopo-typed-client-script-fixed-20261128",
+          "lint_exit": 0,
+          "passed": 104,
+          "total": 104,
+          "failed": 0,
+          "skipped": 0,
+          "scope": "Contract/fetch tests only; no Page, selector, route or capability activation."
+        },
+        "retained_failures": [
+          "Native HTTP fixture raw-string compile failure before 9827c1c10",
+          "nopo-normal-host-20261128: 60 passed/1 media-privacy failure/0 skipped; 718cc37f4 fixes production transport without relaxing assertion.",
+          "nopo-typed-client-20261128: wrong eslint invocation, no package installation; actual package script uses oxlint, corrected lint passed."
+        ],
+        "sql": "NOT_RUN",
+        "browser": "NOT_RUN",
+        "full_ci": "NOT_RUN",
+        "two_independent_exact_head_K3": "NOT_RUN"
+      },
+      "wp8_normal_http_wiring_20261128": {
+        "head": "718cc37f40a65608dfd71784695e0b11ca30ea6f",
+        "artifact": "wp8-normal-http-wiring-20261128",
+        "classes": {
+          "WorkApprovalEndpointTests": 31,
+          "WorkQueueEndpointTests": 11,
+          "WorkDelegationEndpointTests": 4,
+          "WorkDelegationDisplayEndpointTests": 6
+        },
+        "passed": 52,
+        "total": 52,
+        "failed": 0,
+        "skipped": 0,
+        "sequential": true,
+        "scope": "Real normal-host HTTP routing with controlled owner ports; not 64 actual owner decision/effect or SQL/browser acceptance. Flow-specific runtime verification remains unchanged."
+      },
+      "yol_d40_source_reconciliation_20261128": {
+        "source_status": "SOURCE_IMPLEMENTED_LOCAL",
+        "previous_source_status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
+        "evidence": "Actual native stale closure, same owner transaction/audit, committed-row outbox, registered dispatcher/consumer and preparer delivery are connected; new actual-owner journey source compiles in API test cohort.",
+        "trigger": "Native approval-time revalidation; no new proactive watcher requirement or implementation is asserted.",
+        "sql_source": "AccountingInvoiceLineCogsSqlServerRelationalAcceptanceTests.StaleWorkJourney.cs",
+        "sql": "NOT_RUN",
+        "browser": "NOT_RUN",
+        "full_ci": "NOT_RUN",
+        "K3": "NOT_RUN",
+        "canonical_backlog_status_changed": false,
+        "partial_source_packages_before": 17,
+        "partial_source_packages_after": 16
+      },
+      "sales_closure_source_reconciliation_20261128": {
+        "status": "SOURCE_IMPLEMENTED_LOCAL",
+        "previous_status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
+        "source_head": "4c0ed01ded9358b7732db99fe40d4096770a9e7c",
+        "evidence": "Actual Sales owner axes/Inventory/Logistics/Purchasing/Manufacturing/finalized invoice membership/Finance settlement bindings are configured; existing source and SQL journeys compile.",
+        "shared_manufacturing_limit": "Current ProductionOrder has one PlanId and ProductionPlan one CAS-replaced current SalesOrderLink; Sales source-plan API cannot attach one open manufacturing order to two simultaneous SalesOrder shares. No current shared model is invented or treated as accepted.",
+        "decision_preserved": "SAT-D478 per-order obligations and SAT-D479 real settled finalized invoice open items remain unchanged. Future shared-source representation must keep per-order shares; unavailable owner remains fail-closed.",
+        "partial_source_packages_before": 16,
+        "partial_source_packages_after": 15,
+        "sql": "NOT_RUN",
+        "browser": "NOT_RUN",
+        "full_ci": "NOT_RUN",
+        "two_independent_K3": "NOT_RUN",
+        "canonical_backlog_status_changed": false
+      },
+      "c9_visible_producer_gap_20261128": {
+        "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
+        "evidence": "Grounded ERP AiAsk responses persist AnswerId and bind C9/A5/UI. General-chat AiAsk if(!generalChat) skips receipt and frontend hides feedback; B3 returns draft output without C9 AnswerId. AI-D52 contains no verified exclusion for these visible producers.",
+        "next_action": "Extend existing final visible producer receipt/feedback binding, first general-chat then document-draft. Internal Gateway steps are not independently counted as user answers. Preserve separate90day identity/receipt retention and current authority; no raw document copy, automatic policy or ERP undo.",
+        "source_complete_candidate_rejected": true,
+        "SQL_runtime_acceptance": "NOT_RUN"
+      }
     },
     "sql_readonly_preflight_20261128": {
       "artifact": "sql-instance-readonly-preflight-20261128",
@@ -84,6 +185,18 @@
       "safe_dedicated_test_instance_confirmed": false,
       "test_database_created": false,
       "docker": "CLI installed; Linux engine unavailable/not started. Explicit environment choice requested; no existing database modified, moved or dropped."
+    },
+    "sql_isolated_docker_attempt_20261128": {
+      "authorized_by_user": true,
+      "artifact": "sql2022-isolated-20261128",
+      "image": "mcr.microsoft.com/mssql/server:2022-latest",
+      "scope": "New unique loopback-only container, D-drive bind data, 2GiB cap/2 CPUs; cached image reused. Existing MSSQLSERVER/GoymenErp/80 old test databases untouched.",
+      "state": "OWNED_CONTAINER_AND_TEMP_DATA_REMOVED",
+      "sql_tests_executed": 0,
+      "resource_gate": "Available host RAM fell to 1.22GiB and then 0.9GiB; no test batch started below the 2GiB runner gate.",
+      "setup_failure_retained": "DPAPI text trailing newline caused credential decoding failure before readiness; script trim corrected. No connection string or secret output.",
+      "cleanup": "Only this run container/data/credential removed; manifests retained; Docker Desktop restored to its previously stopped state. Existing images and services preserved.",
+      "next_action": "Wait for sufficient available RAM or a user-specified isolated test environment; do not use the unclassified default SQL instance."
     }
   },
   "packages": [
@@ -1297,7 +1410,8 @@
       "reuse_mode": "SMALL_EXTENSION",
       "source_findings": [
         "MatchAsync mevcut Receipts yolunda PurchaseOrderId/AcceptanceId ister; yalnız bir flag açmak siparişsiz akışı tamamlamaz.",
-        "Latest user answered the general NOPO control distribution: record actual occurrence first; distinct responsibilities do not impose five approvals on every receipt. Do not re-ask that question. Q-NOPO-APPROVER retains only actual type/department/person setup values; no new policy or role assignment is selected. Real document-line/businessDate owner adapter remains a technical dependency."
+        "Latest user answered the general NOPO control distribution: record actual occurrence first; distinct responsibilities do not impose five approvals on every receipt. Do not re-ask that question. Q-NOPO-APPROVER retains only actual type/department/person setup values; no new policy or role assignment is selected. Real document-line/businessDate owner adapter remains a technical dependency.",
+        "V2 now records explicit BusinessDate/raw optional Reason using actual Documents content/hash witness; old v1 JSON/original receipts remain unchanged. Native POST/GET and typed recovery client are connected and locally verified; no Page or purpose-bound selectors yet. Physical stock, commercial matching, classification and payment remain separate pending work."
       ],
       "decisions": [
         "ALS-D130",
@@ -1306,7 +1420,8 @@
       ],
       "depends_on": [],
       "open_decisions": [
-        "Q-NOPO-APPROVER"
+        "Q-NOPO-APPROVER",
+        "Q-NOPO-FORM-READ"
       ],
       "existing_tests": [
         "tests/GoymenERP.Purchasing.UnitTests/PurchaseIncomingInvoiceWorkflowTests.cs",
@@ -1324,7 +1439,7 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Bind actual document-line/businessDate owner evidence, then approved commercial matching and separate physical effects; no fake PO or automatic prior departmental approval. Current unconfigured evidence503 remains fail-closed.",
+      "next_action": "Resolve Q-NOPO-FORM-READ, reuse actual versioned selectors and typed client in native form; then complete approved commercial matching/separate physical effects and actual SQL/browser acceptance. No fake PO or inferred prior approval.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -1588,7 +1703,7 @@
       "backlog_parent": "W2-SATIS",
       "title": "Satış normal kapanış owner bağlantıları",
       "group": "FIRST_USE",
-      "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
+      "status": "SOURCE_IMPLEMENTED_LOCAL",
       "priority": "P0",
       "risk": "K3",
       "scope": "Kaynak/tahsis, faturalama ve finans kapanış eksenlerini owner okuma portlarından bağla; mevcut SAT-D32 hesabı değişmez.",
@@ -1614,7 +1729,8 @@
         "SAT-D478/479 recorded; native all-axes readiness and explicit human close command retained; bank matching is independent.",
         "Purchasing reads unconverted request obligations and each sales order share in shared orders; ALS-D68 cancelled purchase quantities retain used request shares.",
         "Actual posted shipment coverage must equal Sales realization; immutable Logistics, Inventory and finalized Sales invoice claims are checked. Unknown cost does not block the physical source proof.",
-        "Finance validates all installments of every related finalized invoice using existing recorded payment/allocation evidence; unknown or unrealized payment is not settlement."
+        "Finance validates all installments of every related finalized invoice using existing recorded payment/allocation evidence; unknown or unrealized payment is not settlement.",
+        "Bounded native-binding reconciliation found no remaining code/registration gap in the current normal-stock/single-linked manufacturing model. Real obligations/invoice-membership/Finance settlement are connected. A ProductionOrder cannot currently have simultaneous A+B SalesOrder shares; SAT-D478 is preserved, not claimed as implemented shared production. Existing SQL sources compile; actual SQL/browser/CI/K3 pending."
       ],
       "decisions": [
         "SAT-D32",
@@ -1645,7 +1761,7 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Run the existing native release/reallocation regression and the newly compiled actual shipment/Inventory/dispatch/invoice/settlement closure SQL source. Physical source identity is connected; synthetic seed snapshots and recorded receipt setup remain explicit, so this is not full physical/financial E2E. Complete real SQL/browser and aggregate train acceptance.",
+      "next_action": "Run existing native release/reallocation and actual shipment/Inventory/dispatch/invoice/settlement closure SQL sources on approved isolated SQL; complete authorized browser and aggregate CI/K3. Do not rewrite current bound source axes or create a shared-order engine merely for unreachable data.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -7004,7 +7120,8 @@
         "SINAN_KARARLARI_2026-10-21.md K10/No159 fixes separate feedback/question-answer retention at90 days, RetainUntil at creation and legal hold precedence. Personal memory1year and record notes are distinct families.",
         "B2 real immutable answer-receipt dependency is now source implemented97a6/dbfe/2d3/c870; model/SQL/runtime acceptance pending. C9 event writer, closed reason codes and A5 measured counts are still absent; budget IDs are not answer proof.",
         "Sinan directly approved AI-D51 closed reason list/no free text and AI-D52 one latest month-end category per answer plus separate unreviewed answers. Feedback never changes business rules or reverses ERP commands; implementation in progress, no measured-count source yet.",
-        "C9 source5963901/e396/dcb24 and EF22e935 now provide append-only receipt-bound feedback, separate identity, CAS/replay, approved fixed reasons and actual A5 last-state counts. Root03328 wires strict GET/POST; frontendf3ed/d34 isolates route generations and freezes original retry. This supersedes the earlier absent-source notes; actual SQL/HTTP/browser/CI/K3 remain NOT_RUN."
+        "C9 source5963901/e396/dcb24 and EF22e935 now provide append-only receipt-bound feedback, separate identity, CAS/replay, approved fixed reasons and actual A5 last-state counts. Root03328 wires strict GET/POST; frontendf3ed/d34 isolates route generations and freezes original retry. This supersedes the earlier absent-source notes; actual SQL/HTTP/browser/CI/K3 remain NOT_RUN.",
+        "28 November final-producer check: grounded Ask receipt/C9/A5/UI chain exists, but general-chat explicitly skips receipt/feedback and B3 draft output has no C9 AnswerId. AI-D52 has no verified exclusion; this is still a source/dependency gap, not merely pending SQL acceptance. No source-complete promotion."
       ],
       "decisions": [
         "AI-D12",
@@ -7032,7 +7149,7 @@
       ],
       "migration_owner": "AI owner single writer; separate feedback persistence with K10/No159 retention, never reuse immutable CommandEvents or Work notes as feedback storage. Actual schema/contract needs normal K3 review.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Verify integrated C9 UI/runtime and actual SQL history/count/cleanup/Down/replay. Keep flags closed, preserve90-day separate retention and unreviewed cohort; no automatic ERP undo or rule change.",
+      "next_action": "Extend existing immutable answer receipts/feedback to remaining user-visible producers, starting general-chat then document drafts; avoid counting internal Gateway calls separately. Then actual SQL history/count/cleanup/Down/replay, normalHTTP/browser and aggregate CI/K3. Flags remain closed.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -7138,7 +7255,7 @@
       "backlog_parent": "W4-MUHASEBE",
       "title": "Bayat SMM önerisi kapanışı",
       "group": "TREN2",
-      "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
+      "status": "SOURCE_IMPLEMENTED_LOCAL",
       "priority": "P1",
       "risk": "K3",
       "scope": "Accounting kaynağı değişen öneriyi bayatladı ile kapatır; audit ve Work bildirimi.",
@@ -7162,7 +7279,8 @@
       "source_findings": [
         "Devir belgesinde kalan iş; listedeki mevcut kaynak/testler bulundu.",
         "Tam davranış ve runtime kabulü: NOT_RUN.",
-        "Immutable Prepared-to-Stale closure, audit/version/receipt and outbox share one Accounting transaction. Work Digest notification targets only the recorded preparer. Typed costKind reaches legacy and unified feeds; owner screen validates closure evidence. Native explicit fresh successor preparation retains old closure."
+        "Immutable Prepared-to-Stale closure, audit/version/receipt and outbox share one Accounting transaction. Work Digest notification targets only the recorded preparer. Typed costKind reaches legacy and unified feeds; owner screen validates closure evidence. Native explicit fresh successor preparation retains old closure.",
+        "Bounded 28 November source reconciliation found native stale-close/audit/outbox/dispatcher/preparer notification fully connected. Trigger is approval-time revalidation; no proactive watcher claim. Real owner SQL journey source compiles; SQL/browser/CI/K3 remain NOT_RUN."
       ],
       "decisions": [
         "YOL-D40"
@@ -7186,7 +7304,7 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "next_action": "Run the existing actual-owner stale Work journey and relevant owner rollback/replay SQL sources on the approved isolated environment, then normal authorized HTTP/browser and aggregate CI/K3; do not rewrite connected production chain.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -7838,6 +7956,13 @@
       "question": "Ekipman/bakım ve gerçek maliyetin sonraki dalga sırası",
       "recommendation": "İlk kullanımın gerekli kaynağını öne al; tam modülü mevcut ertelenmiş kapsama uygun sonraya bırak.",
       "blocks": "Yeni kapsam; T2 ye eklenmez",
+      "kind": "WHEN_PACKAGE_REACHES_GATE"
+    },
+    {
+      "id": "Q-NOPO-FORM-READ",
+      "question": "Siparişsiz kabul kaydetme izni yalnız bu form için şirketin uygun tedarikçi/ürün/hizmet/birim kimlik, ad ve sürüm seçimlerini okumaya yeterli olsun mu?",
+      "recommendation": "Dar form okuması; genel liste/fiyat/maliyet/bakiye/rapor/AI/ayar yetkisi, yeni rol veya otomatik grant yok. User answer pending; existing separate selector permissions remain enforced.",
+      "blocks": "NOPO native form selectors only; backend occurrence and independent packages continue.",
       "kind": "WHEN_PACKAGE_REACHES_GATE"
     }
   ],

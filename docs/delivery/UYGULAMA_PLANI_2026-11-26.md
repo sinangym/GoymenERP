@@ -412,3 +412,14 @@ Gerçek oturum değişiminde talep kurtarma P2 bulgusu kaynak ve regresyonla kap
 Dar kalan-iş kontrolünde MIXED-MIN ve QUICK-CREATE kaynak bağlantılarının tamamlandığı doğrulandı;
 uygulama ayrıntısında `SOURCE_IMPLEMENTED_LOCAL` aşamasına taşındılar. Kaynakta kısmi paket sayısı 19 → 17.
 Bu, bütünleşik kabul veya işletme tamamlanması değildir; canonical backlog durumu değiştirilmedi.
+
+28 Kasım son dar kapanış: siparişsiz kabul V2 gerçek belge/hash kanıtı ve açık işgünüyle bağlandı.
+Satınalma 1.636/1.636, kontrollü belge/okuma 41/41 ve sonraki normal HTTP/shell kohortu 23/23 geçti; ayrı kaynak sürümleri JSON eşinde korunur.
+Aynı normal-host sürümünde Work onay/kuyruk/vekâlet HTTP bağlantıları 52/52 geçti; bu 64 gerçek sahip modül kararının işletme kabulü değildir.
+İstemci sözleşmesi/kurtarma 104/104, TypeScript ve oxlint geçti; native form/selector yayımı henüz yok, dar okuma Q-NOPO-FORM-READ kullanıcı yanıtını bekler.
+YOL-D40 üretim zincirinde kaynak/registration eksiği bulunmadı: yalnız kaynak durumu SOURCE_IMPLEMENTED_LOCAL, kısmi kaynak paketleri 17 → 16; canonical backlog/kabul durumu değişmedi.
+İzole Docker SQL denemesinde RAM kapısı aşılamadı; SQL testleri 0/NOT_RUN. Yalnız bu koşunun container/veri/kimlik dosyası kaldırıldı, önceki SQL ve 80 test DB’si korunarak Docker eski kapalı durumuna döndürüldü.
+Önceki derleme, shell drift, 60/61 HTTP ve yanlış lint aracı hataları saklanır; SQL/tarayıcı/tam CI/iki bağımsız K3 kabulü bekler.
+
+Satış normal kapanışının mevcut stok/tek-bağlı üretim modelindeki native kaynak ve finans bağlantıları da kaynakta tamam: kısmi kaynak sayısı 16 → 15. SAT-D478 ortak-pay kuralı korunur; mevcut model ortak üretim desteği gibi sunulmaz. SQL/tarayıcı/CI/K3 bekler.
+C9 kaynakta kısmi kalır: grounded Ask zinciri bağlı olsa da genel sohbet/B3 çıktılarının makbuz/geri bildirim bağı eksik; bu fark mevcut C9 paketinde kapatılıyor. Yeni paket veya işletme politikası oluşturulmadı.
