@@ -101,9 +101,24 @@ public sealed partial class PurchaseOrder
         IReadOnlyList<PurchaseServiceOrderState> services, IReadOnlyList<PurchaseOrderServiceSelection> currentSelections,
         string approvedBy, DateTimeOffset now, Guid functionalCurrencyId,
         IReadOnlyDictionary<Guid, PurchaseOrderLineTheoreticalKilograms> theoreticalKilograms)
+        => ApproveSelectedServiceOrdersCore(expectedVersion, companyAccountId, services, currentSelections, approvedBy, now,
+            functionalCurrencyId, theoreticalKilograms, null);
+
+    internal IReadOnlyList<PurchaseServiceOrderState> ApproveSelectedServiceOrdersWithRetained(long expectedVersion, Guid companyAccountId,
+        IReadOnlyList<PurchaseServiceOrderState> services, IReadOnlyList<PurchaseOrderServiceSelection> selections,
+        string actor, DateTimeOffset at, Guid currency, IReadOnlyDictionary<Guid, PurchaseOrderLineTheoreticalKilograms> kilograms,
+        IReadOnlySet<Guid> retained) => ApproveSelectedServiceOrdersCore(expectedVersion, companyAccountId, services, selections,
+            actor, at, currency, kilograms, retained);
+
+    private IReadOnlyList<PurchaseServiceOrderState> ApproveSelectedServiceOrdersCore(long expectedVersion, Guid companyAccountId,
+        IReadOnlyList<PurchaseServiceOrderState> services, IReadOnlyList<PurchaseOrderServiceSelection> currentSelections,
+        string approvedBy, DateTimeOffset now, Guid functionalCurrencyId,
+        IReadOnlyDictionary<Guid, PurchaseOrderLineTheoreticalKilograms> theoreticalKilograms, IReadOnlySet<Guid>? retained)
     {
         RequireVersion(expectedVersion);
         ArgumentNullException.ThrowIfNull(services); ArgumentNullException.ThrowIfNull(currentSelections);
+        if (retained is { Count: > 0 } && (servicePriceRevisions.Count == 0 || retained.Any(id => services.All(x => x.OrderId != id))))
+            throw new ArgumentException("Retained approval requires an actual parent price revision.");
         if (serviceMemberships.Count == 0 || services.Count != serviceMemberships.Count || currentSelections.Count != serviceMemberships.Count
             || services.Any(x => x is null) || currentSelections.Any(x => x is null)
             || services.Select(x => x.OrderId).Distinct().Count() != services.Count
@@ -129,7 +144,15 @@ public sealed partial class PurchaseOrder
                 || selection.LineIds.Distinct().Count() != selection.LineIds.Count
                 || !selection.LineIds.ToHashSet().SetEquals(service.Lines.Select(x => x.LineId)))
                 throw new ArgumentException("Current selection and immutable membership identity do not match the actual owners.");
-            approved.Add(PurchaseServiceOrder.Approve(service, selection.ExpectedVersion, approvedBy, now));
+            if (retained?.Contains(service.OrderId) == true)
+            {
+                PurchaseServiceOrder.Validate(service);
+                if (selection.ExpectedVersion != service.Version) throw new PurchaseServiceOrderException(PurchaseServiceOrder.VersionConflict);
+                if (service.Status != PurchaseServiceOrderStatus.Approved || service.ApprovedBy is null)
+                    throw new ArgumentException("An unchanged sibling cannot invent a native approval.");
+                approved.Add(service);
+            }
+            else approved.Add(PurchaseServiceOrder.Approve(service, selection.ExpectedVersion, approvedBy, now));
         }
         ApproveCore(expectedVersion, approvedBy, now, functionalCurrencyId, theoreticalKilograms);
         return approved.AsReadOnly();

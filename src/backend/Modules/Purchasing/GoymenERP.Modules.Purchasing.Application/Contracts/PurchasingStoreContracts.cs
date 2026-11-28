@@ -111,6 +111,7 @@ public static class PurchasingCommands
     public static bool IsMutation(string commandName) => IsRequestMutation(commandName) || IsOrderMutation(commandName);
 
     public static bool IsKnown(string commandName) => IsRequestCommand(commandName) || IsOrderCommand(commandName)
+        || commandName == PurchaseMixedServicePriceIntentV1.Command
         || commandName is PurchaseReceiptReversalApiV1.CommandName or PurchaseReceiptReversalBatchApiV1.CommandName or PurchaseSupplierReturnCommandsV1.CreateV1
             or PurchaseSupplierReturnCommandsV1.ApproveCostExceptionV1;
 }

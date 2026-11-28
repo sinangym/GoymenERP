@@ -5,7 +5,9 @@ namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 
 /// <summary>Rebuilds each supplier revision through the same domain rules, without replacing the original creator or price facts.</summary>
 internal sealed record PurchaseSupplierRevisionHistory(Guid CompanyId, Guid OrderId,
-    PurchaseSupplierRevision[] Revisions, PurchaseSupplierRevisionPriceChange[] Prices, long? CurrentApprovalVersion)
+    PurchaseSupplierRevision[] Revisions, PurchaseSupplierRevisionPriceChange[] Prices, long? CurrentApprovalVersion,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    PurchaseMixedServicePriceRevision[]? ServicePriceRevisions = null)
 {
     internal static PurchaseSupplierRevisionHistory? Read(PurchaseOrderRow row)
     {
@@ -21,19 +23,27 @@ internal sealed record PurchaseSupplierRevisionHistory(Guid CompanyId, Guid Orde
                 ?? throw new InvalidOperationException("Cari revizyon geçmişi boş.");
         }
         catch (JsonException exception) { throw new InvalidOperationException("Cari revizyon geçmişi bozuk.", exception); }
-        if (history.CompanyId != row.CompanyId || history.OrderId != row.Id || history.Revisions is not { Length: > 0 }
+        if (history.CompanyId != row.CompanyId || history.OrderId != row.Id || history.Revisions is null
+            || (history.Revisions.Length == 0 && history.ServicePriceRevisions is not { Length: > 0 })
             || history.Prices is null || string.IsNullOrWhiteSpace(row.CurrentPreparedBy)
             || history.Revisions.Where((item, index) => item.Revision != index + 1 || item.PreviousApprovalVersion <= 0
                 || item.PreviousApprovalVersion >= item.OrderVersionAfter || item.PreviousLines is null).Any()
-            || history.Revisions[^1].SupplierPartyId != row.SupplierPartyId
-            || history.Revisions[^1].PreparedBy != row.CurrentPreparedBy
+            || (history.Revisions.Length > 0 && history.Revisions[^1].SupplierPartyId != row.SupplierPartyId)
+            || (history.ServicePriceRevisions is not null && (history.ServicePriceRevisions.Any(x => x is null
+                || x.Kind != PurchaseOrder.ServicePriceRevisionKind || x.ExpectedVersion < 1 || x.ExpectedVersion == long.MaxValue || x.OrderVersionAfter != checked(x.ExpectedVersion + 1)
+                || x.PreviousApprovalVersion < 1 || x.PreviousApprovalVersion > x.ExpectedVersion || x.PreviousApproval is null)
+                || history.ServicePriceRevisions.Select(x => x.OrderVersionAfter).Distinct().Count() != history.ServicePriceRevisions.Length))
+            || history.Revisions.Select(x => (Version: x.OrderVersionAfter, Actor: x.PreparedBy))
+                .Concat((history.ServicePriceRevisions ?? []).Select(x => (Version: x.OrderVersionAfter, Actor: x.PreparedBy)))
+                .OrderByDescending(x => x.Version).First().Actor != row.CurrentPreparedBy
             || (history.CurrentApprovalVersion is null) != (row.ApprovedBy is null))
             throw new InvalidOperationException("Cari revizyon geçmişi siparişle uyuşmuyor.");
         return history;
     }
 
     internal static string Write(PurchaseOrder order) => JsonSerializer.Serialize(new PurchaseSupplierRevisionHistory(
-        order.CompanyId, order.Id, order.SupplierRevisions.ToArray(), order.SupplierRevisionPrices.ToArray(), order.ApprovalVersion));
+        order.CompanyId, order.Id, order.SupplierRevisions.ToArray(), order.SupplierRevisionPrices.ToArray(), order.ApprovalVersion,
+        order.ServicePriceRevisions.Count == 0 ? null : order.ServicePriceRevisions.ToArray()));
 
     internal PurchaseOrderLinePrice? OriginalPrice(Guid lineId)
     {
@@ -58,6 +68,12 @@ internal sealed record PurchaseSupplierRevisionHistory(Guid CompanyId, Guid Orde
                     revision.PreparedBy, revision.Reason, revision.RecordedAtUtc);
                 if (order.SupplierRevision != revision.Revision) throw new InvalidOperationException("Cari revizyon numarası ardışık değil.");
             });
+        }
+        foreach (var revision in ServicePriceRevisions ?? [])
+        {
+            Add(revision.PreviousApprovalVersion, order => order.Approve(order.Version,
+                revision.PreviousApproval.ApprovedBy, revision.PreviousApproval.ApprovedAtUtc));
+            Add(revision.OrderVersionAfter, order => order.RestoreRecordedServicePriceRevision(revision));
         }
         foreach (var price in Prices)
             Add(price.OrderVersionAfter, order =>

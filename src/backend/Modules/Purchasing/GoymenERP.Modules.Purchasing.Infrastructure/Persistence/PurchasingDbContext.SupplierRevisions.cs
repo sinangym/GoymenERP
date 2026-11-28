@@ -50,9 +50,14 @@ public sealed partial class PurchasingDbContext
             }
             var revisionsBefore = before?.Revisions ?? [];
             var pricesBefore = before?.Prices ?? [];
+            var servicePricesBefore = before?.ServicePriceRevisions ?? [];
+            var servicePricesAfter = after.ServicePriceRevisions ?? [];
+            var servicePriceAdded = servicePricesAfter.Length - servicePricesBefore.Length;
             var revisionAdded = after.Revisions.Length - revisionsBefore.Length;
             var priceAdded = after.Prices.Length - pricesBefore.Length;
-            if (revisionAdded is < 0 or > 1 || priceAdded is < 0 or > 1 || revisionAdded + priceAdded > 1
+            if (revisionAdded is < 0 or > 1 || priceAdded is < 0 or > 1 || servicePriceAdded is < 0 or > 1
+                || revisionAdded + priceAdded + servicePriceAdded > 1
+                || servicePricesBefore.Where((item, index) => JsonSerializer.Serialize(item) != JsonSerializer.Serialize(servicePricesAfter[index])).Any()
                 || revisionsBefore.Where((item, index) => JsonSerializer.Serialize(item) != JsonSerializer.Serialize(after.Revisions[index])).Any()
                 || pricesBefore.Where((item, index) => JsonSerializer.Serialize(item) != JsonSerializer.Serialize(after.Prices[index])).Any())
                 throw new InvalidOperationException("Cari veya fiyat geçmişi değiştirilemez; komut tek kayıt ekler.");
@@ -64,6 +69,22 @@ public sealed partial class PurchasingDbContext
                     || added.PreviousSupplierPartyId != original.SupplierPartyId || added.PreviousPreparer != (original.CurrentPreparedBy ?? original.CreatedBy)
                     || added.PreviousApproval.ApprovedBy != original.ApprovedBy || added.PreviousApproval.ApprovedAtUtc != original.ApprovedAtUtc)
                     throw new InvalidOperationException("Cari değişikliği önceki onay görüntüsüyle uyuşmuyor.");
+            }
+            else if (servicePriceAdded == 1)
+            {
+                // Typed price-only history is an append, never a supplier rewrite or a replacement approval.
+                // The owner additionally verifies the actual Attempt/Audit/child revisions before commit.
+                var added = servicePricesAfter[^1];
+                if (added.Kind != PurchaseOrder.ServicePriceRevisionKind || added.ExpectedVersion != original.Version
+                    || added.OrderVersionAfter != current.Version || current.Version != original.Version + 1
+                    || original.Status != (int)PurchaseOrderStatus.Approved || current.Status != (int)PurchaseOrderStatus.Draft
+                    || current.SupplierPartyId != original.SupplierPartyId || current.CompanyAccountId != original.CompanyAccountId
+                    || added.PreviousPreparer != (original.CurrentPreparedBy ?? original.CreatedBy)
+                    || added.PreviousApproval.ApprovedBy != original.ApprovedBy || added.PreviousApproval.ApprovedAtUtc != original.ApprovedAtUtc
+                    || (before?.CurrentApprovalVersion is { } prior && added.PreviousApprovalVersion != prior)
+                    || current.CurrentPreparedBy != added.PreparedBy || current.ApprovedBy is not null || current.ApprovedAtUtc is not null
+                    || after.CurrentApprovalVersion is not null)
+                    throw new InvalidOperationException("Hizmet fiyat revizyonu önceki native onay ve aynı cariyle uyuşmuyor.");
             }
             else if (current.SupplierPartyId != original.SupplierPartyId || current.CompanyAccountId != original.CompanyAccountId
                 || current.CurrentPreparedBy != original.CurrentPreparedBy)

@@ -102,6 +102,8 @@ public sealed partial class PurchasingStore : IPurchaseMixedOrderApprovalStoreV1
                 || !ReferenceEquals(database.Database.CurrentTransaction, transaction) || Committed || Aborted)
                 throw new InvalidOperationException("A mixed participant cannot borrow another owner or scope.");
         }
+        private PurchaseMixedServicePriceReceiptV1? priceRevision;
+        private IReadOnlySet<Guid> retained = new HashSet<Guid>();
         internal async Task PrepareAsync(StoredPurchaseOrder loaded, CancellationToken token)
         {
             if (parent is not null || loaded.Order.ServiceMemberships.Count == 0) throw new PurchasingServiceException(503, "service_unavailable");
@@ -109,7 +111,11 @@ public sealed partial class PurchasingStore : IPurchaseMixedOrderApprovalStoreV1
             if (loaded.Order.Version != expected) throw new PurchasingVersionConflictException(expected, loaded.Order.Version);
             if (loaded.Order.Status != PurchaseOrderStatus.Draft) throw new PurchasingRuleException(PurchasingRuleCodes.OrderNotDraft, "Only native Draft can be approved.");
             parent = loaded;
-            original = await owner.ReadCurrentMixedChildrenAsync(loaded, Fence, token);
+            original = await owner.ReadCurrentMixedChildrenAsync(loaded, Fence, token, requireDraft: loaded.Order.ServicePriceRevisions.Count == 0);
+            priceRevision = await owner.ReadServicePriceReapprovalContextAsync(loaded, original, Fence, token);
+            retained = original.Where(x => x.Status == PurchaseServiceOrderStatus.Approved).Select(x => x.OrderId).ToHashSet();
+            if (original.Any(x => x.Status == PurchaseServiceOrderStatus.Draft && x.Version == long.MaxValue))
+                throw new PurchasingServiceException(400, "validation_failed");
             var selections = Request.MixedServices ?? throw new PurchasingServiceException(503, "service_unavailable");
             if (selections.Count != original.Count || original.Any(child => !selections.Any(selected =>
                 selected.ServiceOrderId == child.OrderId && selected.ExpectedVersion == child.Version.ToString(CultureInfo.InvariantCulture)
@@ -128,23 +134,28 @@ public sealed partial class PurchasingStore : IPurchaseMixedOrderApprovalStoreV1
             await Fence(token);
             if (preparation.Services.Where((child, i) => !PurchaseMixedOrderApprovalFactsV1.SameChild(original[i], child, true)).Any())
                 throw new PurchasingServiceException(503, "service_unavailable");
-            var latest = await owner.ReadCurrentMixedChildrenAsync(loaded, Fence, token);
+            var latest = await owner.ReadCurrentMixedChildrenAsync(loaded, Fence, token, requireDraft: loaded.Order.ServicePriceRevisions.Count == 0);
             if (!original.SequenceEqual(latest, MixedChildComparer.Instance)) throw new PurchasingServiceException(409, PurchasingProblemCodesV1.VersionConflict);
         }
         internal void Approve(PurchaseOrder actual, DateTimeOffset at)
         {
             if (parent is null || !ReferenceEquals(parent.Order, actual) || preparation is null || original is null || approved is not null)
                 throw new InvalidOperationException("The complete actual child preparation must precede the parent transition.");
-            approved = actual.ApproveSelectedServiceOrders(RequireMixedVersion(Request.ExpectedVersion), parent.CompanyAccountId,
+            approved = actual.ApproveSelectedServiceOrdersWithRetained(RequireMixedVersion(Request.ExpectedVersion), parent.CompanyAccountId,
                 preparation.Services, Request.MixedServices!.Select(x => new PurchaseOrderServiceSelection(x.ServiceOrderId,
-                    RequireMixedVersion(x.ExpectedVersion), x.LineIds)).ToArray(), envelope.ActorId.Trim(), at,
-                SettingsCurrencyIdentitiesV1.TurkishLira, preparation.TheoreticalKilograms);
+                    PurchaseMixedOrderMembershipV1.SelectedChildVersion(x.ExpectedVersion), x.LineIds)).ToArray(), envelope.ActorId.Trim(), at,
+                SettingsCurrencyIdentitiesV1.TurkishLira, preparation.TheoreticalKilograms, retained);
         }
         internal async Task StageChildrenAsync(CancellationToken token)
         {
             if (original is null || approved is null) throw new InvalidOperationException("Native child transitions are missing.");
             for (var i = 0; i < original.Count; i++)
             {
+                if (retained.Contains(original[i].OrderId))
+                {
+                    if (!PurchaseMixedOrderApprovalFactsV1.SameChild(original[i], approved[i])) throw MixedSupplierUnavailable();
+                    continue;
+                }
                 await Fence(token);
                 await PurchaseServiceOrderStoreV1.StageMixedApprovalAsync(owner.MixedDatabase, owner.MixedCollector, owner.MixedWriter!,
                     this, original[i], approved[i], envelope, token);
@@ -159,7 +170,8 @@ public sealed partial class PurchasingStore : IPurchaseMixedOrderApprovalStoreV1
                 IdempotencyKeyHash(envelope.IdempotencyKey), hash, envelope.CorrelationId.Trim(), at, Request,
                 Array.AsReadOnly(actual.Order.ServiceMemberships.ToArray()), Array.AsReadOnly(original.Select((before, i) =>
                     new PurchaseMixedOrderRecordedChildV1(before, preparation.Services[i], approved[i])).ToArray()),
-                project(actual, PurchasingPriceDisclosureV1.Visible), project(actual, PurchasingPriceDisclosureV1.Withheld));
+                project(actual, PurchasingPriceDisclosureV1.Visible), project(actual, PurchasingPriceDisclosureV1.Withheld)) {
+                    HeldFromPriceRevisionVersion = priceRevision?.ResultVersion };
             return JsonSerializer.Serialize(new MixedAuditAfter(JsonSerializer.Deserialize<JsonElement>(Snapshot(actual.Order)), recorded), Json);
         }
         internal async Task SaveAsync(CancellationToken token)

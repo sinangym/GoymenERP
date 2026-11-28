@@ -10,6 +10,9 @@ public sealed record PurchaseServiceOrderApprovalPreparationV1(Guid CompanyId, s
 
 public interface IPurchaseServiceOrderApprovalPreparationV1
 {
+    Task<PurchaseServiceOrderApprovalPreparationV1> ReadRetainedApprovalPreparationAsync(Guid serviceId, string expectedVersion,
+        Func<CancellationToken, Task> freshOwnerFence, CancellationToken cancellationToken = default) =>
+        Task.FromException<PurchaseServiceOrderApprovalPreparationV1>(new PurchasingServiceException(503, "service_unavailable"));
     Task<PurchaseServiceSupplierRevisionPreparationV1> ReadSupplierRevisionPreparationAsync(Guid serviceId, string expectedVersion,
         Guid supplierPartyId, Guid companyAccountId, string reason, Func<CancellationToken, Task> freshOwnerFence,
         CancellationToken cancellationToken = default) => Task.FromException<PurchaseServiceSupplierRevisionPreparationV1>(

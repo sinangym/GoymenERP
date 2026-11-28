@@ -96,8 +96,14 @@ public sealed partial class PurchasingStore
             supplier = await ReadMixedSupplierVersionAsync(orderId, last.OrderVersionAfter, fence, token,
                 Math.Min(ceiling, PurchaseMixedOrderApprovalIntentV1.Version(request.ExpectedVersion) + 1));
         }
+        PurchaseMixedServicePriceReceiptV1? servicePrices = null;
+        if (original.HeldFromPriceRevisionVersion is { } priceVersion)
+        {
+            if (priceVersion > membershipVersion) throw MixedSupplierUnavailable();
+            servicePrices = await ReadMixedServicePriceVersionAsync(orderId, priceVersion, fence, token, membershipVersion);
+        }
         var receipt = RestoreMixedOrderReceiptCore(attempt, events, revisions, childEvents, orderId, request, actor, permission, key, hash, supplier,
-                supplier is null ? null : memberships.Where(x => x.OrderVersionAfter > supplier.ResultVersion).Select(x => x.ServiceOrderId).ToHashSet())
+                supplier is null ? null : memberships.Where(x => x.OrderVersionAfter > supplier.ResultVersion).Select(x => x.ServiceOrderId).ToHashSet(), servicePrices)
             ?? throw new PurchasingServiceException(503, "service_unavailable");
         return new(receipt, null, true, attempt.CorrelationId);
     }
@@ -136,7 +142,7 @@ public sealed partial class PurchasingStore
     private static PurchaseMixedOrderApprovalReceiptV1? RestoreMixedOrderReceiptCore(PurchaseAttemptRow attempt, IReadOnlyList<AuditEvent> events,
         IReadOnlyList<PurchaseServiceOrderRevisionRow> revisions, IReadOnlyList<AuditEvent> childEvents, Guid orderId,
         ApprovePurchaseOrderRequest request, string actor, string permission, string key, string hash,
-        PurchaseMixedSupplierRevisionReceiptV1? supplier = null, IReadOnlySet<Guid>? introducedAfterRevision = null)
+        PurchaseMixedSupplierRevisionReceiptV1? supplier = null, IReadOnlySet<Guid>? introducedAfterRevision = null, PurchaseMixedServicePriceReceiptV1? servicePrices = null)
     {
         try
         {
@@ -186,7 +192,11 @@ public sealed partial class PurchasingStore
                 || original.Children.Select(x => x.OriginalBefore.OrderId).Distinct().Count() != original.Children.Count
                 || original.Membership.Select(x => x.ServiceOrderId).Distinct().Count() != original.Children.Count
                 || request.MixedServices.Select(x => x.ServiceOrderId).Distinct().Count() != original.Children.Count
-                || revisions.Count != original.Children.Count * 2 || childEvents.Count != original.Children.Count) return null;
+                || (original.HeldFromPriceRevisionVersion is null ? servicePrices is not null
+                    : servicePrices is null || original.HeldFromPriceRevisionVersion != servicePrices.ResultVersion || servicePrices.ResultVersion > before
+                        || servicePrices.CompanyId != attempt.CompanyId || servicePrices.OrderId != orderId)
+                || revisions.Count != original.Children.SelectMany(x => new[] { (x.OriginalBefore.OrderId, x.OriginalBefore.Version), (x.After.OrderId, x.After.Version) }).Distinct().Count()
+                || childEvents.Count != original.Children.Count(x => x.OriginalBefore.Status != PurchaseServiceOrderStatus.Approved)) return null;
             var masked = original.Visible with { PriceDisclosure = PurchasingPriceDisclosureV1.Withheld, PricePending = null,
                 KgPrice = null, Realization = null, Lines = original.Visible.Lines.Select(x => x with { Price = null, KgPrice = null, Realization = null }).ToArray() };
             if (!MixedJsonEqual(JsonSerializer.Serialize(masked, PurchasingJson.Options), JsonSerializer.Serialize(original.Withheld, PurchasingJson.Options))
@@ -218,14 +228,24 @@ public sealed partial class PurchasingStore
                     || selected.LineIds is null || selected.LineIds.Count != old.Lines.Count
                     || selected.LineIds.Distinct().Count() != selected.LineIds.Count
                     || !selected.LineIds.ToHashSet().SetEquals(old.Lines.Select(x => x.LineId))
-                    || !PurchaseMixedOrderApprovalFactsV1.SameChild(old, prepared, allowSupplierRefresh: true)
-                    || !PurchaseMixedOrderApprovalFactsV1.SameChild(PurchaseServiceOrder.Approve(prepared, old.Version, attempt.ActorId, attempt.RecordedAtUtc), next)) return null;
+                    || !PurchaseMixedOrderApprovalFactsV1.SameChild(old, prepared, allowSupplierRefresh: true)) return null;
+                var retained = old.Status == PurchaseServiceOrderStatus.Approved;
+                if (retained)
+                {
+                    var evidence = servicePrices?.Children.SingleOrDefault(x => x.After.OrderId == old.OrderId)?.After;
+                    if (evidence is null || !HasNativeApprovalState(old, evidence)
+                        || !PurchaseMixedOrderApprovalFactsV1.SameChild(old, prepared)
+                        || !PurchaseMixedOrderApprovalFactsV1.SameChild(old, next)) return null;
+                }
+                else if (!PurchaseMixedOrderApprovalFactsV1.SameChild(PurchaseServiceOrder.Approve(prepared, old.Version,
+                    attempt.ActorId, attempt.RecordedAtUtc), next)) return null;
                 foreach (var expected in new[] { old, next })
                 {
                     var stored = revisions.Where(x => x.CompanyId == expected.CompanyId && x.OrderId == expected.OrderId && x.Version == expected.Version).ToArray();
                     if (stored.Length != 1 || !MixedJsonEqual(stored[0].SnapshotJson, JsonSerializer.Serialize(expected, PurchaseServiceOrderStoreV1.Json))) return null;
                 }
                 var audits = childEvents.Where(x => x.EntityId == old.OrderId.ToString("D")).ToArray();
+                if (retained) { if (audits.Length != 0) return null; continue; }
                 if (audits.Length != 1 || !MixedAuditIdentity(audits[0], attempt, "Purchasing.ServiceOrder", old.OrderId,
                     PurchaseServiceOrderCommandsV1.Approve.Replace(".v1", ".recorded.v1", StringComparison.Ordinal), PurchaseServiceOrderCommandsV1.Approve, permission)
                     || audits[0].EntityVersionBefore != old.Version || audits[0].EntityVersionAfter != next.Version

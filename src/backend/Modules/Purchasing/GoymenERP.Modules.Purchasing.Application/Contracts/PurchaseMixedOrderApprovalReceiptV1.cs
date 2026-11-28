@@ -13,7 +13,10 @@ public sealed record PurchaseMixedOrderApprovalReceiptV1(Guid CompanyId, Guid Or
 public sealed record PurchaseMixedOrderRecordedApprovalV1(Guid CompanyId, Guid OrderId, string ActorId,
     string IdempotencyKeyHash, string PayloadHash, string OriginalCorrelationId, DateTimeOffset RecordedAtUtc,
     ApprovePurchaseOrderRequest FrozenRequest, IReadOnlyList<PurchaseOrderServiceMembership> Membership,
-    IReadOnlyList<PurchaseMixedOrderRecordedChildV1> Children, PurchaseOrderDetailView Visible, PurchaseOrderDetailView Withheld);
+    IReadOnlyList<PurchaseMixedOrderRecordedChildV1> Children, PurchaseOrderDetailView Visible, PurchaseOrderDetailView Withheld)
+{
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public long? HeldFromPriceRevisionVersion { get; init; }
+}
 public sealed record PurchaseMixedOrderRecordedChildV1(PurchaseServiceOrderState OriginalBefore,
     PurchaseServiceOrderState Prepared, PurchaseServiceOrderState After);
 public sealed record PurchaseMixedOrderApprovalPreparationV1([property: JsonIgnore] IReadOnlyList<PurchaseServiceOrderState> Services,
@@ -45,7 +48,7 @@ public static class PurchaseMixedOrderApprovalIntentV1
             || values.Select(x => x.ServiceOrderId).Distinct().Count() != values.Count)
             throw new PurchasingServiceException(400, "validation_failed");
         _ = Version(request.ExpectedVersion);
-        foreach (var child in values) _ = Version(child.ExpectedVersion);
+        foreach (var child in values) _ = PurchaseMixedOrderMembershipV1.SelectedChildVersion(child.ExpectedVersion);
         return request with { MixedServices = Array.AsReadOnly(values.Select(x => x with { LineIds = Array.AsReadOnly(x.LineIds.ToArray()) }).ToArray()) };
     }
     public static long Version(string text)

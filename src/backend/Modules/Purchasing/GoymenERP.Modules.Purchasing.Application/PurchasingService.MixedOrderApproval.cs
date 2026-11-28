@@ -79,7 +79,9 @@ public sealed partial class PurchasingService
             foreach (var child in current)
             {
                 await Fence(ct);
-                var result = await services.ReadApprovalPreparationAsync(child.OrderId, child.Version.ToString(CultureInfo.InvariantCulture), Fence, ct);
+                var result = await (child.Status == PurchaseServiceOrderStatus.Approved && parent.Order.ServicePriceRevisions.Count > 0
+                    ? services.ReadRetainedApprovalPreparationAsync(child.OrderId, child.Version.ToString(CultureInfo.InvariantCulture), Fence, ct)
+                    : services.ReadApprovalPreparationAsync(child.OrderId, child.Version.ToString(CultureInfo.InvariantCulture), Fence, ct));
                 await Fence(ct);
                 if (result.CompanyId != scope.CompanyId || result.ActorId != scope.ActorId || result.Prepared is null
                     || !PurchaseMixedOrderApprovalFactsV1.SameChild(child, result.Prepared, true)) throw new PurchasingServiceException(503, "service_unavailable");

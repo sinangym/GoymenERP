@@ -140,6 +140,8 @@ public sealed partial class PurchaseServiceOrderStoreV1(PurchasingDbContext data
             var before = command == PurchaseServiceOrderCommandsV1.SetSupplierRevisionPrices
                 ? await ReadOwnerAsync(orderId, requireStill, token) : await ReadAsync(orderId, token);
             if (before is null && command != PurchaseServiceOrderCommandsV1.Create) return null;
+            if (command == PurchaseServiceOrderCommandsV1.RevisePrices)
+                await RequireBoundPriceRevisionDraftAsync(orderId, before, requireStill, token);
             if (command == PurchaseServiceOrderCommandsV1.SetSupplierRevisionPrices)
             {
                 // Read-only reuse of the same parent's original-artifact codec, with the SAME Db/collector/writer/TX.

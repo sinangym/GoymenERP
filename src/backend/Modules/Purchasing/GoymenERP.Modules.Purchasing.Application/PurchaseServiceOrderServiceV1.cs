@@ -130,7 +130,7 @@ public sealed partial class PurchaseServiceOrderServiceV1(ICompanyContext compan
                 if (request.Lines is not { Count: > 0 and <= 100 } || request.Lines.Any(x => x is null)
                     || request.Lines.Select(x => x.LineId).Distinct().Count() != request.Lines.Count) throw new ArgumentException();
                 return Task.FromResult(PurchaseServiceOrder.RevisePrices(old ?? throw Failure(404), Version(request.ExpectedVersion),
-                    request.Lines.ToDictionary(x => x.LineId, x => Decimal(x.UnitPrice, zero: true)), scope.Actor, request.Reason, clock.GetUtcNow()));
+                    ReadNativeRevisionPrices(request.Lines), scope.Actor, request.Reason, clock.GetUtcNow()));
             }, token);
     }
     private async Task<PurchaseServiceOrderResponseV1> CommandAsync<T>(Guid id, string command, string permission, T request, string reason,

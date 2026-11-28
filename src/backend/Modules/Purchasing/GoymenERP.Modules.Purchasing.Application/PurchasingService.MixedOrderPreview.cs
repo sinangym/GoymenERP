@@ -39,8 +39,9 @@ public sealed partial class PurchasingService : IPurchaseMixedOrderApprovalPrevi
             foreach (var child in current)
             {
                 await Fence(token);
-                var answer = await servicePreparation.ReadApprovalPreparationAsync(child.OrderId,
-                    child.Version.ToString(CultureInfo.InvariantCulture), Fence, token);
+                var answer = await (child.Status == PurchaseServiceOrderStatus.Approved && parent.Order.ServicePriceRevisions.Count > 0
+                    ? servicePreparation.ReadRetainedApprovalPreparationAsync(child.OrderId, child.Version.ToString(CultureInfo.InvariantCulture), Fence, token)
+                    : servicePreparation.ReadApprovalPreparationAsync(child.OrderId, child.Version.ToString(CultureInfo.InvariantCulture), Fence, token));
                 await Fence(token);
                 if (answer.CompanyId != scope.CompanyId || answer.ActorId != scope.ActorId || answer.Prepared is null
                     || !PurchaseMixedOrderApprovalFactsV1.SameChild(child, answer.Prepared, allowSupplierRefresh: true))
@@ -67,7 +68,7 @@ public sealed partial class PurchasingService : IPurchaseMixedOrderApprovalPrevi
             var membership = order.ServiceMemberships.SingleOrDefault(x => x.ServiceOrderId == child.OrderId);
             if (membership is null || child.CompanyId != order.CompanyId || child.SupplierPartyId != order.SupplierPartyId
                 || child.CompanyAccountId != parent.CompanyAccountId || child.Money.CurrencyId != order.Money?.CurrencyId
-                || child.Status != PurchaseServiceOrderStatus.Draft)
+                || (child.Status != PurchaseServiceOrderStatus.Draft && (order.ServicePriceRevisions.Count == 0 || child.Status != PurchaseServiceOrderStatus.Approved)))
                 throw new PurchasingServiceException(409, "version_conflict");
             return new PurchaseMixedOrderServicePreviewV1(PurchaseServiceOrderServiceV1.ApprovalPreviewView(child,
                 disclosure == PurchasingPriceDisclosureV1.Visible), membership.PreparedVersion.ToString(CultureInfo.InvariantCulture),

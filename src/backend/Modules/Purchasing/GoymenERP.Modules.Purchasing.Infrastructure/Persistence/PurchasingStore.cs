@@ -430,12 +430,13 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
 
     private async Task<PurchasingOrderStoreResult?> MutateOrderGuardedCoreAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
         Guid orderId, Action<PurchaseOrder, DateTimeOffset> mutate, PurchasingMutationAudit audit,
-        Func<CancellationToken, Task> freshDecisionFence, MixedApprovalExecution? mixed, CancellationToken cancellationToken, MixedMembershipExecution? admission = null, MixedSupplierRevisionExecution? revision = null)
+        Func<CancellationToken, Task> freshDecisionFence, MixedApprovalExecution? mixed, CancellationToken cancellationToken, MixedMembershipExecution? admission = null, MixedSupplierRevisionExecution? revision = null, MixedServicePriceExecution? servicePrices = null)
     {
         ArgumentNullException.ThrowIfNull(freshDecisionFence);
-        MixedOwnedExecution? boundary = mixed ?? (MixedOwnedExecution?)admission ?? revision;
+        MixedOwnedExecution? boundary = mixed ?? (MixedOwnedExecution?)admission ?? revision ?? (MixedOwnedExecution?)servicePrices;
         if (commandName != PurchasingCommands.OrderApproveV1 && (admission is null || commandName != PurchaseMixedOrderMembershipV1.Command)
-            && (revision is null || commandName != PurchasingCommands.OrderSupplierReviseV1))
+            && (revision is null || commandName != PurchasingCommands.OrderSupplierReviseV1)
+            && (servicePrices is null || commandName != PurchaseMixedServicePriceIntentV1.Command))
             throw new ArgumentException("Guarded order decision is native approval only.", nameof(commandName));
         // The guard precedes all reads/callbacks, including replay, and remains outside cleanup of owned work.
         if (System.Transactions.Transaction.Current is not null || !dbContext.Database.IsRelational()
@@ -476,6 +477,12 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
                     await owned.CommitAsync(cancellationToken); boundary.Committed = true;
                     await Fence(cancellationToken); return null;
                 }
+                if (servicePrices is not null && await servicePrices.ReplayAsync(cancellationToken))
+                {
+                    await Fence(cancellationToken); boundary!.CommitStarted = true;
+                    await owned.CommitAsync(cancellationToken); boundary.Committed = true;
+                    await Fence(cancellationToken); return null;
+                }
                 if (mixed is not null)
                 {
                     mixed.Answer = await ReadMixedOriginalAsync(orderId, mixed.Request, envelope, requestHash, mixed.Fence, cancellationToken);
@@ -490,7 +497,7 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
                     }
                 }
                 var result = await MutateOrderCoreAsync(envelope, requestHash, commandName, orderId, mutate, participant: revision?.AllocationGuard,
-                    audit, cancellationToken, revisedCompanyAccountId: revision?.TargetAccount, freshDecisionFence: Fence, mixed: mixed, admission: admission, revision: revision);
+                    audit, cancellationToken, revisedCompanyAccountId: revision?.TargetAccount, freshDecisionFence: Fence, mixed: mixed, admission: admission, revision: revision, servicePrices: servicePrices);
                 if (mixed is not null)
                 {
                     if (result is null) throw new PurchasingServiceException(404, "not_found");
@@ -504,6 +511,8 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
                 if (admission is not null) await admission.VerifySavedAsync(cancellationToken);
                 if (revision is not null && result is null) throw new PurchasingServiceException(404, "not_found");
                 if (revision is not null) await revision.VerifySavedAsync(cancellationToken);
+                if (servicePrices is not null && result is null) throw new PurchasingServiceException(404, "not_found");
+                if (servicePrices is not null) await servicePrices.VerifySavedAsync(cancellationToken);
                 await Fence(cancellationToken);
                 if (boundary is not null) boundary.CommitStarted = true;
                 await owned.CommitAsync(cancellationToken);
@@ -564,27 +573,27 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
         PurchasingMutationAudit audit, CancellationToken cancellationToken,
         Func<PurchaseOrder, CancellationToken, Task>? beforeMutation = null, Guid? revisedCompanyAccountId = null,
         Func<CancellationToken, Task>? requireStillAuthorized = null,
-        Func<CancellationToken, Task>? freshDecisionFence = null, MixedApprovalExecution? mixed = null, MixedMembershipExecution? admission = null, MixedSupplierRevisionExecution? revision = null)
+        Func<CancellationToken, Task>? freshDecisionFence = null, MixedApprovalExecution? mixed = null, MixedMembershipExecution? admission = null, MixedSupplierRevisionExecution? revision = null, MixedServicePriceExecution? servicePrices = null)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
-        if (admission is null) RequireCommand(commandName);
-        else if (commandName != PurchaseMixedOrderMembershipV1.Command) throw new InvalidOperationException("Invalid membership marker.");
+        if (admission is null && servicePrices is null) RequireCommand(commandName);
+        else if (servicePrices is not null ? commandName != PurchaseMixedServicePriceIntentV1.Command : commandName != PurchaseMixedOrderMembershipV1.Command) throw new InvalidOperationException("Invalid membership marker.");
         RequireAudit(audit);
-        if (!PurchasingCommands.IsOrderMutation(commandName) && admission is null)
+        if (!PurchasingCommands.IsOrderMutation(commandName) && admission is null && servicePrices is null)
         {
             throw new ArgumentException("Yalnız onay, kalan iptali, termin, satır kapanışı ve kur komutları bir siparişi değiştirir.", nameof(commandName));
         }
 
-        var ownerReadFence = mixed?.Fence ?? admission?.Fence ?? revision?.Fence;
+        var ownerReadFence = mixed?.Fence ?? admission?.Fence ?? revision?.Fence ?? servicePrices?.Fence;
         var companyId = RequireResolvedCompany();
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
         var actorId = envelope.ActorId.Trim();
         var attempt = await ReadMixedOwnerAsync(() => FindAttemptAsync(commandName, keyHash, cancellationToken), ownerReadFence, cancellationToken);
         if (attempt is not null)
         {
-            if (mixed is not null || admission is not null || revision is not null) throw Refused(PurchasingStoreCodes.ConcurrentChange, "The original mixed attempt must be read through its immutable receipt.");
+            if (mixed is not null || admission is not null || revision is not null || servicePrices is not null) throw Refused(PurchasingStoreCodes.ConcurrentChange, "The original mixed attempt must be read through its immutable receipt.");
             RequireSameContent(attempt, actorId, requestHash);
             if (attempt.Outcome != AttemptOutcomeRecorded || attempt.OrderId is not { } recordedId)
             {
@@ -610,9 +619,9 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
         // command is rare and the order's lines are few.
         // KLN-D105: a schedule change can reorder the latest-delivery-first reduction choices. It uses these same locks,
         // so the owner schedule read remains stable until the Sales/Inventory transaction releases its purchase locks.
-        await using var lockTransaction = TakesOrderLineLocks(commandName)
+        await using var lockTransaction = TakesOrderLineLocks(commandName) || servicePrices is not null
             ? await LockOrderGeneralLinesAsync(companyId, orderId, cancellationToken,
-                PurchasingCommands.IsOrderCancellation(commandName) ? IsolationLevel.Serializable : null, revision?.Fence)
+                PurchasingCommands.IsOrderCancellation(commandName) ? IsolationLevel.Serializable : null, revision?.Fence ?? servicePrices?.Fence)
             : null;
 
         // The header and the lines are tracked (the header's version is this write's concurrency token).
@@ -649,6 +658,7 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
         var now = timeProvider.GetUtcNow();
         // The domain decides; a refusal leaves the tracked rows untouched (nothing below has run).
         if (beforeMutation is not null) await beforeMutation(order, cancellationToken);
+        if (servicePrices is not null) await servicePrices.PrepareAsync(new StoredPurchaseOrder(order, row.CompanyAccountId, row.EffectiveOn, VersionsOf(lineRows)) { DocumentNumber = row.DocumentNumber }, cancellationToken);
         if (revision is not null) await revision.PrepareAsync(new StoredPurchaseOrder(order, row.CompanyAccountId, row.EffectiveOn, VersionsOf(lineRows)) { DocumentNumber = row.DocumentNumber }, cancellationToken);
         if (admission is not null) await admission.PrepareAsync(order, row.CompanyAccountId, cancellationToken);
         if (mixed is not null) await mixed.PrepareAsync(new StoredPurchaseOrder(order, row.CompanyAccountId, row.EffectiveOn, VersionsOf(lineRows)) { DocumentNumber = row.DocumentNumber }, cancellationToken);
@@ -719,7 +729,7 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             row.SupplierPartyId = order.SupplierPartyId;
             row.CompanyAccountId = revisedCompanyAccountId ?? throw new InvalidOperationException("Yeni cari hesabı eksik.");
         }
-        if (order.SupplierRevision > 0)
+        if (order.SupplierRevision > 0 || order.ServicePriceRevisions.Count > 0)
         {
             row.CurrentPreparedBy = order.PreparedBy;
             row.SupplierRevisionHistoryJson = PurchaseSupplierRevisionHistory.Write(order);
@@ -818,15 +828,17 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             dbContext.ExchangeRateChanges.Add(ExchangeRateChangeRow(companyId, order.Id, order.Version, rateChange, envelope.CorrelationId.Trim()));
         }
 
+        if (servicePrices is not null) await servicePrices.StageChildrenAsync(cancellationToken);
         if (revision is not null) await revision.StageChildrenAsync(cancellationToken);
         if (admission is not null) admission.StageMemberships(order, versionBefore);
         if (mixed is not null) await mixed.StageChildrenAsync(cancellationToken);
         dbContext.Attempts.Add(Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, null, order.Id, now));
         Audit(envelope, companyId, OrderEntityType, order.Id, audit.EventType, audit.Operation, versionBefore, order.Version, before,
-            revision is not null ? revision.RecordAfter(new StoredPurchaseOrder(order, row.CompanyAccountId, row.EffectiveOn, VersionsOf(lineRows)) { DocumentNumber = row.DocumentNumber }, now) : admission is not null ? admission.RecordAfter(new StoredPurchaseOrder(order, row.CompanyAccountId, row.EffectiveOn, VersionsOf(lineRows)) { DocumentNumber = row.DocumentNumber }, now) : mixed is null ? Snapshot(order) : mixed.RecordAfter(new StoredPurchaseOrder(order, row.CompanyAccountId, row.EffectiveOn, VersionsOf(lineRows)) { DocumentNumber = row.DocumentNumber }, now), audit.Reason);
+            servicePrices is not null ? servicePrices.RecordAfter(new StoredPurchaseOrder(order, row.CompanyAccountId, row.EffectiveOn, VersionsOf(lineRows)) { DocumentNumber = row.DocumentNumber }, now) : revision is not null ? revision.RecordAfter(new StoredPurchaseOrder(order, row.CompanyAccountId, row.EffectiveOn, VersionsOf(lineRows)) { DocumentNumber = row.DocumentNumber }, now) : admission is not null ? admission.RecordAfter(new StoredPurchaseOrder(order, row.CompanyAccountId, row.EffectiveOn, VersionsOf(lineRows)) { DocumentNumber = row.DocumentNumber }, now) : mixed is null ? Snapshot(order) : mixed.RecordAfter(new StoredPurchaseOrder(order, row.CompanyAccountId, row.EffectiveOn, VersionsOf(lineRows)) { DocumentNumber = row.DocumentNumber }, now), audit.Reason);
         if (cancelsNumber) await RequireNumberAuthorityAsync(companyId, envelope, cancellationToken);
         if (requireStillAuthorized is not null) await requireStillAuthorized(cancellationToken);
-        if (revision is not null) await revision.SaveAsync(cancellationToken);
+        if (servicePrices is not null) await servicePrices.SaveAsync(cancellationToken);
+        else if (revision is not null) await revision.SaveAsync(cancellationToken);
         else if (admission is not null) await admission.SaveAsync(cancellationToken);
         else if (mixed is null) await SaveAsync(cancellationToken);
         else await mixed.SaveAsync(cancellationToken);
@@ -1373,7 +1385,7 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
         var membershipTimeline = MembershipTimeline(row, serviceMemberships, preparedServices, mixedApproval);
         var money = MoneyOf(row);
         var supplierHistory = PurchaseSupplierRevisionHistory.Read(row);
-        var originalSupplier = supplierHistory?.Revisions[0].PreviousSupplierPartyId ?? row.SupplierPartyId;
+        var originalSupplier = supplierHistory is { Revisions.Length: > 0 } ? supplierHistory.Revisions[0].PreviousSupplierPartyId : row.SupplierPartyId;
         var supplierActions = supplierHistory?.ReplayActions(row);
         if (supplierHistory is not null && serviceMemberships is { Count: > 0 })
             ApplyMixedSupplierHistory(row, supplierHistory, supplierActions!, mixedSupplierHistory);
@@ -1396,7 +1408,7 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             {
                 case PurchaseOrderLineKind.General:
                     order.AddLine(order.Version, line.LineId, line.ProductId, line.UnitId, quantity, line.SourceRequestLineId,
-                        supplierHistory is null ? PriceOf(line) : supplierHistory.OriginalPrice(line.LineId),
+                        supplierHistory is null || supplierHistory.Revisions.Length == 0 ? PriceOf(line) : supplierHistory.OriginalPrice(line.LineId),
                         row.CreatedAtUtc);
                     break;
                 case PurchaseOrderLineKind.Technical:
@@ -1431,7 +1443,7 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
                 var originalAccount = mixedSupplierHistory is null ? row.CompanyAccountId
                     : mixedSupplierHistory.Revisions.Values.Where(x => x.ResultVersion < membershipBatch.Batch.OrderVersionAfter)
                         .OrderByDescending(x => x.ResultVersion).Select(x => (Guid?)x.CompanyAccountId).FirstOrDefault()
-                        ?? mixedSupplierHistory.Revisions.Values.OrderBy(x => x.ResultVersion).First().PreviousCompanyAccountId;
+                        ?? mixedSupplierHistory.Revisions.Values.OrderBy(x => x.ResultVersion).Select(x => (Guid?)x.PreviousCompanyAccountId).FirstOrDefault() ?? row.CompanyAccountId;
                 order.RestoreServiceMembershipBatch(membershipBatch.Batch, originalAccount, membershipBatch.Prepared);
                 continue;
             }

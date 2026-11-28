@@ -29,14 +29,15 @@ public sealed partial class PurchasingStore : IPurchaseMixedOrderApprovalPreview
             if (parent.Order.Version != expectedVersion || parent.Order.Status != PurchaseOrderStatus.Draft)
                 throw new PurchasingServiceException(409, PurchasingProblemCodesV1.VersionConflict);
             if (parent.Order.ServiceMemberships.Count == 0) throw new PurchasingServiceException(503, "service_unavailable");
-            var current = await ReadCurrentMixedChildrenAsync(parent, Fence, cancellationToken);
+            var current = await ReadCurrentMixedChildrenAsync(parent, Fence, cancellationToken, requireDraft: parent.Order.ServicePriceRevisions.Count == 0);
             await Fence(cancellationToken);
+            _ = await ReadServicePriceReapprovalContextAsync(parent, current, Fence, cancellationToken);
             var result = await prepare(parent, current, cancellationToken);
             await Fence(cancellationToken);
             if (result is null || result.Services is null || !ReferenceEquals(result.Parent, parent) || result.Services.Count != current.Count
                 || result.Services.Where((child, i) => !PurchaseMixedOrderApprovalFactsV1.SameChild(current[i], child, allowSupplierRefresh: true)).Any())
                 throw new PurchasingServiceException(503, "service_unavailable");
-            var latest = await ReadCurrentMixedChildrenAsync(parent, Fence, cancellationToken);
+            var latest = await ReadCurrentMixedChildrenAsync(parent, Fence, cancellationToken, requireDraft: parent.Order.ServicePriceRevisions.Count == 0);
             if (!current.SequenceEqual(latest, MixedChildComparer.Instance))
                 throw new PurchasingServiceException(409, PurchasingProblemCodesV1.VersionConflict);
             var finalParent = await ReadMixedParentAsync(orderId, Fence, cancellationToken);
