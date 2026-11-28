@@ -78,6 +78,7 @@ public static class SalesModuleExtensions
         services.AddScoped<ISalesRequestDecisionReadV1>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         services.AddScoped<ISalesQuoteService>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         services.AddScoped<ISalesQuoteConversionDecisionReadV1>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
+        services.AddScoped<ISalesPriceFloorDecisionReadV1>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         // WP13 / SAT-D471: the signed approval performs the customer acceptance through the SAME draft command.
         services.AddScoped<ISalesOrderCustomerAcceptanceWithSignedApprovalV1>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         // API-41 / API-42: the Sales reports share the draft service's fence, measurement basis and price-read decision.
