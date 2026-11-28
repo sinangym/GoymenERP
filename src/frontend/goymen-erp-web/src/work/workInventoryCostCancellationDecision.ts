@@ -36,20 +36,21 @@ const shape=(v:unknown,required:Readonly<Record<string,Check>>,optional:Readonly
   &&Object.entries(optional).every(([k,test])=>!Object.hasOwn(v,k)||test(v[k]))
 const long:Check=inventoryCostWorkLong, zeroLong:Check=v=>inventoryCostWorkLong(v,0)
 const uniqueGuid=(rows:readonly Record<string,unknown>[],key:string)=>new Set(rows.map(row=>{const v=row[key];return typeof v==='string'?v.toLowerCase():v})).size===rows.length
-function component(value:unknown,approved:boolean):value is WorkInventoryCostCancellationComponent {
-  if(!shape(value,{origin:v=>v==='Known'||v==='Manufacturing'||v==='Purchase',journalSourceId:guid,postingPurpose:text,currencyId:guid,journalTotal:money,signedAmount:money,cogsAccountId:guid,counterAccountId:guid},{sourceJournalId:guid,reversingJournalId:guid})
+function component(value:unknown,approved:boolean,nativeAmountValidator:(v:unknown,positive:boolean)=>boolean):value is WorkInventoryCostCancellationComponent {
+  const amount:Check=v=>money(v)&&nativeAmountValidator(v.startsWith('-')?v.slice(1):v,false)
+  if(!shape(value,{origin:v=>v==='Known'||v==='Manufacturing'||v==='Purchase',journalSourceId:guid,postingPurpose:text,currencyId:guid,journalTotal:amount,signedAmount:amount,cogsAccountId:guid,counterAccountId:guid},{sourceJournalId:guid,reversingJournalId:guid})
     ||same(value.cogsAccountId,value.counterAccountId)||typeof value.journalTotal!=='string'||value.journalTotal.startsWith('-')||typeof value.signedAmount!=='string'
     ||value.sourceJournalId===undefined&&(value.origin!=='Purchase'||value.signedAmount!=='0'||value.journalTotal!=='0')
     ||value.origin==='Known'&&(value.signedAmount==='0'||value.signedAmount.startsWith('-'))||value.origin==='Purchase'&&value.signedAmount.startsWith('-'))return false
   return approved&&value.signedAmount!=='0'?guid(value.sourceJournalId)&&guid(value.reversingJournalId)&&!same(value.sourceJournalId,value.reversingJournalId):value.reversingJournalId===undefined
 }
-function cancellation(value:unknown,company:string,id:string,date:(v:unknown)=>v is string):value is WorkInventoryCostCancellation {
+function cancellation(value:unknown,company:string,id:string,date:(v:unknown)=>v is string,nativeAmountValidator:(v:unknown,positive:boolean)=>boolean):value is WorkInventoryCostCancellation {
   const validDate:Check=v=>date(v)&&v!=='0001-01-01'
   if(!shape(value,{id:guid,companyId:guid,inventoryCostProposalId:guid,cancellationId:guid,version:long,status:v=>v==='Prepared'||v==='Approved',invoiceLineRevision:zeroLong,periodId:guid,accountingDate:validDate,transactionDate:validDate,reason:v=>text(v)&&v.length<=1000,preparedBy:guid,preparedAtUtc:utc,components:Array.isArray,moneyProfiles:Array.isArray},{approvedBy:guid,approvedAtUtc:utc})
     ||!same(value.companyId,company)||!same(value.inventoryCostProposalId,id))return false
   const approved=value.status==='Approved'
   if(approved?!guid(value.approvedBy)||same(value.approvedBy,value.preparedBy)||!utc(value.approvedAtUtc):value.approvedBy!==undefined||value.approvedAtUtc!==undefined)return false
-  if(!Array.isArray(value.components)||value.components.length===0||!value.components.every(v=>component(v,approved))
+  if(!Array.isArray(value.components)||value.components.length===0||!value.components.every(v=>component(v,approved,nativeAmountValidator))
     ||!Array.isArray(value.moneyProfiles)||value.moneyProfiles.length===0||!value.moneyProfiles.every(v=>shape(v,{currencyId:guid,profileId:guid,version:long,scale:x=>typeof x==='number'&&Number.isInteger(x)&&x>=0&&x<=28}))
     ||!uniqueGuid(value.moneyProfiles,'currencyId'))return false
   const profiles=value.moneyProfiles
@@ -63,14 +64,14 @@ function samePreparation(before:WorkInventoryCostCancellation,after:WorkInventor
     &&before.components.length===after.components.length&&before.components.every((p,i)=>{const q=after.components[i];return q!==undefined
       &&(['origin','sourceJournalId','journalSourceId','postingPurpose','currencyId','journalTotal','signedAmount','cogsAccountId','counterAccountId'] as const).every(k=>p[k]===q[k])})
 }
-export function validInventoryCostCancellationPreview(value:Record<string,unknown>,company:string,id:string,date:(v:unknown)=>v is string):value is Record<string,unknown>&{readonly inventoryCostCancellation:WorkInventoryCostCancellationPreview} {
+export function validInventoryCostCancellationPreview(value:Record<string,unknown>,company:string,id:string,date:(v:unknown)=>v is string,nativeAmountValidator:(v:unknown,positive:boolean)=>boolean):value is Record<string,unknown>&{readonly inventoryCostCancellation:WorkInventoryCostCancellationPreview} {
   const h=value.inventoryCostCancellation
   if(value.kind!==INVENTORY_COST_CANCELLATION_WORK_KIND||!same(value.companyId,company)||!same(value.itemId,id)||typeof value.pending!=='boolean'
     ||value.approvalReasonRequired!==false||value.rejectionSupported!==false
     ||!shape(h,{originalProposal:()=>true,preparedCancellation:()=>true,cancellation:()=>true,preparedRecordedAtUtc:utc,sourceCancellation:()=>true})
     ||!validInventoryCostRetainedProposal(h.originalProposal,company,id,date)||h.originalProposal.kind!==1
     ||h.originalProposal.cancellationId!==undefined||h.originalProposal.componentCancellation!==undefined||h.originalProposal.reversalProposal!==undefined
-    ||!cancellation(h.preparedCancellation,company,id,date)||!cancellation(h.cancellation,company,id,date))return false
+    ||!cancellation(h.preparedCancellation,company,id,date,nativeAmountValidator)||!cancellation(h.cancellation,company,id,date,nativeAmountValidator))return false
   const p=h.originalProposal,before=h.preparedCancellation,current=h.cancellation,s=h.sourceCancellation
   if(before.status!=='Prepared'||before.approvedBy!==undefined||before.approvedAtUtc!==undefined||value.sourceVersion!==before.version||!samePreparation(before,current))return false
   if(current.status==='Prepared'?current.version!==before.version:!inventoryCostWorkLong(before.version)||before.version==='9223372036854775807'||BigInt(current.version)!==BigInt(before.version)+1n||value.pending!==false)return false

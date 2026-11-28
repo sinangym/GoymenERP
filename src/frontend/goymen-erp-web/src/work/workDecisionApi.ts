@@ -208,7 +208,7 @@ const creditLimitRevision = (value: unknown): value is string => typeof value ==
 const creditLimitAmount = (value: unknown): value is string => {
   return typeof value === 'string' && value.length <= 64 && exactNativeClrAmount(value, true)
 }
-const exactNativeClrAmount = (value: unknown, positive: boolean): value is string => {
+export const exactNativeClrAmount = (value: unknown, positive: boolean): value is string => {
   if (typeof value !== 'string' || value !== value.trim() || nativeControls(value)
     || !(positive ? isPositiveDecimalText(value) : isNonNegativeDecimalText(value))) return false
   // Native credit-limit IsExactAmount and official-invoice Amount require lossless CLR decimal representation.

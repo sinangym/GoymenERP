@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { isWorkPackageEffectiveDate } from './workDecisionApi'
+import { exactNativeClrAmount, isWorkPackageEffectiveDate } from './workDecisionApi'
 import { inventoryCostFixture, inventoryCostGuid as g } from './inventoryCostDecisionFixture'
 import { validInventoryCostPreview, validInventoryCostRetainedProposal } from './workInventoryCostDecision'
 import { inventoryCostCancellationFixture as fixture, cancellationWorkId as id } from './inventoryCostCancellationDecisionFixture'
 import { inventoryCostCancellationRequest, validInventoryCostCancellationPreview, validInventoryCostCancellationRequest } from './workInventoryCostCancellationDecision'
 
 const company='ac560000-0000-4000-8000-000000000001',other='ac560000-0000-4000-8000-000000000002'
-const valid=(v:Record<string,unknown>)=>validInventoryCostCancellationPreview(v,company,id,isWorkPackageEffectiveDate)
+const valid=(v:Record<string,unknown>)=>validInventoryCostCancellationPreview(v,company,id,isWorkPackageEffectiveDate,exactNativeClrAmount)
 const object=(v:unknown):v is Record<string,unknown>=>typeof v==='object'&&v!==null
 function put(target:unknown,path:readonly(string|number)[],value:unknown) {
  let parent=target
@@ -14,11 +14,22 @@ function put(target:unknown,path:readonly(string|number)[],value:unknown) {
  if(!object(parent))throw new Error('Missing fixture target');parent[path[path.length-1]!]=value
 }
 describe('inventory cost cancellation Work core',()=>{
+ it.each(['79228162514264337593543950336','99999999999999999999999999999','0.00000000000000000000000000001'])('rejects nonrepresentable CLR cancellation amounts %s',amount=>{
+  for(const field of ['signedAmount','journalTotal']){const v=fixture(company);for(const section of ['preparedCancellation','cancellation'])put(v,['inventoryCostCancellation',section,'components',0,field],amount);expect(valid(v)).toBe(false)}
+ })
+ it.each(['79228162514264337593543950335','0.0000000000000000000000000001'])('preserves exact CLR boundary text %s',amount=>{
+  const v=fixture(company);for(const section of ['preparedCancellation','cancellation'])for(const field of ['signedAmount','journalTotal'])put(v,['inventoryCostCancellation',section,'components',0,field],amount)
+  expect(valid(v)).toBe(true);expect(v.inventoryCostCancellation.preparedCancellation.components[0]!.signedAmount).toBe(amount)
+ })
+ it('keeps a representable negative manufacturing amount and rejects its overflow without changing its sign',()=>{
+  const v=fixture(company);expect(valid(v)).toBe(true);expect(v.inventoryCostCancellation.preparedCancellation.components[1]!.signedAmount).toBe('-0.01')
+  for(const section of ['preparedCancellation','cancellation'])put(v,['inventoryCostCancellation',section,'components',1,'signedAmount'],'-79228162514264337593543950336');expect(valid(v)).toBe(false)
+ })
  it.each(['AwaitingPreparation','NoCost','AlreadyAccounted'] as const)('preserves genuine unprepared N1 %s without fabricating a preparation',status=>{
   const v=fixture(company,'Prepared',status),before=JSON.stringify(v),p=v.inventoryCostCancellation.originalProposal
   expect(p.preparation).toBeUndefined();expect(valid(v)).toBe(true);expect(p.version).toBe('1');expect(v.sourceVersion).toBe('7')
   expect(Object.keys(v.inventoryCostCancellation)).toHaveLength(5);expect(Object.keys(v.inventoryCostCancellation.sourceCancellation)).toHaveLength(10)
-  expect(JSON.stringify(v)).toBe(before);expect(validInventoryCostCancellationPreview(v,company.toUpperCase(),id.toUpperCase(),isWorkPackageEffectiveDate)).toBe(true)
+  expect(JSON.stringify(v)).toBe(before);expect(validInventoryCostCancellationPreview(v,company.toUpperCase(),id.toUpperCase(),isWorkPackageEffectiveDate,exactNativeClrAmount)).toBe(true)
   expect(validInventoryCostRetainedProposal(p,company,id,isWorkPackageEffectiveDate)).toBe(true)
  })
  it.each(['Prepared','Posted','RoundedNoCost','Stale'] as const)('reuses the exact prepared/terminal original proposal validator for %s',status=>{
