@@ -18,8 +18,8 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
         var root = document.RootElement;
         var provider = new CounterpartyShellCapabilityProvider();
         var declarations = provider.GetDeclarations();
-        // Existing six declarations plus two standalone native identity purposes (Counterparty 1.8).
-        Assert.Equal(8, declarations.Count);
+        // Existing eight declarations plus the native merge control (Counterparty 1.9).
+        Assert.Equal(9, declarations.Count);
         var declaration = Assert.Single(
             declarations,
             item => item.CapabilityId
@@ -32,7 +32,7 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
             provider.Owner);
         // The accepted 1.6 browse declarations remain unchanged; 1.8 publishes only the separately tested native purposes.
         Assert.Equal("1.6", root.GetProperty("contractVersion").GetString());
-        Assert.Equal("1.8", provider.ContractVersion);
+        Assert.Equal("1.9", provider.ContractVersion);
 
         var route = root.GetProperty("routes")
             .EnumerateArray()
@@ -96,7 +96,7 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
             provider.Owner);
         // The accepted 1.6 browse declarations remain unchanged; 1.8 publishes only the separately tested native purposes.
         Assert.Equal("1.6", root.GetProperty("contractVersion").GetString());
-        Assert.Equal("1.8", provider.ContractVersion);
+        Assert.Equal("1.9", provider.ContractVersion);
 
         var route = root.GetProperty("routes")
             .EnumerateArray()
@@ -153,7 +153,7 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
             provider.Owner);
         // The accepted 1.6 browse declarations remain unchanged; 1.8 publishes only the separately tested native purposes.
         Assert.Equal("1.6", root.GetProperty("contractVersion").GetString());
-        Assert.Equal("1.8", provider.ContractVersion);
+        Assert.Equal("1.9", provider.ContractVersion);
 
         var route = root.GetProperty("routes")
             .EnumerateArray()
@@ -212,7 +212,7 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
             provider.Owner);
         // The accepted 1.6 browse declarations remain unchanged; 1.8 publishes only the separately tested native purposes.
         Assert.Equal("1.6", root.GetProperty("contractVersion").GetString());
-        Assert.Equal("1.8", provider.ContractVersion);
+        Assert.Equal("1.9", provider.ContractVersion);
 
         var route = root.GetProperty("routes")
             .EnumerateArray()
@@ -267,7 +267,7 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
         var manage = Assert.Single(declarations,
             item => item.CapabilityId == CounterpartyShellCapabilityProvider.PartyIbansManageCapabilityId);
 
-        Assert.Equal("1.8", provider.ContractVersion);
+        Assert.Equal("1.9", provider.ContractVersion);
         foreach (var control in new[] { read, manage })
         {
             Assert.Equal(CounterpartyShellCapabilityProvider.DetailCapabilityId, control.ParentCapabilityId);
@@ -298,6 +298,20 @@ public sealed class CounterpartyShellCapabilityProviderContractTests
             : GoymenERP.Modules.Counterparty.Application.Contracts.CounterpartyLegalNamePermissionsV1.Approve,
             ErpPermissions.CounterpartyPartiesRead], value.RequiredPermissions);
         Assert.True(ErpPermissions.IsCritical(GoymenERP.Modules.Counterparty.Application.Contracts.CounterpartyTaxIdentityPermissionsV1.Approve));
+    }
+
+    [Fact]
+    public void Merge_control_requires_both_existing_companywide_permissions_and_preserves_the_native_detail_route()
+    {
+        var provider = new CounterpartyShellCapabilityProvider();
+        var declarations = provider.GetDeclarations();
+        var detail = Assert.Single(declarations, x => x.CapabilityId == CounterpartyShellCapabilityProvider.DetailCapabilityId);
+        var merge = Assert.Single(declarations, x => x.CapabilityId == CounterpartyShellCapabilityProvider.PartyMergeCapabilityId);
+        Assert.Equal("cari.parties.merge", merge.CapabilityId); Assert.Equal(detail.CapabilityId, merge.ParentCapabilityId);
+        Assert.Equal(detail.RouteId, merge.RouteId); Assert.Equal("/cari/:partyId", merge.RoutePath); Assert.Equal(detail.ScreenId, merge.ScreenId);
+        Assert.Equal(detail.ContextRequirement, merge.ContextRequirement); Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide, merge.ScopeRequirement);
+        Assert.Equal([ErpPermissions.CounterpartyPartiesRead, ErpPermissions.CounterpartyPartiesMergeApprove], merge.RequiredPermissions);
+        Assert.Equal([ErpPermissions.CounterpartyPartiesRead], detail.RequiredPermissions); Assert.True(merge.ImplementationAvailable);
     }
 
     private static string FindRepositoryRoot()

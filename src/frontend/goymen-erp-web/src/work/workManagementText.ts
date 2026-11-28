@@ -1,4 +1,5 @@
 export const WORK_MANAGEMENT_TEXT = {
+  nativeActions: 'Cari işlemleri', mergeEntry: 'Mükerrer cari birleştirme için cari kartını aç', mergeHint: 'Cari listesinden kullanılmaya devam edilecek kartı açın. İki carinin ve ilgili şirket hesaplarının etkisi onaydan önce gösterilir.',
   title: 'Work yönetimi', rules: 'Kurallar', delegations: 'Vekâletler', followUp: 'Geciken ve sahipsiz',
   policy: 'Süre ve tatil takvimini yönet', own: 'Benim vekâletlerim', all: 'Şirketteki vekâletler',
   kind: 'Onay türü', search: 'Ad ile ara', person: 'Vekil', delegator: 'Adına vekâlet oluşturulacak onaycı',

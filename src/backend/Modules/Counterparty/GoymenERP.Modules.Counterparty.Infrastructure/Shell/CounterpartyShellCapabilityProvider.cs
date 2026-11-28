@@ -7,7 +7,7 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Shell;
 public sealed class CounterpartyShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "CHATGPT-BUSINESS/CARI";
-    public const string OwnerContractVersion = "1.8";
+    public const string OwnerContractVersion = "1.9";
     public const string ListCapabilityId = "cari.parties.list";
     public const string ListRouteId = "cari.list";
     public const string ListRoutePath = "/cari";
@@ -30,6 +30,7 @@ public sealed class CounterpartyShellCapabilityProvider : IShellCapabilityProvid
     /// <c>cari.party-ibans.manage</c> its add/deactivate buttons. A declaration grants nothing; the API re-checks each
     /// permission per request.
     /// </summary>
+    public const string PartyMergeCapabilityId = "cari.parties.merge";
     public const string PartyIbansReadCapabilityId = "cari.party-ibans.read";
     public const string PartyIbansManageCapabilityId = "cari.party-ibans.manage";
 
@@ -100,6 +101,12 @@ public sealed class CounterpartyShellCapabilityProvider : IShellCapabilityProvid
                 ShellCapabilityScopeRequirement.CompanyWide,
                 [CounterpartyLegalNamePermissionsV1.Approve, ErpPermissions.CounterpartyPartiesRead], ImplementationAvailable: true),
             detail,
+            detail with
+            {
+                CapabilityId = PartyMergeCapabilityId,
+                ParentCapabilityId = DetailCapabilityId,
+                RequiredPermissions = [ErpPermissions.CounterpartyPartiesRead, ErpPermissions.CounterpartyPartiesMergeApprove],
+            },
             detail with
             {
                 CapabilityId = PartyIbansReadCapabilityId,

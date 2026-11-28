@@ -52,3 +52,6 @@ export const MERGE_IMPACT_TEXT = {
   history: 'Geçmiş belge ve hareketlerin cari kimlikleri korunur. Açık kalem veya bakiye aktarımı yapılmaz.',
   retained: 'Önceki birleştirme isteğinizin sonucu bekleniyor. Yalnız aynı isteği yeniden doğrulayabilirsiniz.',
 } as const
+
+/** Existing native approval permission, published as a control of the existing Cari detail. */
+export const CARI_MERGE_CAPABILITY = 'cari.parties.merge'

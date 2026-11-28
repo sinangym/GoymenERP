@@ -1,3 +1,5 @@
+import { CARI_MERGE_CAPABILITY } from '../cari/mergeImpact'
+import { CAPABILITY } from '../shell/capabilities'
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
@@ -18,7 +20,7 @@ import { fetchDelegations, fetchDelegationPeople, createDelegation, revokeDelega
 import { WORK_MANAGEMENT_TEXT as T } from './workManagementText'
 import styles from './Work.module.css'
 export const WORK_MANAGEMENT_ROUTE = '/calisma-yonetimi'
-export const WORK_MANAGEMENT_CAPABILITIES = ['work.delegations.manage','work.approvals.follow-up','settings.work-approval-duration.manage',...WORK_INBOX_CAPABILITIES]
+export const WORK_MANAGEMENT_CAPABILITIES = ['work.delegations.manage','work.approvals.follow-up','settings.work-approval-duration.manage',...WORK_INBOX_CAPABILITIES,CARI_MERGE_CAPABILITY]
 export function WorkManagementPage() {
   const shell=useShellState(); const context=contextKey(shell)
   return <Management key={`${context === null ? 'none' : contextKeyString(context)}:${shell.routeEntryGeneration}`} />
@@ -29,14 +31,16 @@ function Management() {
   const rules=hasCapability(shell,'settings.work-approval-duration.manage')
   const delegates=hasCapability(shell,'work.delegations.manage') || WORK_INBOX_CAPABILITIES.some(cap => hasCapability(shell,cap))
   const followUp=hasCapability(shell,'work.approvals.follow-up')
-  const [tab,setTab]=useState(rules ? 'rules' : delegates ? 'delegations' : 'followUp')
+  const merge=hasCapability(shell,CARI_MERGE_CAPABILITY)&&hasCapability(shell,CAPABILITY.cariPartiesList)
+  const [tab,setTab]=useState(rules ? 'rules' : delegates ? 'delegations' : followUp ? 'followUp' : 'native')
   if (company === null || context === null || capabilityFailClosed(shell)) return <StateBlock state={{kind:'no-authorized-company'}} subject={T.title} />
   return <section className={styles.page}><h1>{T.title}</h1>
-    <div role="group" aria-label={T.title}>{([[rules,'rules',T.rules],[delegates,'delegations',T.delegations],[followUp,'followUp',T.followUp]] as const)
+    <div role="group" aria-label={T.title}>{([[rules,'rules',T.rules],[delegates,'delegations',T.delegations],[followUp,'followUp',T.followUp],[merge,'native',T.nativeActions]] as const)
       .filter(([allowed]) => allowed).map(([,id,label]) => <Button key={id} type="button" variant={tab===id?'primary':'secondary'} aria-pressed={tab===id} onClick={()=>setTab(id)}>{label}</Button>)}</div>
     {rules ? <div hidden={tab!=='rules'}><WorkApprovalRulesSection companyId={company} namespace={contextKeyString(context)} routeEntryGeneration={shell.routeEntryGeneration} /><WorkApprovalRuleEditor /><Link to="/ayarlar/onay-sureleri">{T.policy}</Link></div> : null}
     {delegates ? <div hidden={tab!=='delegations'}><Delegations company={company} namespace={contextKeyString(context)} /></div> : null}
     {followUp ? <div hidden={tab!=='followUp'}><ApprovalFollowUpPage /></div> : null}
+    {merge ? <div hidden={tab!=='native'}><h2>{T.nativeActions}</h2><p>{T.mergeHint}</p><Link to="/cari">{T.mergeEntry}</Link></div> : null}
   </section>
 }
 function Delegations({company,namespace}:{readonly company:string;readonly namespace:string}) {
