@@ -73,6 +73,17 @@
         "result": "449/449 passed;failed0/pending0;63.0556223s. Whole WorkDecisionPage cohort after user-event retry and early frozen POST/body/key assertions; no production retry logic or timeout changed. Previous1158-case failure retained, not relabelled PASS; no full1158/full frontend rerun."
       },
       "source_status_reconciliation": "MIXED-MIN and QUICK-CREATE advanced to SOURCE_IMPLEMENTED_LOCAL after bounded remaining-gap review;17 source-partial packages remain. No integrated/completed claim or canonical backlog change."
+    },
+    "sql_readonly_preflight_20261128": {
+      "artifact": "sql-instance-readonly-preflight-20261128",
+      "scope": "System metadata only; Windows integrated authentication; no business rows, secrets or SQL settings changed.",
+      "databases": 85,
+      "test_named_databases": 80,
+      "unclassified_database": "GoymenErp",
+      "active_application_sessions": 0,
+      "safe_dedicated_test_instance_confirmed": false,
+      "test_database_created": false,
+      "docker": "CLI installed; Linux engine unavailable/not started. Explicit environment choice requested; no existing database modified, moved or dropped."
     }
   },
   "packages": [
@@ -6782,7 +6793,34 @@
             }
           }
         },
-        "management_decision_source": "AI-D30 in SINAN_KARARLARI_2026-11-22_WORK_AI_DALGALAR.md includes both memory and scheduled tasks; AI-D39 includes both. Separate management permission is not assigned automatically. No new business decision is inferred."
+        "management_decision_source": "AI-D30 in SINAN_KARARLARI_2026-11-22_WORK_AI_DALGALAR.md includes both memory and scheduled tasks; AI-D39 includes both. Separate management permission is not assigned automatically. No new business decision is inferred.",
+        "morning_owner_adapter_checkpoint": {
+          "source_commits": [
+            "95648ee9f",
+            "d07464efe",
+            "4fd5c9157",
+            "7dd805d03"
+          ],
+          "api_build": {
+            "head": "4fd5c9157",
+            "exit": 0,
+            "warnings": 0,
+            "errors": 0,
+            "artifact": "c5-morning-owner-integration-20261128"
+          },
+          "controlled_tests": {
+            "head": "7dd805d0389cf8de07d46dd4991575c9df192270",
+            "total": 48,
+            "passed": 48,
+            "failed": 0,
+            "skipped": 0,
+            "seconds": 72.0413176,
+            "artifact": "c5-morning-owner-assertion-fixed-20261128"
+          },
+          "reuse": "Actual IWorkMorningSummaryReadV1 under current actor/company; content-free existing digest/slot/version receipt. Scoped read-only DI registration; no task service, worker, provider or activation.",
+          "retained_failure": "First new registration Fact failed xUnit2031 compilation; test-only predicate Assert.Single fix, no test assertion removed.",
+          "remaining": "Actual Settings task-count/read-budget owner and separate scheduled-task authority adapter; actual SQL/runtime/browser/full CI/exact-head K3 remain pending."
+        }
       }
     },
     {
@@ -7067,7 +7105,32 @@
         "hosted_ci": "NOT_RUN",
         "independent_review": "Bounded nonauthor source reviews only; train two exact-head K3 pending",
         "new_permissions": [],
-        "activation": "Ai Enabled/allowlist/provider/grants unchanged and closed"
+        "activation": "Ai Enabled/allowlist/provider/grants unchanged and closed",
+        "ambiguous_authority_checkpoint": {
+          "source_commits": [
+            "10cbfb598",
+            "87b644558",
+            "f2ff781b6"
+          ],
+          "reuse": "Existing scoped command journal and captured auth boundary; no shared-hook/store rewrite. First post-commit-possible403 is unknown while reporting authority loss; original key/body survive only matching server session/actor/company.",
+          "tsc": {
+            "head": "87b64455879b84f30f45ad05863e614379bf842a",
+            "exit": 0,
+            "artifact": "c9-ambiguous-auth-recovery-20261128"
+          },
+          "controlled_frontend": {
+            "head": "f2ff781b6",
+            "files": 3,
+            "total": 41,
+            "passed": 41,
+            "failed": 0,
+            "pending": 0,
+            "artifact": "c9-auth-surface-expectation-fixed-20261128"
+          },
+          "retained_failure": "Initial41 cohort had40pass/1fail: new-session403 expected unknown UI instead of actual route not-found after real authreport. Only test expectation fixed; new-session isolation and exact GET/POST assertions retained. Earlier result is not relabelled green.",
+          "peer": "Four-file full diff and critical hook/session dependencies read; no open concreteP1/P2, not formalK3 or real browser/SQL.",
+          "remaining": "Actual SQL/normal HTTP/browser, retention/history/count/Down/replay acceptance and aggregate train gates remain pending."
+        }
       }
     },
     {
