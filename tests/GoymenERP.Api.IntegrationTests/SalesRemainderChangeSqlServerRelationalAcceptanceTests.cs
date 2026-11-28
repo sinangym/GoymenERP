@@ -44,7 +44,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// requester holds the quantity-write name only and the approver the approve name only. SENTETIK / NOT_ENV.
 /// </para>
 /// </summary>
-public sealed class SalesRemainderChangeSqlServerRelationalAcceptanceTests
+public sealed partial class SalesRemainderChangeSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;

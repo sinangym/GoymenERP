@@ -123,7 +123,12 @@ public sealed partial class SalesDraftService
     /// allocations) and applies the change on it; a rejection asks no owner. D2's persona fence: a Satış Destek actor does not
     /// decide on their own draft or their own request (403, never recorded).
     /// </summary>
-    private async Task<SalesOrderDraftResponse> DecideRemainderChangeAsync(Guid draftId, int changeNo, SalesDraftRemainderDecisionRequest request,
+    private Task<SalesOrderDraftResponse> DecideRemainderChangeAsync(Guid draftId, int changeNo, SalesDraftRemainderDecisionRequest request,
+        SalesCommandMetadata metadata, bool approving, CancellationToken cancellationToken) => remainderDecisionSafety
+        ? RunRemainderDecisionAsync(draftId, changeNo, request, metadata, approving, cancellationToken)
+        : DecideRemainderChangeCoreAsync(draftId, changeNo, request, metadata, approving, cancellationToken);
+
+    private async Task<SalesOrderDraftResponse> DecideRemainderChangeCoreAsync(Guid draftId, int changeNo, SalesDraftRemainderDecisionRequest request,
         SalesCommandMetadata metadata, bool approving, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
