@@ -50,6 +50,7 @@ const ROUTED = [
   [CAPABILITY.accountingNormalDraftWorkDecision, ACCOUNTING_CAPABILITY.normalDraftWorkDecision, ACCOUNTING_ROUTE.normalDraftWorkDecision],
   [CAPABILITY.accountingManufacturingCostDifferenceWorkDecision, ACCOUNTING_CAPABILITY.manufacturingCostDifferenceWorkDecision, ACCOUNTING_ROUTE.manufacturingCostDifferenceWorkDecision],
   [CAPABILITY.accountingInvoiceLineCogsCorrectionWorkDecision, ACCOUNTING_CAPABILITY.invoiceLineCogsCorrectionWorkDecision, ACCOUNTING_ROUTE.invoiceLineCogsCorrectionWorkDecision],
+  [CAPABILITY.accountingSourceVoucherWorkDecision, ACCOUNTING_CAPABILITY.sourceVoucherWorkDecision, ACCOUNTING_ROUTE.sourceVoucherWorkDecision],
   [CAPABILITY.accountingInventoryCostCancellationWorkDecision, ACCOUNTING_CAPABILITY.inventoryCostCancellationWorkDecision, ACCOUNTING_ROUTE.inventoryCostCancellationWorkDecision],
   [CAPABILITY.accountingInvoicedShipmentCostWorkDecision, ACCOUNTING_CAPABILITY.invoicedShipmentCostWorkDecision, ACCOUNTING_ROUTE.invoicedShipmentCostWorkDecision],
   [CAPABILITY.accountingPurchaseCostDifferenceWorkDecision, ACCOUNTING_CAPABILITY.purchaseCostDifferenceWorkDecision, ACCOUNTING_ROUTE.purchaseCostDifferenceWorkDecision],
@@ -231,4 +232,17 @@ it('pairs exactly one cancellation purpose without publishing another native app
  expect(matchRoutes(shellRoutes,path.replace(':approvalId','cccccccc-0000-4000-8000-000000000056'))?.at(-1)?.route).toBe(mounted[0])
  expect(ACCOUNTING_ROUTE.invoicedShipmentReverseApprove).toBe('/muhasebe/sevk-smm-ters-kayit-onay')
  expect(CAPABILITY_ROUTE[CAPABILITY.accountingInvoicedShipmentReverseApprove]).toBe(ACCOUNTING_ROUTE.invoicedShipmentReverseApprove)
+})
+
+
+it('pairs one source voucher purpose while retaining the native read route and the same unique inbox rows',()=>{
+ const kind='accounting.source-voucher.v1',cap=CAPABILITY.accountingSourceVoucherWorkDecision,path=`/onaylarim/${kind}/:approvalId`
+ expect(cap).toBe('accounting.source-voucher.work-decision');expect(ACCOUNTING_ROUTE.sourceVoucherWorkDecision).toBe(path)
+ expect(CAPABILITY_ROUTE[cap]).toBe(path);expect(CAPABILITY_NAV_LABEL[cap]).toBe('')
+ expect(WORK_INBOX_KINDS.filter(row=>row.kind===kind)).toEqual([{kind,module:'accounting',capability:cap}])
+ expect(WORK_INBOX_KINDS.filter(row=>row.module==='accounting')).toHaveLength(12);expect(WORK_INBOX_KINDS).toHaveLength(69)
+ expect(new Set(WORK_INBOX_KINDS.map(row=>row.kind)).size).toBe(69)
+ const mounted=workRoutes.filter(route=>route.path===path.slice(1));expect(mounted).toHaveLength(1)
+ expect(matchRoutes(shellRoutes,path.replace(':approvalId','ac570000-0000-4000-8000-000000000001'))?.at(-1)?.route).toBe(mounted[0])
+ expect(ACCOUNTING_ROUTE.sourceVouchers).toBe('/muhasebe/kaynak-fisler');expect(CAPABILITY_ROUTE[CAPABILITY.accountingSourceVouchers]).toBe(ACCOUNTING_ROUTE.sourceVouchers)
 })

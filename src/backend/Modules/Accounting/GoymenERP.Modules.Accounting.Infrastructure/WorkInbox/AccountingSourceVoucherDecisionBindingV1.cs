@@ -20,7 +20,7 @@ public static class AccountingSourceVoucherDecisionBindingV1
         var rules=new List<WorkApprovalRuleResultV1>(2){new(ApprovalRequiredRule,null,WorkInboxRulesV1.Decimal(payable),null,null)};
         if(!periodOpen)rules.Add(new(PeriodWaitingRule,null,null,null,null));
         var label=AccountingWorkInboxFence.Label(officialNo,invoice);
-        return new(ModuleName,KindName,id,label,created.ToUniversalTime(),ScreenPath,AccountingWorkInboxFence.Actor(maker),rules,
+        return new(ModuleName,KindName,id,label,created.ToUniversalTime(),PurposePath+"/"+id.ToString("D",CultureInfo.InvariantCulture),AccountingWorkInboxFence.Actor(maker),rules,
             [new("invoice",label,invoice,null),new("source-document",AccountingWorkInboxFence.ShortReference(source),source,null),
              new("party",AccountingWorkInboxFence.ShortReference(party),party,null),new("currency",AccountingWorkInboxFence.ShortReference(currency),currency,null)]);
     }

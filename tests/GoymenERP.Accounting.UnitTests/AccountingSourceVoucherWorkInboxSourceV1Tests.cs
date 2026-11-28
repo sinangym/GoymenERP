@@ -57,7 +57,8 @@ public sealed class AccountingSourceVoucherWorkInboxSourceV1Tests
         Assert.Null(first.ExcludedDeciders);
         Assert.Equal("SENTETIK-FTR-9", first.DocumentLabel);
         Assert.Equal(Kit.Start.ToUniversalTime(), first.WaitingSinceUtc);
-        Assert.Equal(AccountingSourceVoucherWorkInboxSourceV1.ScreenPath, first.Link);
+        Assert.Equal($"/onaylarim/{AccountingSourceVoucherWorkInboxSourceV1.KindName}/{first.ItemId:D}", first.Link);
+        Assert.Equal("/muhasebe/kaynak-fisler", AccountingSourceVoucherWorkInboxSourceV1.ScreenPath);
         Assert.Equal([new WorkApprovalRuleResultV1(AccountingSourceVoucherWorkInboxSourceV1.ApprovalRequiredRule,
             null, "1180.5", null, null)], first.Rules);
         Assert.Equal(["invoice", "source-document", "party", "currency"], first.References.Select(reference => reference.Role));

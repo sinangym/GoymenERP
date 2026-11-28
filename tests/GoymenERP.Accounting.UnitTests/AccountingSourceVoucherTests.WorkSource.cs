@@ -25,7 +25,8 @@ public sealed partial class AccountingSourceVoucherTests
         var source=new AccountingSourceVoucherWorkInboxSourceV1(db,new(f.Company,f.User,f.Authority),owner);
         var snapshot=Assert.IsType<WorkApprovalDecisionSnapshotV1>(await source.ReadDecisionAsync(VoucherContext(),Invoice,default));
         Assert.True(snapshot.Pending);Assert.Equal("1",snapshot.SourceVersion);Assert.Equal(Maker.ToString("D"),snapshot.Item.PreparedBy);
-        Assert.Equal(AccountingSourceVoucherWorkInboxSourceV1.ScreenPath,snapshot.Item.Link);
+        Assert.Equal($"/onaylarim/{AccountingSourceVoucherWorkInboxSourceV1.KindName}/{snapshot.Item.ItemId:D}",snapshot.Item.Link);
+        Assert.Equal("/muhasebe/kaynak-fisler",AccountingSourceVoucherWorkInboxSourceV1.ScreenPath);
         var proof=Assert.IsType<WorkSourceVoucherProofV1>(snapshot.SourceVoucherProof);Assert.Equal(periodOpen,proof.PeriodOpen);
         Assert.Equal(periodOpen?1:2,snapshot.Item.Rules.Count);Assert.Equal("120",snapshot.Item.Rules[0].Actual);
         if(!periodOpen)Assert.Equal(AccountingSourceVoucherWorkInboxSourceV1.PeriodWaitingRule,snapshot.Item.Rules[1].RuleCode);

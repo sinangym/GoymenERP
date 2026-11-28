@@ -439,6 +439,7 @@ export const CAPABILITY_NAV_LABEL: Record<CapabilityId, string> = {
   'accounting.manufacturing-cost-difference.work-decision': '',
   'accounting.invoice-line-cogs-correction.work-decision': '',
   'accounting.inventory-cost-cancellation.work-decision': '',
+  'accounting.source-voucher.work-decision': '',
   'accounting.invoiced-shipment-cost.work-decision': '',
   'accounting.purchase-cost-difference.work-decision': '',
   'accounting.posting-mapping.work-decision': '',

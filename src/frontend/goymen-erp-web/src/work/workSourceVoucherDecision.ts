@@ -6,6 +6,7 @@ import { transferDispatchUtc } from '../inventory/transferDispatchApi'
 import { catalogVersion } from './workApprovedSourceCatalogDecision'
 
 // Candidate only: root owns the generic Work adapter and paired publication separately.
+export const SOURCE_VOUCHER_WORK_CAPABILITY = 'accounting.source-voucher.work-decision'
 export const SOURCE_VOUCHER_WORK_KIND = 'accounting.source-voucher.v1'
 export type WorkSourceVoucher = Omit<SourceVoucher,'finalizedVersion'|'version'|'mappingVersion'> & {
   readonly finalizedVersion:string;readonly version:string;readonly mappingVersion:string

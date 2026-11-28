@@ -1,6 +1,6 @@
-import {describe,expect,it} from 'vitest'
+import {afterEach,describe,expect,it,vi} from 'vitest'
 import {decodeSourceVoucher} from '../accounting/sourceVoucherApi'
-import {isWorkPackageEffectiveDate as date} from './workDecisionApi'
+import {isWorkPackageEffectiveDate as date,decodeWorkDecisionPreview,isWorkDecisionRequest,sendWorkDecision,WORK_DECISION_KINDS} from './workDecisionApi'
 import {COMPANY_A,COMPANY_B} from '../settings/testHarness'
 import {decodeWorkSourceVoucherPreview,validSourceVoucherPreview,isSourceVoucherDecisionRequest} from './workSourceVoucherDecision'
 import {sourceVoucherHuman,sourceVoucherFixture,sourceVoucherReversalHuman,sourceVoucherId as id,sourceVoucherActor as actor} from './sourceVoucherDecisionFixture'
@@ -112,5 +112,39 @@ describe('staged source voucher Work decoder',()=>{
   const r={expectedVersion:'1',approve:true,reason:null,delegationId:null};expect(isSourceVoucherDecisionRequest(r)).toBe(true)
   for(const extra of ['inventoryCostCancellation','normalJournalDraft','sourceVoucher','approvalReceipt'])expect(isSourceVoucherDecisionRequest({...r,[extra]:{}})).toBe(false)
   expect(isSourceVoucherDecisionRequest({...r,approve:false})).toBe(false);expect(isSourceVoucherDecisionRequest({...r,reason:''})).toBe(false)
+ })
+})
+
+
+afterEach(()=>vi.unstubAllGlobals())
+describe('paired source voucher shared Work transport',()=>{
+ const kind='accounting.source-voucher.v1',request={expectedVersion:'1',approve:true,reason:null,delegationId:null} as const
+ it('publishes the actual closed human wrapper and exactly one new kind with all other native facts unchanged',()=>{
+  const value=sourceVoucherFixture(COMPANY_A),before=JSON.stringify(value)
+  expect(decodeWorkDecisionPreview(value,COMPANY_A.toUpperCase(),kind,id.toUpperCase())?.sourceVoucher).toEqual(value.sourceVoucher)
+  expect(JSON.stringify(value)).toBe(before);expect(WORK_DECISION_KINDS).toHaveLength(53);expect(WORK_DECISION_KINDS.filter(k=>k===kind)).toEqual([kind])
+ })
+ it.each(['79228162514264337593543950335','-79228162514264337593543950335','0.0000000000000000000000000001','-0.0000000000000000000000000001'])('uses the existing native CLR callback losslessly at %s',raw=>{
+  const value=sourceVoucherFixture(COMPANY_A);value.sourceVoucher.voucher={...value.sourceVoucher.voucher,functionalPayable:raw,lines:value.sourceVoucher.voucher.lines.map(line=>({...line,functionalAmount:raw}))};value.rules[0]!.actual=raw
+  expect(decodeWorkDecisionPreview(value,COMPANY_A,kind,id)?.sourceVoucher?.voucher.functionalPayable).toBe(raw)
+ })
+ it.each(['79228162514264337593543950336','-79228162514264337593543950336','0.00000000000000000000000000001','-0.00000000000000000000000000001','-1.2300'])('refuses nonrepresentable or noncanonical native GET amount %s',raw=>{
+  const value=sourceVoucherFixture(COMPANY_A);value.sourceVoucher.voucher={...value.sourceVoucher.voucher,functionalPayable:raw};value.rules[0]!.actual=raw
+  expect(decodeWorkDecisionPreview(value,COMPANY_A,kind,id)).toBeNull()
+ })
+ it.each(['inventoryCostCancellation','inventoryCost','approvalReceipt','sourceFactsDigest'])('rejects a cross-kind or private top-level preview field %s',field=>{
+  expect(decodeWorkDecisionPreview({...sourceVoucherFixture(COMPANY_A),[field]:{}},COMPANY_A,kind,id)).toBeNull()
+ })
+ it.each([{approve:false},{reason:''},{expectedVersion:'2'},{inventoryCostCancellation:{expectedProposalVersion:'1'}},{normalJournalDraft:{periodId:id}}])('rejects an altered source voucher command before fetch %j',delta=>{
+  expect(isWorkDecisionRequest({...request,...delta},kind)).toBe(false)
+ })
+ it('requires the exact Posted original result and actual replay metadata for the four-field native approval',async()=>{
+  const body={companyId:COMPANY_A,kind,itemId:id,state:'Posted',replayed:true,originalCorrelationId:'SENTETIK original source voucher'}
+  const fetcher=vi.fn(async(_url:RequestInfo|URL,_init?:RequestInit)=>new Response(JSON.stringify(body),{status:200,headers:{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':body.originalCorrelationId}}));vi.stubGlobal('fetch',fetcher)
+  expect(await sendWorkDecision(COMPANY_A,kind,id,request,'SENTETIK retained key')).toMatchObject({type:'applied',replayed:true})
+  const sent=fetcher.mock.calls[0]![1];expect(JSON.parse(String(sent?.body))).toEqual(request);expect(new Headers(sent?.headers).get('Idempotency-Key')).toBe('SENTETIK retained key')
+  for(const state of ['Approved','Cancelled','CancellationReversalPending','CancelledByReversal']){fetcher.mockImplementation(async()=>new Response(JSON.stringify({...body,state}),{status:200,headers:{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':body.originalCorrelationId}}));expect((await sendWorkDecision(COMPANY_A,kind,id,request,'SENTETIK retained key')).type).toBe('unknown')}
+  fetcher.mockImplementation(async()=>new Response(JSON.stringify(body),{status:200}));expect((await sendWorkDecision(COMPANY_A,kind,id,request,'SENTETIK retained key')).type).toBe('unknown')
+  fetcher.mockImplementation(async()=>new Response(JSON.stringify({...body,sourceVoucher:{}}),{status:200,headers:{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':body.originalCorrelationId}}));expect((await sendWorkDecision(COMPANY_A,kind,id,request,'SENTETIK retained key')).type).toBe('unknown')
  })
 })

@@ -26,6 +26,7 @@ internal sealed partial class AccountingSourceVoucherWorkInboxSourceV1(
 {
     public const string ModuleName = "accounting";
     public const string KindName = "accounting.source-voucher.v1";
+    public const string PurposePath = AccountingSourceVoucherDecisionBindingV1.PurposePath;
     public const string ScreenPath = "/muhasebe/kaynak-fisler";
 
     /// <summary>The stored draft status the approve command accepts.</summary>

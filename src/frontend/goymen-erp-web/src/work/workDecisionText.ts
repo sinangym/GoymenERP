@@ -1,4 +1,5 @@
 export const WORK_DECISION_TEXT = {
+  sourceVoucherRule: 'Kesinleşmiş faturanın kayıtlı fişi farklı yetkili onayı bekler.',
   inventoryCostCancellationRule: 'Kaynak faturanın iptali için hazırlanmış kayıtlı maliyet payları farklı yetkili onayı bekler.',
   inventoryCostTitle: 'Kayıtlı maliyet önerisi',
   inventoryCostRule: 'Hazırlanmış maliyet önerisi farklı yetkili onayı bekler.',
