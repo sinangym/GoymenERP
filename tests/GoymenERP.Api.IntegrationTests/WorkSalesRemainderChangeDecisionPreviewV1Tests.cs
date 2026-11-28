@@ -51,7 +51,7 @@ public sealed class WorkSalesRemainderChangeDecisionPreviewV1Tests
     {
         var change = new SalesDraftRemainderChangeV1(3, "Rev.0", Line, int.MaxValue, "Revise", "Pending", "2.0000", "0001.2500", "SENTETIK kalan talebi",
             Maker.ToString("D"), At, "1.00", "0.500", "0.25", null, null, null, null, null);
-        return Seal(new(Company, Id, "SENTETIK-SO-6", "6", 0, "Order", "Approved", change,
+        return Seal(new(Company, Id, "SENTETIK-SO-6", "6", 0, "Draft", "Approved", change,
             new(Line, int.MaxValue, Guid.Parse("6a110000-0000-4000-8000-000000000006"), "SNT-P", "Sentetik ürün", Guid.Parse("6a110000-0000-4000-8000-000000000007"), "KG", "2.0000", "Open"), true, true, "", "")
             { DraftCreatedBy = Maker.ToString("D"), IsSalesSupport = false });
     }
