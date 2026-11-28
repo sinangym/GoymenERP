@@ -32,9 +32,9 @@ public sealed class WorkMorningSummaryReadV1(WorkDbContext database, ICompanyCon
             throw Unavailable();
         var second = await ReadSourceAsync(scope, slot, cancellationToken);
         if (first.Digest != second.Digest || !first.Items.SequenceEqual(second.Items)) throw Unavailable();
-        // Revalidate every owner's read after the last source await; a removed grant must not release cached counts.
-        await CheckItemsAsync(scope, second, cancellationToken);
         await MemberAsync(scope, cancellationToken);
+        // Owner reads run after the final membership await so a removed grant cannot release cached counts.
+        await CheckItemsAsync(scope, second, cancellationToken);
         Fence(scope, cancellationToken);
         if (second.Digest is not { } digest) return null;
         if (digest.ScheduleVersion != schedule.Version) throw Unavailable();
