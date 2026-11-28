@@ -60,8 +60,7 @@ public sealed partial class PurchasingDbContext
             var record = PurchaseUnorderedAcceptanceStoreV1.Restore(entry.Entity.RecordJson);
             if (record.Source.CompanyId != entry.Entity.CompanyId || record.Source.AcceptanceId != entry.Entity.AcceptanceId
                 || record.Source.AcceptanceLineId != entry.Entity.AcceptanceLineId || record.RecordedBy != entry.Entity.ActorId
-                || PurchasingRequestHash.Compute(PurchaseUnorderedAcceptanceOwnerContractV1.RecordCommand, record.Source.AcceptanceId,
-                    PurchaseUnorderedAcceptanceOwnerContractV1.Request(record)) != entry.Entity.RequestHash)
+                || PurchaseUnorderedAcceptanceOwnerContractV1.RequestHash(record) != entry.Entity.RequestHash)
                 throw new InvalidOperationException("Siparişsiz kabul makbuzunun kaynağı uyuşmuyor.");
         }
     }

@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+using GoymenERP.Modules.Purchasing.Domain.Orders;
 using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Purchasing.Application.Contracts;
@@ -11,7 +13,12 @@ public sealed record RecordPurchaseUnorderedAcceptanceV1(Guid AcceptanceId, Guid
     IReadOnlyList<PurchaseAcceptanceDocumentEvidenceV1> ControlEvidence);
 
 public sealed record PurchaseUnorderedAcceptanceRecordV1(PurchaseUnorderedAcceptanceSourceV1 Source,
-    string PartyVersion, string AccountVersion, ProfileVersionV1 UnitProfile, string RecordedBy, DateTimeOffset RecordedAtUtc);
+    string PartyVersion, string AccountVersion, ProfileVersionV1 UnitProfile, string RecordedBy, DateTimeOffset RecordedAtUtc)
+{
+    // One persisted declaration, also exposed by Source GET; never duplicate or backfill historical facts.
+    [JsonIgnore]
+    public PurchaseUnorderedAcceptanceDeclarationV2? Declaration => Source.Declaration;
+}
 public sealed record PurchaseUnorderedAcceptanceWriteV1(PurchaseUnorderedAcceptanceRecordV1 Record,
     bool IsReplay, string OriginalCorrelationId);
 
@@ -19,6 +26,9 @@ public interface IPurchaseUnorderedAcceptanceServiceV1
 {
     Task<PurchaseUnorderedAcceptanceWriteV1> RecordAsync(RecordPurchaseUnorderedAcceptanceV1 request,
         PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default);
+    Task<PurchaseUnorderedAcceptanceWriteV1> RecordOccurrenceAsync(RecordPurchaseUnorderedAcceptanceV2 request,
+        PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        throw new PurchasingServiceException(503, "service_unavailable");
 }
 
 /// <summary>Required actual owner bridge for ALS-D130: validate the actual company, active supplier/account and
@@ -31,6 +41,9 @@ public interface IPurchaseUnorderedAcceptancePrerequisitesV1
 {
     Task ValidateAsync(Guid companyId, RecordPurchaseUnorderedAcceptanceV1 request,
         Func<CancellationToken, Task> requireStill, CancellationToken cancellationToken);
+    Task ValidateOccurrenceAsync(Guid companyId, RecordPurchaseUnorderedAcceptanceV2 request,
+        Func<CancellationToken, Task> requireStill, CancellationToken cancellationToken) =>
+        throw new PurchasingServiceException(503, "service_unavailable");
 }
 
 public interface IPurchaseUnorderedAcceptanceStoreV1
@@ -39,11 +52,17 @@ public interface IPurchaseUnorderedAcceptanceStoreV1
         PurchasingWriteEnvelope envelope, string requestHash,
         Func<CancellationToken, Task<PurchaseUnorderedAcceptanceRecordV1>> prepare,
         Func<CancellationToken, Task> requireStill, CancellationToken cancellationToken);
+    Task<PurchaseUnorderedAcceptanceWriteV1> RecordOccurrenceAsync(Guid companyId, RecordPurchaseUnorderedAcceptanceV2 request,
+        PurchasingWriteEnvelope envelope, string requestHash,
+        Func<CancellationToken, Task<PurchaseUnorderedAcceptanceRecordV1>> prepare,
+        Func<CancellationToken, Task> requireStill, CancellationToken cancellationToken) =>
+        throw new PurchasingServiceException(503, "service_unavailable");
 }
 
 public static class PurchaseUnorderedAcceptanceOwnerContractV1
 {
     public const string RecordCommand = "purchasing.unordered-acceptance.record.v1";
+    public const string RecordOccurrenceCommand = "purchasing.unordered-acceptance.record.v2";
     public const int DownDataGuard = 52320;
 
     public static bool Valid(RecordPurchaseUnorderedAcceptanceV1? r) => r is not null && r.ExpectedVersion == "0"
@@ -59,7 +78,8 @@ public static class PurchaseUnorderedAcceptanceOwnerContractV1
     {
         if (record?.Source is not { } s || s.CompanyId == Guid.Empty || s.Version != 1
             || s.UninvoicedQuantity != s.AcceptedQuantity || !Version(record.RecordedBy, 128)
-            || record.RecordedAtUtc.Offset != TimeSpan.Zero) return false;
+            || record.RecordedAtUtc.Offset != TimeSpan.Zero
+            || record.Declaration?.Reason is { Length: > PurchaseOrder.MaximumReasonLength }) return false;
         return Valid(Request(record));
     }
 
@@ -74,6 +94,17 @@ public static class PurchaseUnorderedAcceptanceOwnerContractV1
     { ControlEvidence = request.ControlEvidence is null ? null! : Array.AsReadOnly(request.ControlEvidence.ToArray()) };
     public static PurchaseUnorderedAcceptanceRecordV1 Freeze(PurchaseUnorderedAcceptanceRecordV1 record) => record with
     { Source = record.Source with { ControlEvidence = Array.AsReadOnly(record.Source.ControlEvidence.ToArray()) } };
+    public static bool Valid(RecordPurchaseUnorderedAcceptanceV2? request) => request is not null && Valid(request.Occurrence)
+        && request.Reason is not { Length: > PurchaseOrder.MaximumReasonLength };
+    public static RecordPurchaseUnorderedAcceptanceV2 Freeze(RecordPurchaseUnorderedAcceptanceV2 request) =>
+        request with { Occurrence = Freeze(request.Occurrence) };
+    public static string RequestHash(RecordPurchaseUnorderedAcceptanceV1 request) =>
+        PurchasingRequestHash.Compute(RecordCommand, request.AcceptanceId, request);
+    public static string RequestHash(RecordPurchaseUnorderedAcceptanceV2 request) =>
+        PurchasingRequestHash.Compute(RecordOccurrenceCommand, request.Occurrence.AcceptanceId, request);
+    public static string RequestHash(PurchaseUnorderedAcceptanceRecordV1 record) => record.Declaration is { } declaration
+        ? RequestHash(new RecordPurchaseUnorderedAcceptanceV2(Request(record), declaration.BusinessDate, declaration.Reason))
+        : RequestHash(Request(record));
 
     private static bool Subject(PurchaseUnorderedAcceptanceSubjectV1? subject) => subject switch
     {

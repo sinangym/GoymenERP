@@ -5,37 +5,73 @@ using GoymenERP.Modules.Settings.Application.Contracts.V1;
 
 namespace GoymenERP.Modules.Purchasing.Application;
 
-/// <summary>Composition of existing master owners only. Missing document-line/date proof remains unavailable;
-/// no order, admission, approval, stock or financial event is manufactured by validation.</summary>
+/// <summary>Existing master owners plus actual document witnesses. V2 uses the explicitly declared business day;
+/// v1 retains its legacy semantic-proof path. No order, admission, approval, stock or financial event is manufactured.</summary>
 public sealed class PurchaseUnorderedAcceptancePrerequisitesV1(ICompanyContext company,
     IPurchasingPartyAccountPortV1 parties, ISettingsPrerequisiteProvider profiles, ISettingsReferenceListReaderV1 references,
     PurchaseUnitVerifier units, IProductPurchaseEligibilityPortV1? products = null,
-    IPurchaseUnorderedAcceptanceEvidenceReadV1? evidence = null) : IPurchaseUnorderedAcceptancePrerequisitesV1
+    IPurchaseUnorderedAcceptanceEvidenceReadV1? evidence = null,
+    IPurchaseUnorderedAcceptanceDocumentReadV1? documents = null) : IPurchaseUnorderedAcceptancePrerequisitesV1
 {
     public async Task ValidateAsync(Guid companyId, RecordPurchaseUnorderedAcceptanceV1 request,
+        Func<CancellationToken, Task> requireStill, CancellationToken token) =>
+        await ValidateCoreAsync(companyId, request, null, requireStill, token);
+
+    public async Task ValidateOccurrenceAsync(Guid companyId, RecordPurchaseUnorderedAcceptanceV2 request,
         Func<CancellationToken, Task> requireStill, CancellationToken token)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (!PurchaseUnorderedAcceptanceOwnerContractV1.Valid(request)) throw Failure(400);
+        await ValidateCoreAsync(companyId, request.Occurrence, request.BusinessDate, requireStill, token);
+    }
+
+    private async Task ValidateCoreAsync(Guid companyId, RecordPurchaseUnorderedAcceptanceV1 request,
+        DateOnly? declaredBusinessDate, Func<CancellationToken, Task> requireStill, CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(request); ArgumentNullException.ThrowIfNull(requireStill);
         var frozen = PurchaseUnorderedAcceptanceOwnerContractV1.Freeze(request);
         await Fence();
         if (!PurchaseUnorderedAcceptanceOwnerContractV1.Valid(frozen)) throw Failure(400);
-        if (evidence is null) throw Failure(503);
-        var source = await Read(() => evidence.ReadAsync(companyId, frozen, _ => Fence(), token), answer =>
-            answer?.Facts is not { } facts ? answer! : answer with { Facts = facts with
-            { ControlEvidence = facts.ControlEvidence is null ? null! : Array.AsReadOnly(facts.ControlEvidence.ToArray()) } });
-        if (source is null || !Enum.IsDefined(source.Outcome) || source.Outcome != PurchaseUnorderedAcceptanceEvidenceOutcomeV1.Found && source.Facts is not null)
-            throw Failure(503);
-        if (source.Outcome != PurchaseUnorderedAcceptanceEvidenceOutcomeV1.Found)
-            throw Failure(source.Outcome == PurchaseUnorderedAcceptanceEvidenceOutcomeV1.Denied ? 403
-                : source.Outcome == PurchaseUnorderedAcceptanceEvidenceOutcomeV1.NotFound ? 404 : 503);
-        if (source.Facts is not { BusinessDate: { } day } proof || proof.CompanyId != companyId
-            || proof.AcceptanceId != frozen.AcceptanceId || proof.AcceptanceLineId != frozen.AcceptanceLineId
-            || proof.SupplierPartyId != frozen.SupplierPartyId || proof.CompanyAccountId != frozen.CompanyAccountId
-            || proof.Subject != frozen.Subject || proof.UnitId != frozen.UnitId || proof.AcceptedQuantity != frozen.AcceptedQuantity
-            || proof.OccurredAtUtc != frozen.OccurredAtUtc || proof.OccurredAtUtc.Offset != TimeSpan.Zero
-            || !SameEvidence(proof.Evidence, frozen.Evidence) || proof.ControlEvidence is null
-            || proof.ControlEvidence.Count != frozen.ControlEvidence.Count
-            || proof.ControlEvidence.Where((value, index) => !SameEvidence(value, frozen.ControlEvidence[index])).Any()) throw Failure(503);
+        DateOnly day;
+        if (declaredBusinessDate is { } declared)
+        {
+            if (documents is null) throw Failure(503);
+            // The Purchasing command records the person's declaration. Documents proves only its attached immutable files.
+            foreach (var expected in frozen.ControlEvidence.Prepend(frozen.Evidence))
+            {
+                var document = await Read(() => documents.ReadAsync(companyId, expected, _ => Fence(), token));
+                if (document is null || !Enum.IsDefined(document.Outcome)
+                    || document.Outcome != PurchaseUnorderedAcceptanceEvidenceOutcomeV1.Found && document.Facts is not null) throw Failure(503);
+                if (document.Outcome != PurchaseUnorderedAcceptanceEvidenceOutcomeV1.Found)
+                    throw Failure(document.Outcome == PurchaseUnorderedAcceptanceEvidenceOutcomeV1.Denied ? 403
+                        : document.Outcome == PurchaseUnorderedAcceptanceEvidenceOutcomeV1.NotFound ? 404 : 503);
+                if (document.Facts is not { } facts || facts.CompanyId != companyId || facts.DocumentId != expected.DocumentId
+                    || facts.DocumentVersion != expected.DocumentVersion
+                    || !string.Equals(facts.Sha256, expected.Sha256, StringComparison.OrdinalIgnoreCase)) throw Failure(503);
+            }
+            day = declared;
+        }
+        else
+        {
+            if (evidence is null) throw Failure(503);
+            var source = await Read(() => evidence.ReadAsync(companyId, frozen, _ => Fence(), token), answer =>
+                answer?.Facts is not { } facts ? answer! : answer with { Facts = facts with
+                { ControlEvidence = facts.ControlEvidence is null ? null! : Array.AsReadOnly(facts.ControlEvidence.ToArray()) } });
+            if (source is null || !Enum.IsDefined(source.Outcome) || source.Outcome != PurchaseUnorderedAcceptanceEvidenceOutcomeV1.Found && source.Facts is not null)
+                throw Failure(503);
+            if (source.Outcome != PurchaseUnorderedAcceptanceEvidenceOutcomeV1.Found)
+                throw Failure(source.Outcome == PurchaseUnorderedAcceptanceEvidenceOutcomeV1.Denied ? 403
+                    : source.Outcome == PurchaseUnorderedAcceptanceEvidenceOutcomeV1.NotFound ? 404 : 503);
+            if (source.Facts is not { BusinessDate: { } evidencedDay } proof || proof.CompanyId != companyId
+                || proof.AcceptanceId != frozen.AcceptanceId || proof.AcceptanceLineId != frozen.AcceptanceLineId
+                || proof.SupplierPartyId != frozen.SupplierPartyId || proof.CompanyAccountId != frozen.CompanyAccountId
+                || proof.Subject != frozen.Subject || proof.UnitId != frozen.UnitId || proof.AcceptedQuantity != frozen.AcceptedQuantity
+                || proof.OccurredAtUtc != frozen.OccurredAtUtc || proof.OccurredAtUtc.Offset != TimeSpan.Zero
+                || !SameEvidence(proof.Evidence, frozen.Evidence) || proof.ControlEvidence is null
+                || proof.ControlEvidence.Count != frozen.ControlEvidence.Count
+                || proof.ControlEvidence.Where((value, index) => !SameEvidence(value, frozen.ControlEvidence[index])).Any()) throw Failure(503);
+            day = evidencedDay;
+        }
 
         var supplier = await Read(() => parties.GetAuthorizedAsync(frozen.SupplierPartyId, frozen.CompanyAccountId, token));
         if (supplier is null || !Enum.IsDefined(supplier.Outcome)) throw Failure(503);

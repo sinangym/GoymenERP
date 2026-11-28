@@ -2,8 +2,9 @@ using System.Text.Json.Serialization;
 
 namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 
-/// <summary>ALS-D130: an actual, company-owned document line, not a fabricated purchase order.
-/// The acceptance owner must verify the retained Documents identity/version/hash before answering Found.</summary>
+/// <summary>ALS-D130: the declared source-line reference and attached document witness for a company-owned occurrence.
+/// The acceptance owner verifies the retained Documents identity/version/hash. A file hash does not certify the
+/// physical occurrence or the semantic accuracy of the person's line declaration; no purchase order is fabricated.</summary>
 public sealed record PurchaseAcceptanceDocumentEvidenceV1(Guid DocumentId, long DocumentVersion,
     string Sha256, string SourceLineId);
 
@@ -23,7 +24,12 @@ public sealed record PurchaseUnorderedServiceSubjectV1(Guid ServiceTypeId, strin
 public sealed record PurchaseUnorderedAcceptanceSourceV1(Guid CompanyId, Guid AcceptanceId, Guid AcceptanceLineId,
     long Version, Guid SupplierPartyId, Guid CompanyAccountId, PurchaseUnorderedAcceptanceSubjectV1 Subject,
     Guid UnitId, string AcceptedQuantity, string UninvoicedQuantity, DateTimeOffset OccurredAtUtc,
-    PurchaseAcceptanceDocumentEvidenceV1 Evidence, IReadOnlyList<PurchaseAcceptanceDocumentEvidenceV1> ControlEvidence);
+    PurchaseAcceptanceDocumentEvidenceV1 Evidence, IReadOnlyList<PurchaseAcceptanceDocumentEvidenceV1> ControlEvidence)
+{
+    // Genuine v1 sources remain absent/null; no historical day or reason is reconstructed.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public PurchaseUnorderedAcceptanceDeclarationV2? Declaration { get; init; }
+}
 
 public enum PurchaseUnorderedAcceptanceSourceOutcomeV1 { Found = 1, NotFound = 2, Unavailable = 3 }
 public sealed record PurchaseUnorderedAcceptanceSourceAnswerV1(PurchaseUnorderedAcceptanceSourceOutcomeV1 Outcome,

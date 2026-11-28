@@ -13,7 +13,9 @@ public enum PurchaseUnorderedAcceptanceEvidenceOutcomeV1 { Unavailable = 0, Deni
 public sealed record PurchaseUnorderedAcceptanceEvidenceAnswerV1(PurchaseUnorderedAcceptanceEvidenceOutcomeV1 Outcome,
     PurchaseUnorderedAcceptanceEvidenceFactsV1? Facts);
 
-/// <summary>Mandatory narrow Documents/source-owner bridge. Verify clean, readable immutable versions and real
+/// <summary>Legacy v1 semantic source-owner bridge; its command and original receipts retain their exact behavior.
+/// New explicit occurrence declarations use IPurchaseUnorderedAcceptanceDocumentReadV1 instead of requiring their own prior existence.
+/// Verify clean, readable immutable versions and real
 /// line/business-date provenance under current owner permissions, fencing the caller after awaited owner reads.
 /// An invoice-import reservation or a PO must not be fabricated from AcceptanceId. No permissive implementation
 /// is registered: until actual source evidence is connected the composite refuses the occurrence with 503.

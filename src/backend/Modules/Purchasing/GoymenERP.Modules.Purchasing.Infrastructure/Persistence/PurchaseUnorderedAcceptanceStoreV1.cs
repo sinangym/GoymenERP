@@ -24,13 +24,28 @@ public sealed class PurchaseUnorderedAcceptanceStoreV1(PurchasingDbContext db, I
 
     public async Task<PurchaseUnorderedAcceptanceWriteV1> RecordAsync(Guid companyId, RecordPurchaseUnorderedAcceptanceV1 request,
         PurchasingWriteEnvelope envelope, string requestHash, Func<CancellationToken, Task<PurchaseUnorderedAcceptanceRecordV1>> prepare,
+        Func<CancellationToken, Task> requireStill, CancellationToken token) =>
+        await RecordCoreAsync(companyId, request, null, envelope, requestHash, prepare, requireStill, token);
+
+    public async Task<PurchaseUnorderedAcceptanceWriteV1> RecordOccurrenceAsync(Guid companyId, RecordPurchaseUnorderedAcceptanceV2 request,
+        PurchasingWriteEnvelope envelope, string requestHash, Func<CancellationToken, Task<PurchaseUnorderedAcceptanceRecordV1>> prepare,
         Func<CancellationToken, Task> requireStill, CancellationToken token)
+    {
+        if (!PurchaseUnorderedAcceptanceOwnerContractV1.Valid(request)) throw Failure(400);
+        return await RecordCoreAsync(companyId, request.Occurrence, new(request.BusinessDate, request.Reason), envelope,
+            requestHash, prepare, requireStill, token);
+    }
+
+    private async Task<PurchaseUnorderedAcceptanceWriteV1> RecordCoreAsync(Guid companyId, RecordPurchaseUnorderedAcceptanceV1 request,
+        PurchaseUnorderedAcceptanceDeclarationV2? declaration, PurchasingWriteEnvelope envelope, string requestHash,
+        Func<CancellationToken, Task<PurchaseUnorderedAcceptanceRecordV1>> prepare, Func<CancellationToken, Task> requireStill, CancellationToken token)
     {
         ArgumentNullException.ThrowIfNull(prepare); ArgumentNullException.ThrowIfNull(requireStill);
         if (!PurchaseUnorderedAcceptanceOwnerContractV1.Valid(request) || !Scope(companyId)
             || envelope is null || envelope.PermissionCode != PurchasingPermissionManifestV1.GoodsReceiptsRecord
             || !Text(envelope.ActorId) || !Text(envelope.CorrelationId) || !Text(envelope.IdempotencyKey)
-            || requestHash != RequestHash(request)) throw Failure(400);
+            || requestHash != (declaration is null ? RequestHash(request) : PurchaseUnorderedAcceptanceOwnerContractV1.RequestHash(
+                new RecordPurchaseUnorderedAcceptanceV2(request, declaration.BusinessDate, declaration.Reason)))) throw Failure(400);
         var key = Hash(envelope.IdempotencyKey);
         // Both sides of the first awaited authority call precede ownership. Refusal preserves caller WIP/audit/transaction.
         Entry(); await Fence(); Entry();
@@ -54,7 +69,7 @@ public sealed class PurchaseUnorderedAcceptanceStoreV1(PurchasingDbContext db, I
                 record = PurchaseUnorderedAcceptanceOwnerContractV1.Freeze(record);
                 await Fence();
                 if (!PurchaseUnorderedAcceptanceOwnerContractV1.Valid(record) || record.Source.CompanyId != companyId
-                    || record.RecordedBy != envelope.ActorId || RequestHash(PurchaseUnorderedAcceptanceOwnerContractV1.Request(record)) != requestHash)
+                    || record.RecordedBy != envelope.ActorId || PurchaseUnorderedAcceptanceOwnerContractV1.RequestHash(record) != requestHash)
                     throw Failure(503);
                 var json = JsonSerializer.Serialize(record, Json);
                 db.UnorderedAcceptances.Add(new() { CompanyId = companyId, AcceptanceId = request.AcceptanceId,
@@ -63,7 +78,7 @@ public sealed class PurchaseUnorderedAcceptanceStoreV1(PurchasingDbContext db, I
                     AcceptanceId = request.AcceptanceId, AcceptanceLineId = request.AcceptanceLineId,
                     ActorId = envelope.ActorId, CorrelationId = envelope.CorrelationId, RecordJson = json });
                 await db.SaveChangesAsync(token); await Fence();
-                audit.Enqueue(new AuditEventDraft(companyId, "purchasing.unordered-acceptance.recorded.v1",
+                audit.Enqueue(new AuditEventDraft(companyId, declaration is null ? "purchasing.unordered-acceptance.recorded.v1" : "purchasing.unordered-acceptance.recorded.v2",
                     "Purchasing.UnorderedAcceptance", $"{request.AcceptanceId:D}:{request.AcceptanceLineId:D}", "RecordOccurrence", 0, 1,
                     AuditActorTypes.User, envelope.ActorId, envelope.PermissionCode, envelope.RoleCodes, "{}", json,
                     "Siparişsiz alış kabul olgusu kaydedildi", null, AuditAiInvolvement.None, null, envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent,
@@ -115,7 +130,7 @@ public sealed class PurchaseUnorderedAcceptanceStoreV1(PurchasingDbContext db, I
                 throw new PurchasingStoreException(PurchasingStoreCodes.SameKeyPayloadMismatch, "Aynı anahtar farklı içerikle kullanılamaz.");
             var record = Restore(row.Fact);
             if (row.Attempt.RecordJson != row.Fact.RecordJson || !Text(row.Attempt.CorrelationId)
-                || record.RecordedBy != envelope.ActorId || RequestHash(PurchaseUnorderedAcceptanceOwnerContractV1.Request(record)) != requestHash)
+                || record.RecordedBy != envelope.ActorId || PurchaseUnorderedAcceptanceOwnerContractV1.RequestHash(record) != requestHash)
                 throw Failure(503);
             return new(record, true, row.Attempt.CorrelationId);
         }
@@ -140,7 +155,7 @@ public sealed class PurchaseUnorderedAcceptanceStoreV1(PurchasingDbContext db, I
             if (row is null) return new(PurchaseUnorderedAcceptanceSourceOutcomeV1.NotFound, null);
             var record = Restore(row.Fact);
             if (row.Attempt is null || row.Attempt.RecordJson != row.Fact.RecordJson || row.Attempt.ActorId != record.RecordedBy
-                || !Text(row.Attempt.CorrelationId) || row.Attempt.RequestHash != RequestHash(PurchaseUnorderedAcceptanceOwnerContractV1.Request(record)))
+                || !Text(row.Attempt.CorrelationId) || row.Attempt.RequestHash != PurchaseUnorderedAcceptanceOwnerContractV1.RequestHash(record))
                 return new(PurchaseUnorderedAcceptanceSourceOutcomeV1.Unavailable, null);
             return new(PurchaseUnorderedAcceptanceSourceOutcomeV1.Found, record.Source);
         }
@@ -182,8 +197,7 @@ public sealed class PurchaseUnorderedAcceptanceStoreV1(PurchasingDbContext db, I
     }
     private bool Scope(Guid id) => id != Guid.Empty && company.IsResolved && company.CompanyId == id;
     private static bool Text(string? value) => !string.IsNullOrWhiteSpace(value) && value == value.Trim() && value.Length <= 128;
-    private static string RequestHash(RecordPurchaseUnorderedAcceptanceV1 request) => PurchasingRequestHash.Compute(
-        PurchaseUnorderedAcceptanceOwnerContractV1.RecordCommand, request.AcceptanceId, request);
+    private static string RequestHash(RecordPurchaseUnorderedAcceptanceV1 request) => PurchaseUnorderedAcceptanceOwnerContractV1.RequestHash(request);
     private static string Hash(string text) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text))).ToLowerInvariant();
     private static bool Deadlock(Exception error) => error is SqlException { Number: 1205 }
         || error is DbUpdateException { InnerException: SqlException { Number: 1205 } };

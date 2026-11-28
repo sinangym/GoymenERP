@@ -12,7 +12,19 @@ public sealed class PurchaseUnorderedAcceptanceServiceV1(ICompanyContext company
     TimeProvider time, IPurchaseUnorderedAcceptancePrerequisitesV1? prerequisites = null) : IPurchaseUnorderedAcceptanceServiceV1
 {
     public async Task<PurchaseUnorderedAcceptanceWriteV1> RecordAsync(RecordPurchaseUnorderedAcceptanceV1 request,
+        PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        await RecordCoreAsync(request, null, metadata, cancellationToken);
+
+    public async Task<PurchaseUnorderedAcceptanceWriteV1> RecordOccurrenceAsync(RecordPurchaseUnorderedAcceptanceV2 request,
         PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (request.Occurrence is null) { await RequireAsync(cancellationToken); throw Failure(400); }
+        return await RecordCoreAsync(request.Occurrence, new(request.BusinessDate, request.Reason), metadata, cancellationToken);
+    }
+
+    private async Task<PurchaseUnorderedAcceptanceWriteV1> RecordCoreAsync(RecordPurchaseUnorderedAcceptanceV1 request,
+        PurchaseUnorderedAcceptanceDeclarationV2? declaration, PurchasingCommandMetadata metadata, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request); ArgumentNullException.ThrowIfNull(metadata);
         var scope = await RequireAsync(cancellationToken);
@@ -21,30 +33,39 @@ public sealed class PurchaseUnorderedAcceptanceServiceV1(ICompanyContext company
         var envelope = new PurchasingWriteEnvelope(scope.Actor, PurchasingPermissionManifestV1.GoodsReceiptsRecord,
             scope.Roles, metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey, correlation.SourceChannel,
             correlation.ClientIpAddress, correlation.UserAgent);
-        var hash = PurchasingRequestHash.Compute(PurchaseUnorderedAcceptanceOwnerContractV1.RecordCommand, frozen.AcceptanceId, frozen);
+        var occurrence = declaration is null ? null : new RecordPurchaseUnorderedAcceptanceV2(frozen, declaration.BusinessDate, declaration.Reason);
+        if (occurrence is not null && !PurchaseUnorderedAcceptanceOwnerContractV1.Valid(occurrence)) throw Failure(400);
+        var hash = occurrence is null ? PurchaseUnorderedAcceptanceOwnerContractV1.RequestHash(frozen)
+            : PurchaseUnorderedAcceptanceOwnerContractV1.RequestHash(occurrence);
         PurchaseUnorderedAcceptanceWriteV1 result;
         try
         {
-            result = await store.RecordAsync(scope.Company, frozen, envelope, hash, async token =>
+            async Task<PurchaseUnorderedAcceptanceRecordV1> Prepare(CancellationToken token)
             {
                 if (prerequisites is null) throw Failure(503);
-                try { await prerequisites.ValidateAsync(scope.Company, frozen, Fence, token); }
+                try
+                {
+                    if (occurrence is null) await prerequisites.ValidateAsync(scope.Company, frozen, Fence, token);
+                    else await prerequisites.ValidateOccurrenceAsync(scope.Company, occurrence, Fence, token);
+                }
                 catch (OperationCanceledException) { throw; }
                 catch { await Fence(token); throw; }
                 await Fence(token);
                 return new(new(scope.Company, frozen.AcceptanceId, frozen.AcceptanceLineId, 1, frozen.SupplierPartyId,
                     frozen.CompanyAccountId, frozen.Subject, frozen.UnitId, frozen.AcceptedQuantity, frozen.AcceptedQuantity,
-                    frozen.OccurredAtUtc, frozen.Evidence, frozen.ControlEvidence), frozen.ExpectedPartyVersion,
+                    frozen.OccurredAtUtc, frozen.Evidence, frozen.ControlEvidence) { Declaration = declaration }, frozen.ExpectedPartyVersion,
                     frozen.ExpectedAccountVersion, frozen.UnitProfile, scope.Actor, time.GetUtcNow());
-            }, Fence, cancellationToken);
+            }
+            result = occurrence is null
+                ? await store.RecordAsync(scope.Company, frozen, envelope, hash, Prepare, Fence, cancellationToken)
+                : await store.RecordOccurrenceAsync(scope.Company, occurrence, envelope, hash, Prepare, Fence, cancellationToken);
         }
         catch (PurchasingStoreException error) when (error.Code == PurchasingStoreCodes.SameKeyPayloadMismatch)
         { await Fence(cancellationToken); throw new PurchasingServiceException(409, PurchasingProblemCodesV1.SameKeyPayloadMismatch); }
         await Fence(cancellationToken);
         if (result is null || !PurchaseUnorderedAcceptanceOwnerContractV1.Valid(result.Record)
             || result.Record.Source.CompanyId != scope.Company || result.Record.RecordedBy != scope.Actor
-            || PurchasingRequestHash.Compute(PurchaseUnorderedAcceptanceOwnerContractV1.RecordCommand, frozen.AcceptanceId,
-                PurchaseUnorderedAcceptanceOwnerContractV1.Request(result.Record)) != hash
+            || PurchaseUnorderedAcceptanceOwnerContractV1.RequestHash(result.Record) != hash
             || string.IsNullOrWhiteSpace(result.OriginalCorrelationId)
             || !result.IsReplay && result.OriginalCorrelationId != metadata.CorrelationId) throw Failure(503);
         return result;
