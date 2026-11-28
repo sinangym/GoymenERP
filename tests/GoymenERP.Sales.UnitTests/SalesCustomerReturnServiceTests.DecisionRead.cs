@@ -84,7 +84,9 @@ public sealed partial class SalesCustomerReturnServiceTests
     {
         var artifact = await ReturnReceiptFixture(true); var r = Assert.IsType<SalesCustomerReturnOriginalReceiptV1>(RestoreReturn(artifact));
         r = missing ? r with { OriginalDecision = null! } : r with { SourceFactsDigest = new('a', 64) };
-        r = r with { OriginalDecisionDigest = SalesCustomerReturnDecisionDigestsV1.OriginalDecisionDigest(r) };
+        // A malformed provider can return a null despite the contract annotation. Keep its prior digest in that case:
+        // serializing the deliberately invalid object would fail in the test before the actual read guard sees it.
+        if (!missing) r = r with { OriginalDecisionDigest = SalesCustomerReturnDecisionDigestsV1.OriginalDecisionDigest(r) };
         var f = SafetyWorld(); f.Store.DecisionOriginalAnswer = new(SalesCustomerReturnDecisionReadStateV1.Found, r) { CurrentVersion = 3 };
         var answer = await f.Service.ReadCustomerReturnOriginalVersionAsync(ReturnId, "2", _ => Task.CompletedTask);
         Assert.Equal(SalesCustomerReturnDecisionReadStateV1.Unavailable, answer.State); Assert.Null(answer.Receipt);

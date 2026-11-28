@@ -125,7 +125,7 @@ public sealed partial class SalesContractServiceTests
         var snapshot = await source.ReadDecisionAsync(new(Company, Manager, "SENTETIK selected", null), ContractId, default); Assert.NotNull(snapshot);
         var detail = (await f.Service.ReadContractDiscountDecisionAsync(ContractId, _ => Task.CompletedTask)).Detail!;
         Assert.True(SalesContractDiscountDecisionBindingV1.MatchesDecisionSnapshot(snapshot, detail)); Assert.True(snapshot.Pending); Assert.Equal("1", snapshot.SourceVersion);
-        Assert.Equal(Seller, snapshot.Item.PreparedBy); Assert.Equal("/satis/sozlesmeler", snapshot.Item.Link); Assert.Empty(f.Inner.Calls);
+        Assert.Equal(Seller, snapshot.Item.PreparedBy); Assert.Equal($"/onaylarim/{SalesContractDiscountWorkInboxSourceV1.KindName}/{ContractId:D}", snapshot.Item.Link); Assert.Empty(f.Inner.Calls);
         var native = Pending(); var legacy = SalesContractDiscountWorkInboxSourceV1.Project(Company, [new(native.Id, Company, native.ContractNo, native.CreatedBy, native.CreatedAtUtc, native.DiscountLimitPercent, native.DiscountRules)], 1, prices).Items.Single();
         Assert.True(SalesContractDiscountDecisionDigestsV1.Same(legacy, snapshot.Item)); Assert.DoesNotContain(SalesPermissionManifestV1.ContractsRead, f.Authority.Asked);
     }
