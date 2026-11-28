@@ -23,7 +23,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// contract. The migration refuses to roll back over a recorded contract (THROW 51473, forward fix). No other module's table is
 /// written. SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class SalesContractSqlServerRelationalAcceptanceTests
+public sealed partial class SalesContractSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
