@@ -9,7 +9,7 @@ public static class SalesRemainderChangeDecisionBindingV1
 {
     public const string KindName = "sales.remainder-change.v1";
     public const string RequestedRule = "sales.remainder-change-requested";
-    internal static WorkInboxItemV1 PendingItem(SalesRemainderPendingV1 r, bool support) => Item(new(r.CompanyId, r.DraftId, r.DocumentNo, r.ChangeNo,
+    internal static WorkInboxItemV1 PendingItem(SalesRemainderPendingV1 r, bool support) => Item(new WorkSalesRemainderChangeProofV1(r.CompanyId, r.DraftId, r.DocumentNo, r.ChangeNo,
         r.LineId, r.RequestRevision, r.RequestedBy, r.RequestedAtUtc, r.DraftCreatedBy, support, r.CurrentVersion, r.CurrentVersion, "Pending", "", ""));
     public static WorkSalesRemainderChangeProofV1 Proof(SalesRemainderDecisionDetailV1 d)
     {
