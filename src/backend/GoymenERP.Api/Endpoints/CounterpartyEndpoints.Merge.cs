@@ -114,14 +114,14 @@ public static partial class CounterpartyEndpoints
                 if (context.Request.Headers.TryGetValue(MergeSeenImpactHeader, out var seen))
                 {
                     if (seen.Count != 1 || !IsMergeSeenImpactDigest(seen[0]))
-                        return ValidationProblem("Cari birleştirme isteği geçersiz.", "Görülen etki bağı geçersiz.");
+                        return ValidationProblem(CounterpartyMergePurposeTexts.InvalidRequestTitle, CounterpartyMergePurposeTexts.InvalidImpactDetail);
                     var purpose = context.RequestServices.GetService<ICounterpartyPartyMergePurposeV1>();
                     if (purpose is null) return Results.Problem(statusCode: 503);
                     var answer = await purpose.ApprovePurposeAsync(partyId, command, seen[0]!, metadata,
                         token => RequireMergeHttpContext(user, company, correlation, metadata.CompanyId, metadata.ActorId, metadata.CorrelationId, token), cancellationToken);
                     if (answer is { Status: CounterpartyPartyMergePurposeStatusV1.Changed, Execution: null })
                         return CounterpartyProblem(409, CounterpartyProblemCodesV1.PartyMergeImpactChanged,
-                            "Birleştirme etkisi değişti.", "Önizlemeyi yeniden okuyup gerçekleşecek etkiyi tekrar onaylayın.");
+                            CounterpartyMergePurposeTexts.ChangedTitle, CounterpartyMergePurposeTexts.ChangedDetail);
                     if (answer is not { Status: CounterpartyPartyMergePurposeStatusV1.Executed, Execution: { } original })
                         return Results.Problem(statusCode: 503);
                     execution = original;

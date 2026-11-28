@@ -33,7 +33,7 @@ public static partial class CounterpartyEndpoints
         {
             SetPrivateNoStore(context.Response.Headers);
             if (context.Request.Query.Count != 0)
-                return ValidationProblem("Birleştirme önizlemesi geçersiz.", "Sorgu parametresi kabul edilmez.");
+                return ValidationProblem(CounterpartyMergePurposeTexts.InvalidPreviewTitle, CounterpartyMergePurposeTexts.QueryNotAccepted);
             var companyId = company.CompanyId; var actor = user.UserId; var correlationId = correlation.CorrelationId;
             if (!user.IsAuthenticated || string.IsNullOrWhiteSpace(actor)) return Results.Problem(statusCode: 403);
             try
@@ -46,12 +46,12 @@ public static partial class CounterpartyEndpoints
                         when IsMergeSeenImpactDigest(digest) => Results.Ok(new CounterpartyMergePurposePreviewResponseV1(impact, digest)),
                     { NativePreview: { Status: CounterpartyPartyMergePreviewStatusV1.NotFound, Preview: null }, SeenImpactDigest: null } => NotFound(),
                     { NativePreview: { Status: CounterpartyPartyMergePreviewStatusV1.Changed, Preview: null }, SeenImpactDigest: null }
-                        => Results.Problem(statusCode: 409, title: "Birleştirme önizlemesi değişti."),
+                        => Results.Problem(statusCode: 409, title: CounterpartyMergePurposeTexts.PreviewChangedTitle),
                     _ => Results.Problem(statusCode: 503),
                 };
             }
             catch (UnauthorizedAccessException) { return Results.Problem(statusCode: 403); }
-            catch (ArgumentException error) { return ValidationProblem("Birleştirme önizlemesi geçersiz.", error.Message); }
+            catch (ArgumentException error) { return ValidationProblem(CounterpartyMergePurposeTexts.InvalidPreviewTitle, error.Message); }
         })
             .RequireCompanyContext()
             .RequireAuthorization(ErpPermissions.CounterpartyPartiesRead)
