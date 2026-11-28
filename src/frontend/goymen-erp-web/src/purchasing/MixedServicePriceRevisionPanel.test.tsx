@@ -110,6 +110,63 @@ describe('mixed price panel controlled DOM and native attempt protocol (NOT_BROW
     await act(async () => { finish?.({ type: 'applied', response: mixedPriceAnswer() }) })
     expect(p.onSettled).not.toHaveBeenCalled(); expect(screen.queryByText(T.saved)).toBeNull()
   })
+  it('clears editable prices and reason after409 before using a fresh child version under the same Approved parent4', async () => {
+    const original = mixedPriceFixture(), later: MixedServicePricePreview = { ...original, services: original.services.map(entry => ({ ...entry,
+      updatedAtUtc: '2026-11-28T11:00:00Z', priceRevision: 1, service: { ...entry.service, version: '3' }, selection: { ...entry.selection, expectedVersion: '3' } })) }
+    vi.mocked(fetchMixedServicePricePreview).mockResolvedValueOnce({ type: 'ok-single', data: original }).mockResolvedValue({ type: 'ok-single', data: later })
+    vi.mocked(sendMixedServicePriceRevision).mockResolvedValueOnce({ type: 'failed', status: 409, isReplay: false, code: 'SENTETIK-stale' })
+      .mockResolvedValue({ type: 'unknown', reason: 'network-error' })
+    mount(); await prepare(); fireEvent.click(screen.getByRole('button', { name: T.save }))
+    await waitFor(() => expect(fetchMixedServicePricePreview).toHaveBeenCalledTimes(2))
+    const label = `${later.services[0].service.documentNumber} — SENTETIK hizmet — ${T.revised}`
+    await waitFor(() => expect((screen.getByLabelText(label) as HTMLInputElement).value).toBe(''))
+    expect((screen.getByLabelText(T.reason) as HTMLTextAreaElement).value).toBe('')
+    fireEvent.click(screen.getByRole('button', { name: T.save })); expect(sendMixedServicePriceRevision).toHaveBeenCalledTimes(1)
+    fireEvent.change(screen.getByLabelText(label), { target: { value: '2' } }); fireEvent.change(screen.getByLabelText(T.reason), { target: { value: 'SENTETIK newly prepared reason' } })
+    fireEvent.click(screen.getByRole('button', { name: T.save })); await screen.findByText(T.unknown)
+    const calls = vi.mocked(sendMixedServicePriceRevision).mock.calls
+    expect(calls[1][2]).toEqual({ expectedVersion: '4', services: later.services.map(x => x.selection), changes: [{ serviceOrderId: id(2), lines: [{ lineId: id(6), unitPrice: '2' }] }], reason: 'SENTETIK newly prepared reason' })
+    expect(calls[1][3]).not.toBe(calls[0][3])
+  })
+  it.each(['version', 'facts'])('does not reuse prices or reason after close/open when fresh child %s changes without a parent version change', async fault => {
+    const original = mixedPriceFixture(), later: MixedServicePricePreview = { ...original, services: original.services.map(entry => ({ ...entry,
+      service: { ...entry.service, version: fault === 'version' ? '3' : entry.service.version,
+        lines: entry.service.lines.map(line => ({ ...line, serviceName: fault === 'facts' ? 'SENTETIK newly viewed service' : line.serviceName })) },
+      selection: { ...entry.selection, expectedVersion: fault === 'version' ? '3' : entry.selection.expectedVersion } })) }
+    vi.mocked(fetchMixedServicePricePreview).mockResolvedValueOnce({ type: 'ok-single', data: original }).mockResolvedValue({ type: 'ok-single', data: later })
+    mount(); await prepare(); fireEvent.click(screen.getByRole('button', { name: T.close })); expect(screen.queryByRole('article')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: T.open })); await waitFor(() => expect(fetchMixedServicePricePreview).toHaveBeenCalledTimes(2))
+    const label = `${later.services[0].service.documentNumber} — ${later.services[0].service.lines[0].serviceName} — ${T.revised}`
+    await waitFor(() => expect((screen.getByLabelText(label) as HTMLInputElement).value).toBe(''))
+    expect((screen.getByLabelText(T.reason) as HTMLTextAreaElement).value).toBe('')
+    fireEvent.click(screen.getByRole('button', { name: T.save })); expect(sendMixedServicePriceRevision).not.toHaveBeenCalled()
+  })
+  it('clears an open editable intent when complete human facts change in the cache with the same identities and versions', async () => {
+    const p = props(), view = mount(p); await prepare(); const original = mixedPriceFixture()
+    const later: MixedServicePricePreview = { ...original, services: original.services.map(entry => ({ ...entry,
+      service: { ...entry.service, lines: entry.service.lines.map(line => ({ ...line, serviceName: 'SENTETIK refreshed human service' })) } })) }
+    act(() => view.client.setQueryData([p.fenceKey, 'mixed-service-price-preview', p.order.id, p.order.version], { type: 'ok-single', data: later }))
+    expect((screen.getByLabelText(`${later.services[0].service.documentNumber} — SENTETIK refreshed human service — ${T.revised}`) as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText(T.reason) as HTMLTextAreaElement).value).toBe('')
+    fireEvent.click(screen.getByRole('button', { name: T.save })); expect(sendMixedServicePriceRevision).not.toHaveBeenCalled()
+  })
+  it('clears an editable intent when its fence changes even if the full human preview and parent version are unchanged', async () => {
+    const p = props(), view = mount(p); await prepare(); view.refresh({ ...p, fenceKey: 'SENTETIK-fresh-read-fence' })
+    await waitFor(() => expect(fetchMixedServicePricePreview).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect((screen.getByLabelText(T.reason) as HTMLTextAreaElement).value).toBe(''))
+    expect((screen.getByLabelText(`${mixedPriceFixture().services[0].service.documentNumber} — SENTETIK hizmet — ${T.revised}`) as HTMLInputElement).value).toBe('')
+    expect(sendMixedServicePriceRevision).not.toHaveBeenCalled()
+  })
+  it('keeps an unknown attempt frozen through close/open and late cached new child versions instead of restoring an editable form', async () => {
+    const p = props(), view = mount(p); await prepare(); fireEvent.click(screen.getByRole('button', { name: T.save })); await screen.findByText(T.unknown)
+    const first = vi.mocked(sendMixedServicePriceRevision).mock.calls[0], original = mixedPriceFixture()
+    const later: MixedServicePricePreview = { ...original, services: original.services.map(entry => ({ ...entry, service: { ...entry.service, version: '3' }, selection: { ...entry.selection, expectedVersion: '3' } })) }
+    act(() => view.client.setQueryData([p.fenceKey, 'mixed-service-price-preview', p.order.id, p.order.version], { type: 'ok-single', data: later }))
+    fireEvent.click(screen.getByRole('button', { name: T.close })); fireEvent.click(screen.getByRole('button', { name: T.open }))
+    expect(screen.queryByRole('article')).toBeNull(); expect(screen.queryByLabelText(T.reason)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: T.retry })); await waitFor(() => expect(sendMixedServicePriceRevision).toHaveBeenCalledTimes(2))
+    expect(vi.mocked(sendMixedServicePriceRevision).mock.calls[1]).toEqual(first); expect(fetchMixedServicePricePreview).toHaveBeenCalledTimes(1)
+  })
   it.each(['malformed', 'forbidden', 'unavailable', 'stale'])('keeps %s preview outside a new command form', async fault => {
     vi.mocked(fetchMixedServicePricePreview).mockResolvedValue(fault === 'malformed' ? { type: 'malformed' } : { type: 'http', status: fault === 'forbidden' ? 403 : fault === 'stale' ? 409 : 503 })
     mount(); fireEvent.click(screen.getByRole('button', { name: T.open })); await waitFor(() => expect(fetchMixedServicePricePreview).toHaveBeenCalledTimes(1))
