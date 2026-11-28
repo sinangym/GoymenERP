@@ -1,4 +1,5 @@
 export const WORK_DECISION_TEXT = {
+  inventoryCostCancellationRule: 'Kaynak faturanın iptali için hazırlanmış kayıtlı maliyet payları farklı yetkili onayı bekler.',
   inventoryCostTitle: 'Kayıtlı maliyet önerisi',
   inventoryCostRule: 'Hazırlanmış maliyet önerisi farklı yetkili onayı bekler.',
   inventoryCostReadOnly: 'Kaynak, hazırlık, kayıtlı paylar ve yuvarlama bilgileri öneride saklandığı biçimiyle gösterilir.',

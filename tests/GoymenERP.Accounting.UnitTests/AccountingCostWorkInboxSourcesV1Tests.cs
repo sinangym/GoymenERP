@@ -409,7 +409,8 @@ public sealed class AccountingInventoryCostCancellationWorkInboxSourceV1Tests
         var first = result.Items![0];
         Assert.Equal(Kit.CallerText, first.PreparedBy);
         Assert.Null(first.ExcludedDeciders);
-        Assert.Equal(AccountingInventoryCostCancellationWorkInboxSourceV1.ScreenPath, first.Link);
+        Assert.Equal($"/onaylarim/{AccountingInventoryCostCancellationWorkInboxSourceV1.KindName}/{first.ItemId:D}", first.Link);
+        Assert.Equal("/muhasebe/sevk-smm-ters-kayit-onay", AccountingInventoryCostCancellationWorkInboxSourceV1.ScreenPath);
         Assert.Equal(Kit.Start.ToUniversalTime(), first.WaitingSinceUtc);
         Assert.Equal([AccountingInventoryCostCancellationWorkInboxSourceV1.ApprovalRequiredRule], first.Rules.Select(rule => rule.RuleCode));
         Assert.Equal(["inventory-cost-proposal", "invoice-cancellation", "period"], first.References.Select(reference => reference.Role));

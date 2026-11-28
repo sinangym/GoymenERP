@@ -50,6 +50,7 @@ const ROUTED = [
   [CAPABILITY.accountingNormalDraftWorkDecision, ACCOUNTING_CAPABILITY.normalDraftWorkDecision, ACCOUNTING_ROUTE.normalDraftWorkDecision],
   [CAPABILITY.accountingManufacturingCostDifferenceWorkDecision, ACCOUNTING_CAPABILITY.manufacturingCostDifferenceWorkDecision, ACCOUNTING_ROUTE.manufacturingCostDifferenceWorkDecision],
   [CAPABILITY.accountingInvoiceLineCogsCorrectionWorkDecision, ACCOUNTING_CAPABILITY.invoiceLineCogsCorrectionWorkDecision, ACCOUNTING_ROUTE.invoiceLineCogsCorrectionWorkDecision],
+  [CAPABILITY.accountingInventoryCostCancellationWorkDecision, ACCOUNTING_CAPABILITY.inventoryCostCancellationWorkDecision, ACCOUNTING_ROUTE.inventoryCostCancellationWorkDecision],
   [CAPABILITY.accountingInvoicedShipmentCostWorkDecision, ACCOUNTING_CAPABILITY.invoicedShipmentCostWorkDecision, ACCOUNTING_ROUTE.invoicedShipmentCostWorkDecision],
   [CAPABILITY.accountingPurchaseCostDifferenceWorkDecision, ACCOUNTING_CAPABILITY.purchaseCostDifferenceWorkDecision, ACCOUNTING_ROUTE.purchaseCostDifferenceWorkDecision],
   [CAPABILITY.accountingPostingMappingWorkDecision, ACCOUNTING_CAPABILITY.postingMappingWorkDecision, ACCOUNTING_ROUTE.postingMappingWorkDecision],
@@ -218,4 +219,16 @@ it.each([
  expect(ACCOUNTING_ROUTE.purchaseCostApprove).toBe('/muhasebe/alis-maliyet-farki-onay')
  expect(CAPABILITY_ROUTE[CAPABILITY.accountingInvoicedShipmentApprove]).toBe(ACCOUNTING_ROUTE.invoicedShipmentApprove)
  expect(CAPABILITY_ROUTE[CAPABILITY.accountingPurchaseCostApprove]).toBe(ACCOUNTING_ROUTE.purchaseCostApprove)
+})
+
+it('pairs exactly one cancellation purpose without publishing another native approval screen or inbox row',()=>{
+ const kind='accounting.inventory-cost-cancellation.v1',capability=CAPABILITY.accountingInventoryCostCancellationWorkDecision,path=`/onaylarim/${kind}/:approvalId`
+ expect(capability).toBe('accounting.inventory-cost-cancellation.work-decision')
+ expect(ACCOUNTING_ROUTE.inventoryCostCancellationWorkDecision).toBe(path);expect(CAPABILITY_ROUTE[capability]).toBe(path);expect(CAPABILITY_NAV_LABEL[capability]).toBe('')
+ expect(WORK_INBOX_KINDS.filter(row=>row.kind===kind)).toEqual([{kind,module:'accounting',capability}])
+ expect(WORK_INBOX_KINDS.filter(row=>row.module==='accounting')).toHaveLength(12);expect(WORK_INBOX_KINDS).toHaveLength(69);expect(new Set(WORK_INBOX_KINDS.map(row=>row.kind)).size).toBe(69)
+ const mounted=workRoutes.filter(route=>route.path===path.slice(1));expect(mounted).toHaveLength(1)
+ expect(matchRoutes(shellRoutes,path.replace(':approvalId','cccccccc-0000-4000-8000-000000000056'))?.at(-1)?.route).toBe(mounted[0])
+ expect(ACCOUNTING_ROUTE.invoicedShipmentReverseApprove).toBe('/muhasebe/sevk-smm-ters-kayit-onay')
+ expect(CAPABILITY_ROUTE[CAPABILITY.accountingInvoicedShipmentReverseApprove]).toBe(ACCOUNTING_ROUTE.invoicedShipmentReverseApprove)
 })

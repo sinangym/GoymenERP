@@ -4,11 +4,12 @@ namespace GoymenERP.Modules.Accounting.Application;
 public static class AccountingInventoryCostCancellationDecisionBindingV1
 {
     public const string Kind = "accounting.inventory-cost-cancellation.v1";
+    public const string PurposePath = "/onaylarim/accounting.inventory-cost-cancellation.v1";
     public const string ScreenPath = "/muhasebe/sevk-smm-ters-kayit-onay";
     public const string Rule = "accounting.inventory-cost-cancellation-approval-required";
     public static WorkInboxItemV1? Item(Guid id, Guid cancellationId, Guid periodId, Guid maker, DateTimeOffset recordedAtUtc) =>
         id == Guid.Empty || cancellationId == Guid.Empty || periodId == Guid.Empty || maker == Guid.Empty ? null
-        : new("accounting", Kind, id, Short(id), recordedAtUtc.ToUniversalTime(), ScreenPath, maker.ToString("D", CultureInfo.InvariantCulture),
+        : new("accounting", Kind, id, Short(id), recordedAtUtc.ToUniversalTime(), PurposePath + "/" + id.ToString("D", CultureInfo.InvariantCulture), maker.ToString("D", CultureInfo.InvariantCulture),
             [new(Rule, null, null, null, null)], [new("inventory-cost-proposal", Short(id), id, null),
             new("invoice-cancellation", Short(cancellationId), cancellationId, null), new("period", Short(periodId), periodId, null)]);
     public static bool MatchesDecisionProof(WorkInboxItemV1? item, WorkInventoryCostCancellationProofV1? proof) =>

@@ -53,9 +53,10 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     /// <para>1.15/1.16 (WP8): standalone catalog and account mapping decisions use their existing activation permissions.</para>
     /// <para>1.17 (WP8): a standalone manufacturing cost difference decision uses the existing journal approval permission.</para>
     /// <para>1.18 (WP8): invoice line COGS corrections use their existing approval permission on a standalone Work route.</para>
+    /// <para>1.20 (WP8): inventory cost cancellation approval has its standalone Work route with the existing reversal approval permission.</para>
     /// <para>1.19 (WP8): both inventory cost approvals have standalone Work routes with their existing native permissions.</para>
     /// </summary>
-    public const string OwnerContractVersion = "1.19";
+    public const string OwnerContractVersion = "1.20";
 
     public const string InvoicedShipmentPrepareCapabilityId = "accounting.invoiced-shipment-costs.prepare";
     public const string InvoicedShipmentPrepareRoutePath = "/muhasebe/sevk-smm-hazirla";
@@ -137,6 +138,10 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
     public const string NormalDraftApproveCapabilityId = "accounting.normal-journal-drafts.approve";
     public const string NormalDraftApproveRouteId = "accounting.normal-journal-drafts.approve";
     public const string NormalDraftApproveRoutePath = "/muhasebe/normal-fis-onay/:draftId";
+    public const string InventoryCostCancellationWorkDecisionCapabilityId = "accounting.inventory-cost-cancellation.work-decision";
+    public const string InventoryCostCancellationWorkDecisionRouteId = "accounting-inventory-cost-cancellation-work-decision";
+    public const string InventoryCostCancellationWorkDecisionRoutePath = "/onaylarim/accounting.inventory-cost-cancellation.v1/:approvalId";
+    public const string InventoryCostCancellationWorkDecisionScreenId = "M-INVENTORY-COST-CANCELLATION-WORK-DECISION";
     public const string InvoicedShipmentCostWorkDecisionCapabilityId = "accounting.invoiced-shipment-cost.work-decision";
     public const string InvoicedShipmentCostWorkDecisionRouteId = "accounting-invoiced-shipment-cost-work-decision";
     public const string InvoicedShipmentCostWorkDecisionRoutePath = "/onaylarim/accounting.invoiced-shipment-cost.v1/:approvalId";
@@ -286,6 +291,9 @@ public sealed class AccountingShellCapabilityProvider : IShellCapabilityProvider
                 [NormalJournalPermissionNamesV1.DraftApprove], available: true),
             Declaration(ManufacturingCostDifferenceWorkDecisionCapabilityId, ManufacturingCostDifferenceWorkDecisionRouteId, ManufacturingCostDifferenceWorkDecisionRoutePath,
                 ManufacturingCostDifferenceWorkDecisionScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+                [AccountingJournalReversalPermissionNamesV1.Approve], available: true),
+            Declaration(InventoryCostCancellationWorkDecisionCapabilityId, InventoryCostCancellationWorkDecisionRouteId, InventoryCostCancellationWorkDecisionRoutePath,
+                InventoryCostCancellationWorkDecisionScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
                 [AccountingJournalReversalPermissionNamesV1.Approve], available: true),
             Declaration(InvoicedShipmentCostWorkDecisionCapabilityId, InvoicedShipmentCostWorkDecisionRouteId, InvoicedShipmentCostWorkDecisionRoutePath,
                 InvoicedShipmentCostWorkDecisionScreenId, ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,

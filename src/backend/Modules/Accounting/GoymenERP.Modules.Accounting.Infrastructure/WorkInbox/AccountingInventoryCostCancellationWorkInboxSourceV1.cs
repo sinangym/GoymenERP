@@ -21,6 +21,7 @@ internal sealed partial class AccountingInventoryCostCancellationWorkInboxSource
 {
     public const string ModuleName = "accounting";
     public const string KindName = "accounting.inventory-cost-cancellation.v1";
+    public const string PurposePath = AccountingInventoryCostCancellationDecisionBindingV1.PurposePath;
     public const string ScreenPath = "/muhasebe/sevk-smm-ters-kayit-onay";
 
     /// <summary>The stored cancellation status the approve command accepts (Prepared).</summary>

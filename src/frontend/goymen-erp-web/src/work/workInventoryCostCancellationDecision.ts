@@ -3,13 +3,14 @@ import { isBoundUuid } from '../finance/contract'
 import { transferDispatchUtc } from '../inventory/transferDispatchApi'
 import { inventoryCostWorkLong, validInventoryCostRetainedProposal, type WorkInventoryCostRetainedProposal, type WorkInventoryCostCancellation, type WorkInventoryCostCancellationComponent } from './workInventoryCostDecision'
 
-// Core transport only. Root owns published kind/capability/route catalogs and the generic Work page admission.
+export const INVENTORY_COST_CANCELLATION_WORK_CAPABILITY = 'accounting.inventory-cost-cancellation.work-decision' as const
 export const INVENTORY_COST_CANCELLATION_WORK_KIND = 'accounting.inventory-cost-cancellation.v1' as const
 export const INVENTORY_COST_CANCELLATION_WORK_TEXT = {
   title:'Kayıtlı maliyet paylarının iptali', original:'İptal öncesi özgün maliyet önerisi', prepared:'Onaya hazırlanan bileşen iptali', current:'Bu hazırlığın kayıtlı sonucu', source:'Kaynak faturanın iptal kaydı',
   readOnly:'Özgün öneri, iptal hazırlığı ve faturanın iptal bilgileri kayıtlı değerleriyle gösterilir.',
   retained:'Önceki maliyet payı iptalinin sonucu doğrulanmalı. Aynı istek, iki sürüm ve anahtar korunur; güncel kayıt önceki kararın kanıtı değildir.',
   sourceFields:{companyId:'Şirket',cancellationId:'İptal kaydı',documentKind:'Kaynak belge türü',sourceDocumentId:'Kaynak belge',invoiceId:'Fatura',finalizedVersion:'Kesinleşme sürümü',cancelledBy:'İptal eden',cancelledAtUtc:'İptal zamanı',reason:'Fatura iptal gerekçesi',recordedAtUtc:'Kayıt zamanı'},
+  originalVersion:'Özgün öneri sürümü',cancellationVersion:'İptal hazırlığı sürümü',
   salesInvoice:'Satış faturası',
 } as const
 export interface WorkInventoryCostSourceCancellation {

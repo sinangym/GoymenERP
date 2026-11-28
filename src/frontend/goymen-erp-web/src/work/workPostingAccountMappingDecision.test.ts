@@ -23,7 +23,7 @@ describe('staged native posting mapping purpose',()=>{
   const v=fixture(company),id=v.itemId
   expect(decodeWorkDecisionPreview(v,company,kind,id)?.postingAccountMapping).toEqual(v.postingAccountMapping)
   expect(Object.keys(v.postingAccountMapping)).toHaveLength(7);expect(Object.keys(v.postingAccountMapping.mapping)).toHaveLength(12);expect(Object.keys(v.postingAccountMapping.mapping.rows[0]!)).toHaveLength(8)
-  expect(isWorkDecisionKind(kind)).toBe(true);expect(WORK_DECISION_KINDS).toHaveLength(51);expect(WORK_DECISION_KINDS.filter(k=>k===kind)).toEqual([kind])
+  expect(isWorkDecisionKind(kind)).toBe(true);expect(WORK_DECISION_KINDS).toHaveLength(52);expect(WORK_DECISION_KINDS.filter(k=>k===kind)).toEqual([kind])
   expect(decodeWorkDecisionPreview(v,company.toUpperCase(),kind,id.toUpperCase())).not.toBeNull()
   expect(v.postingAccountMapping.currentActiveAccountPlan.accounts[0]!.accountId).not.toBe(v.postingAccountMapping.mapping.rows[0]!.accountId)
  })

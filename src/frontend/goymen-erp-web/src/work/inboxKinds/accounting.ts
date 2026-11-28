@@ -14,6 +14,6 @@ export const ACCOUNTING_INBOX_KINDS: readonly WorkInboxKind[] = [
   { kind: 'accounting.invoice-line-cogs-correction.v1', module: 'accounting', capability: ACCOUNTING_CAPABILITY.invoiceLineCogsCorrectionWorkDecision },
   { kind: 'accounting.invoiced-shipment-cost.v1', module: 'accounting', capability: ACCOUNTING_CAPABILITY.invoicedShipmentCostWorkDecision },
   { kind: 'accounting.purchase-cost-difference.v1', module: 'accounting', capability: ACCOUNTING_CAPABILITY.purchaseCostDifferenceWorkDecision },
-  { kind: 'accounting.inventory-cost-cancellation.v1', module: 'accounting', capability: ACCOUNTING_CAPABILITY.invoicedShipmentReverseApprove },
+  { kind: 'accounting.inventory-cost-cancellation.v1', module: 'accounting', capability: ACCOUNTING_CAPABILITY.inventoryCostCancellationWorkDecision },
   { kind: 'accounting.source-voucher.v1', module: 'accounting', capability: ACCOUNTING_CAPABILITY.sourceVouchersApprove },
 ]

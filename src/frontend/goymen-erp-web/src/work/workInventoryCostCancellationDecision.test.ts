@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest'
-import { exactNativeClrAmount, isWorkPackageEffectiveDate } from './workDecisionApi'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { decodeWorkDecisionPreview, exactNativeClrAmount, isWorkDecisionRequest, isWorkPackageEffectiveDate, sendWorkDecision, WORK_DECISION_KINDS } from './workDecisionApi'
 import { inventoryCostFixture, inventoryCostGuid as g } from './inventoryCostDecisionFixture'
 import { validInventoryCostPreview, validInventoryCostRetainedProposal } from './workInventoryCostDecision'
 import { inventoryCostCancellationFixture as fixture, cancellationWorkId as id } from './inventoryCostCancellationDecisionFixture'
-import { inventoryCostCancellationRequest, validInventoryCostCancellationPreview, validInventoryCostCancellationRequest } from './workInventoryCostCancellationDecision'
+import { INVENTORY_COST_CANCELLATION_WORK_KIND as kind, inventoryCostCancellationRequest, validInventoryCostCancellationPreview, validInventoryCostCancellationRequest } from './workInventoryCostCancellationDecision'
 
 const company='ac560000-0000-4000-8000-000000000001',other='ac560000-0000-4000-8000-000000000002'
 const valid=(v:Record<string,unknown>)=>validInventoryCostCancellationPreview(v,company,id,isWorkPackageEffectiveDate,exactNativeClrAmount)
@@ -127,5 +127,33 @@ describe('inventory cost cancellation Work core',()=>{
  it.each([{approve:false},{reason:'reason'},{expectedVersion:'9223372036854775807'},{inventoryCostCancellation:{expectedProposalVersion:'0'}},{inventoryCostCancellation:{expectedProposalVersion:9007199254740992}},{inventoryCostCancellation:{expectedProposalVersion:'1',extra:true}},{delegationId:'00000000-0000-0000-0000-000000000000'},{otherOwnerSelection:{}}])('keeps the exact approve-only five-field command %j',patch=>{
   const request={expectedVersion:'1',approve:true,reason:null,delegationId:null,inventoryCostCancellation:{expectedProposalVersion:'1'}}
   expect(validInventoryCostCancellationRequest(request)).toBe(true);expect(validInventoryCostCancellationRequest({...request,...patch})).toBe(false)
+ })
+})
+
+afterEach(()=>vi.unstubAllGlobals())
+describe('published cancellation Work transport',()=>{
+ it('decodes the actual five-field human wrapper and binds uppercase route GUIDs without rewriting raw facts',()=>{
+  const v=fixture(company),raw=JSON.stringify(v)
+  expect(decodeWorkDecisionPreview(v,company.toUpperCase(),kind,id.toUpperCase())?.inventoryCostCancellation).toEqual(v.inventoryCostCancellation)
+  expect(JSON.stringify(v)).toBe(raw);expect(WORK_DECISION_KINDS.filter(value=>value===kind)).toEqual([kind]);expect(WORK_DECISION_KINDS).toHaveLength(52)
+ })
+ it.each(WORK_DECISION_KINDS.filter(value=>value!==kind))('rejects a foreign cancellation selection on %s',otherKind=>{
+  expect(isWorkDecisionRequest({expectedVersion:'7',approve:true,reason:null,delegationId:null,inventoryCostCancellation:{expectedProposalVersion:'1'}},otherKind)).toBe(false)
+ })
+ it.each(['inventoryCost','sourceProof','approvalReceipt','sourceFactsDigest'])('rejects an unexpected cross-kind/private wrapper %s',field=>{
+  expect(decodeWorkDecisionPreview({...fixture(company),[field]:{}},company,kind,id)).toBeNull()
+ })
+ it('sends only M/N and the four shared fields, accepting the genuine original terminal receipt and replay metadata',async()=>{
+  const request=inventoryCostCancellationRequest(fixture(company).inventoryCostCancellation,true,null)!
+  const response={companyId:company,kind,itemId:id,state:'CancelledByComponentReversal',replayed:true,originalCorrelationId:'SENTETIK original'}
+  const fetcher=vi.fn(async(_url:RequestInfo|URL,_init?:RequestInit)=>new Response(JSON.stringify(response),{status:200,headers:{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK original'}}));vi.stubGlobal('fetch',fetcher)
+  expect(await sendWorkDecision(company,kind,id,request,'SENTETIK same key')).toMatchObject({type:'applied',replayed:true,data:{state:'CancelledByComponentReversal',originalCorrelationId:'SENTETIK original'}})
+  expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual(request);expect(Object.keys(request)).toHaveLength(5)
+  for(const state of ['Approved','Posted','RoundedNoCost','Stale','Cancelled']){fetcher.mockImplementation(async()=>new Response(JSON.stringify({...response,state,replayed:false}),{status:200}));expect((await sendWorkDecision(company,kind,id,request,'SENTETIK same key')).type).toBe('unknown')}
+  fetcher.mockImplementation(async()=>new Response(JSON.stringify({...response,extra:true}),{status:200,headers:{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK original'}}));expect((await sendWorkDecision(company,kind,id,request,'SENTETIK same key')).type).toBe('unknown')
+ })
+ it.each([{approve:false},{reason:'not allowed'},{inventoryCostCancellation:undefined},{inventoryCostCancellation:{expectedProposalVersion:'0'}},{postingAccountMappingSelection:{expectedActiveMappingVersion:'1'}}])('refuses invalid command before fetch %j',patch=>{
+  const request=inventoryCostCancellationRequest(fixture(company).inventoryCostCancellation,true,null)!
+  expect(isWorkDecisionRequest({...request,...patch},kind)).toBe(false)
  })
 })
