@@ -42,6 +42,8 @@ public static class TrainCompletionHostComposition
         services.AddSettingsFinancePolicyRuntime();
         services.AddPurchaseInvoiceFinanceAdmissionHost();
         services.AddPurchaseServiceOrderHostV1();
+        services.AddScoped<IPurchaseUnorderedAcceptanceDocumentReadV1, PurchaseUnorderedAcceptanceDocumentReadV1>();
+        services.AddScoped<PurchaseUnorderedAcceptanceReadHostV1>();
         services.AddInventoryTransferPolicyHostPorts();
         services.AddFinancePartyBalanceTransfersV1();
         services.AddFinanceBankStatementImportsV1();

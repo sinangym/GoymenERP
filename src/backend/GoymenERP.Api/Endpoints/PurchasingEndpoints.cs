@@ -49,6 +49,7 @@ public static partial class PurchasingEndpoints
         MapInvoiceImports(endpoints);
         MapCurrencyCandidates(endpoints);
         MapGoodsReceiptLabels(endpoints);
+        MapUnorderedAcceptances(endpoints);
         return endpoints;
     }
 
@@ -842,6 +843,7 @@ public static partial class PurchasingEndpoints
     {
         PurchaseRequestResponse request => request.IsReplay,
         PurchaseOrderResponse order => order.IsReplay,
+        PurchaseUnorderedAcceptanceWriteV1 unordered => unordered.IsReplay,
         PurchaseIncomingInvoiceCommandResponseV1 invoice => invoice.IsReplay,
         PurchaseInvoiceImportReservationResultV1 reservation => reservation.IsReplay,
         PurchaseFutureAllocationReleaseResponse release => release.IsReplay,
@@ -857,6 +859,7 @@ public static partial class PurchasingEndpoints
     {
         PurchaseRequestResponse request => request.OriginalCorrelationId,
         PurchaseOrderResponse order => order.OriginalCorrelationId,
+        PurchaseUnorderedAcceptanceWriteV1 unordered => unordered.OriginalCorrelationId,
         PurchaseIncomingInvoiceCommandResponseV1 invoice => invoice.OriginalCorrelationId,
         PurchaseInvoiceImportReservationResultV1 reservation => reservation.OriginalCorrelationId,
         PurchaseFutureAllocationReleaseResponse release => release.OriginalCorrelationId,
