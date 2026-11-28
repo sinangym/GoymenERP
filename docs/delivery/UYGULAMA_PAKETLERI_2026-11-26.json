@@ -731,10 +731,31 @@
           "actual_SQL": "NOT_RUN",
           "legacy_body_hash_guard_order": "UNCHANGED",
           "participant": "UNREGISTERED_DEFAULT_503"
-        }
+        },
+        "draft_membership_persistence": {
+          "model_source_commits": [
+            "ed59af474",
+            "65cd58d48",
+            "788e955b0"
+          ],
+          "migration_commit": "6ff5dc309",
+          "migration": "20261128042229_AddPurchaseOrderServiceMemberships",
+          "down_throw": 52361,
+          "SQL_source_commit": "832b28d32",
+          "SQL_source_facts": 4,
+          "unit_validation_commit": "ca642cc6090a2c5b5e87d4dc8c685c7761df5ca1",
+          "purchasing_passed": 1504,
+          "failed": 0,
+          "skipped": 0,
+          "artifact": "mixed-membership-persistence-unit-20261128",
+          "actual_SQL": "NOT_RUN",
+          "database_application": "NOT_APPLIED",
+          "mixed_runtime_admission": "UNAVAILABLE_PENDING_COMPLETE_PREVIEW_ATOMIC_PARTICIPANT_AND_ORIGINAL_RECEIPT"
+        },
+        "fresh_child_edit_compatibility": "Initial membership version/line identities are retained baseline history, not a ban on native Draft edits. Approval must freeze a new complete actual child version/line selection and preserve original receipts."
       },
       "delivery_tracking": {
-        "kodlandi": "PARTIAL_SOURCE_CONTRACT_ONLY",
+        "kodlandi": "PARTIAL_DRAFT_MEMBERSHIP_NATIVE_PREPARATION_ONLY",
         "yerel_test_gecti": "BOUNDED_SCOPES_AT_RECORDED_HEADS_ONLY",
         "butunlesik_kabul_gecti": false,
         "tamamlandi": false
@@ -742,8 +763,8 @@
       "migration_allocation": {
         "down_throw": 52361,
         "scope": "FIRST_USE mixed durable service membership only;52160range already belongs WP7",
-        "state": "SOURCE_INVENTORY_UNUSED_CHECKED_MIGRATION_NOT_GENERATED",
-        "live_source_search": "docs/src/backend/tools/tests exact52361 no occurrence at399654ef4; verify current main/open source before generation"
+        "state": "EF_GENERATED_NOT_APPLIED",
+        "live_source_search": "52361 absent in all11 live open PR trees and current source; main ddc6cba4e0/train c24706af4 unchanged; mixed-membership-migration-allocation-20261128/checked-heads.json"
       }
     },
     {

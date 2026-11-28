@@ -123,7 +123,7 @@
           {
             "kind": "sales.price-floor-exception.v1",
             "source": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesPriceFloorExceptionWorkInboxSourceV1.cs:17",
-            "source_decision_read": false,
+            "source_decision_read": true,
             "host_supported": false,
             "owner_permission": "sales.orders.price-floor-exception.approve",
             "frontend_inbox_registered": true,
@@ -164,6 +164,10 @@
             "head": "a461e610460b7597c08544c7ebb00499e6b671fb",
             "note": "Selected owner read and original receipt source integrated;41 new unit source cases within2707Sales PASS. Work source/Host not yet integrated and two peer findings still being fixed.",
             "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint"
+          },
+          {
+            "head": "ca642cc60",
+            "note": "Historical version source, immutable original receipt binding and two peer fixes integrated. JSON-ignored carrier/body slot present; all current Hosts explicitly reject foreign Floor proof until Floor native dispatch is connected.23 new unit and3 SQL source cases NOT_RUN. Full15file bounded peer: no new P0/P1/P2, notK3."
           }
         ]
       }
@@ -6824,7 +6828,7 @@
       "unit_source_cases": 41,
       "SQL_source_facts": 5,
       "actual_SQL": "NOT_RUN",
-      "known_source_findings": "Two bounded peer P2: replay current restriction persona and mutable source line list. Fixes plus historical selected-version source in separate author branch; not integrated/accepted."
+      "known_source_findings": "Both prior P2 fixes integrated atffd63872f and full15file bounded independent peer reports no new P0/P1/P2. New23unit/3SQL facts not run; notK3."
     },
     "quote_SQL_source_facts_added": 2,
     "SQL_source_compiled": true,
@@ -6835,7 +6839,7 @@
     "runtime_verified_flows": 0,
     "new_permission_or_role_assignment": false,
     "new_schema": false,
-    "remaining": "Quote paired frontend/publication pending backend contract completion; Floor historical source/binding and two P2 fixes in author branch. Mixed persistent membership/atomic approval/API/UI still unavailable.",
+    "remaining": "Quote frontend/publication in separate author branch. Floor historical source+two peer fixes integrated; unit/API validation and Floor Host pending. Mixed Draft membership unit1504PASS; atomic approval admission/API/UI/realSQL pending.",
     "null_boundary_followup": {
       "source_commit": "efa3425b44313a28c6d4408e146670671645f16d",
       "API_refresh": {
