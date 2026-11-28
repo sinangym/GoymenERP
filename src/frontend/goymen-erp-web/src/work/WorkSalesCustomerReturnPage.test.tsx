@@ -89,7 +89,9 @@ describe('Sales return complete readonly human and actual common Work protocol (
   })
   it.each([401, 403])('keeps ambiguous postcommit status%s unresolved at the transport boundary', async status => {
     vi.stubGlobal('fetch', vi.fn(async () => problem(status)))
-    expect((await sendWorkDecision(COMPANY_A, kind, id, {expectedVersion: '2', approve: true, reason: null, delegationId: null}, 'SENTETIK-key')).type).toBe('unknown')
+    const report = vi.fn()
+    expect((await sendWorkDecision(COMPANY_A, kind, id, {expectedVersion: '2', approve: true, reason: null, delegationId: null}, 'SENTETIK-key', report)).type).toBe('unknown')
+    expect(report).toHaveBeenCalledExactlyOnceWith(status)
   })
   it.each([403, 503])('read refusal%s exposes no human data and sends no decision', async status => {
     const calls = installFetch({capabilities: [cap], respond: url => url.includes(ownerPath) ? problem(status) : undefined})
