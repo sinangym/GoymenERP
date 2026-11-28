@@ -1619,7 +1619,8 @@
         "tests/GoymenERP.Api.IntegrationTests/SalesOrderOwnerAxesHostTests.cs",
         "tests/GoymenERP.Purchasing.UnitTests/PurchaseSalesOrderObligationReadTests.cs",
         "tests/GoymenERP.Api.IntegrationTests/SalesOrderUserCloseSqlServerRelationalAcceptanceTests.OwnerAxes.cs",
-        "tests/GoymenERP.Api.IntegrationTests/SalesOrderUserCloseSqlServerRelationalAcceptanceTests.OwnerAxesSettlementChange.cs"
+        "tests/GoymenERP.Api.IntegrationTests/SalesOrderUserCloseSqlServerRelationalAcceptanceTests.OwnerAxesSettlementChange.cs",
+        "tests/GoymenERP.Api.IntegrationTests/SalesOrderUserCloseSqlServerRelationalAcceptanceTests.PhysicalOwnerJourney.cs"
       ],
       "technical_acceptance": [
         "Değişen davranış, negatif şirket/yetki ve stale version; gerekiyorsa replay/rollback/concurrency kanıtı.",
@@ -1633,7 +1634,7 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Run native Sales+Finance settlement release/reallocation close regression source650/root7b68117; existing physical fixture remains synthetic, not full physical E2E. Complete full native-chain SQL/browser/train acceptance.",
+      "next_action": "Run the existing native release/reallocation regression and the newly compiled actual shipment/Inventory/dispatch/invoice/settlement closure SQL source. Physical source identity is connected; synthetic seed snapshots and recorded receipt setup remain explicit, so this is not full physical/financial E2E. Complete real SQL/browser and aggregate train acceptance.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -1754,7 +1755,26 @@
             "sql": "NOT_RUN",
             "browser": "NOT_RUN"
           }
-        ]
+        ],
+        "physical_owner_journey_checkpoint": {
+          "source_commits": [
+            "2562c9eee",
+            "75fd4ab4f"
+          ],
+          "compiled_head": "58f1fa2ef7f8c4a09ec840b81527aba25c834075",
+          "artifact": "sales-physical-owner-compile-20261128",
+          "build_exit": 0,
+          "warnings": 0,
+          "errors": 0,
+          "seconds": 62.985758,
+          "sql": "NOT_RUN",
+          "browser": "NOT_RUN",
+          "full_ci": "NOT_RUN",
+          "exact_head_k3": "NOT_RUN",
+          "reuse": "Existing native closure fixture, actual Logistics enlisted Inventory movement, owner shipment/dispatch/cost/claim readers, Sales invoice finalization and Finance settlement; no production rewrite.",
+          "limits": "Synthetic stock/product/unit/tax/credit/official-import setup and seeded recorded receipt; no-op dispatch authorization callback is not runtime authorization proof. Full normal-host/browser and financial E2E remain pending.",
+          "peer": "314-line bounded source review found one missing label ProductVersion; fixed to existing version7 before compilation. Not formal K3."
+        }
       },
       "delivery_tracking": {
         "kodlandi": "OWNER_CONNECTIONS_AND_REGRESSION_SOURCE",
