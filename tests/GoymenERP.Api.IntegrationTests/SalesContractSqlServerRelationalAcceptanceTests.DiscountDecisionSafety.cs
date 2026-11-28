@@ -90,13 +90,17 @@ public sealed partial class SalesContractSqlServerRelationalAcceptanceTests
     public async Task Owned_contract_postsave_and_precommit_authority_loss_or_cancel_rolls_back_then_same_key_decides_once()
     {
         await using var run = await Run.StartAsync();
-        foreach (var approve in new[] { true, false }) foreach (var phase in new[] { 1, 3 }) foreach (var cancel in new[] { true, false })
+        foreach (var approve in new[] { true, false })
+        {
+          // Capture the real final approval read at provider Commit; receipt reads add fences before that boundary.
+          var precommitFence = await ContractPrecommitFenceNumber(run, approve);
+          foreach (var phase in new[] { 1, precommitFence }) foreach (var cancel in new[] { true, false })
         {
             var pending = await run.PendingContractAsync("contract-late-" + Guid.NewGuid().ToString("N")); var key = "late-" + pending.Id.ToString("N"); var save = new ContractSaveProbe();
             using var cancellation = new CancellationTokenSource(); await using var safe = ContractSafetyScope(run, save); var savedFences = 0; var fired = false;
             safe.Authority.AfterRead = permission =>
             {
-                // After SavedChanges:1=postSave,2=post native result,3=final precommit. Optional price reads are not authority phases.
+                // Save-release=1; final precommit comes from actual TransactionCommitting calibration, excluding optional price reads.
                 if (permission == SalesPermissionManifestV1.ContractsDiscountApprove && save.Saved && ++savedFences == phase)
                 { fired = true; if (cancel) cancellation.Cancel(); else safe.Authority.Granted = false; }
                 return Task.CompletedTask;
@@ -106,6 +110,7 @@ public sealed partial class SalesContractSqlServerRelationalAcceptanceTests
             Assert.True(fired); Assert.Equal(1, save.Saves); Assert.Equal((0, 0, 1L), await ContractDecisionFacts(run, pending.Id)); AssertContractSafetyClean(safe);
             safe.Authority.AfterRead = null; safe.Authority.Granted = true;
             Assert.False((await ContractDecision(safe, pending.Id, key, approve)).IsReplay); Assert.Equal((1, 1, 2L), await ContractDecisionFacts(run, pending.Id));
+        }
         }
     }
 
@@ -216,9 +221,10 @@ public sealed partial class SalesContractSqlServerRelationalAcceptanceTests
             var pending = await run.PendingContractAsync("contract-read-race-" + Guid.NewGuid().ToString("N")); var key = "read-race-" + pending.Id.ToString("N");
             if (winner) { await using var seed = ContractSafetyScope(run); await ContractDecision(seed, pending.Id, key, true); }
             var reads = new ContractReadProbe { BeforeFirst = () => throw SqlConcurrencyWrapperPolicyTests.SqlFailure(number) }; var save = new ContractSaveProbe(); await using var safe = ContractSafetyScope(run, reads, save);
-            if (winner) Assert.True((await ContractDecision(safe, pending.Id, key, true)).IsReplay);
+            if (winner) { var replay = await ContractDecision(safe, pending.Id, key, true); Assert.True(replay.IsReplay); Assert.NotNull(replay.OriginalDecisionReceipt); }
             else Assert.Equal(503, (await Assert.ThrowsAsync<SalesDraftServiceException>(() => ContractDecision(safe, pending.Id, key, true))).Status);
-            Assert.Equal(2, reads.KeyReads); Assert.Equal(0, save.Saves); AssertContractSafetyClean(safe); Assert.Equal(winner ? (1, 1, 2L) : (0, 0, 1L), await ContractDecisionFacts(run, pending.Id));
+            // Two original-key lookups; only an actual winner adds one immutable receipt proof SELECT. No second mutation.
+            Assert.Equal(winner ? 3 : 2, reads.KeyReads); Assert.Equal(0, save.Saves); AssertContractSafetyClean(safe); Assert.Equal(winner ? (1, 1, 2L) : (0, 0, 1L), await ContractDecisionFacts(run, pending.Id));
         }
     }
 

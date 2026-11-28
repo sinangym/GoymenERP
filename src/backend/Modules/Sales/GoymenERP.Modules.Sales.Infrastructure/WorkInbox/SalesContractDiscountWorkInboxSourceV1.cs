@@ -17,11 +17,12 @@ namespace GoymenERP.Modules.Sales.Infrastructure.WorkInbox;
 /// are withheld from a caller without the price read (SAT-D361/D363: the contract read withholds them too); the rule then
 /// carries no numbers.
 /// </summary>
-internal sealed class SalesContractDiscountWorkInboxSourceV1(
+internal sealed partial class SalesContractDiscountWorkInboxSourceV1(
     ISalesWorkInboxApprovalStoreV1 store,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
-    IErpAuthorityRevalidationService authority)
+    IErpAuthorityRevalidationService authority,
+    ISalesContractDiscountDecisionReadV1? owner = null)
     : SalesWorkInboxSourceBaseV1(companyContext, currentUser, authority)
 {
     public const string KindName = "sales.contract-discount.v1";
@@ -54,21 +55,25 @@ internal sealed class SalesContractDiscountWorkInboxSourceV1(
                 throw new InvalidOperationException("Kayıtlı sözleşmenin iskonto onayı olguları tutarsız.");
             }
 
-            var label = SalesWorkInboxItemsV1.RequireLabel(
-                $"Sözleşme #{contract.ContractNo.ToString(CultureInfo.InvariantCulture)}");
-            items.Add(new WorkInboxItemV1(
-                SalesWorkInboxSourceBaseV1.ModuleName,
-                KindName,
-                contract.Id,
-                label,
-                contract.CreatedAtUtc.ToUniversalTime(),
-                SalesWorkInboxItemsV1.ContractsLink,
-                SalesWorkInboxItemsV1.RequireActor(contract.CreatedBy),
-                Rules(contract, disclosePrices),
-                [new WorkApprovalReferenceV1(SalesWorkInboxItemsV1.ContractRole, label, contract.Id, null)]));
+            items.Add(Item(contract.Id, contract.ContractNo, contract.CreatedBy, contract.CreatedAtUtc, Rules(contract, disclosePrices)));
         }
 
         return SalesWorkInboxItemsV1.Page(items, take);
+    }
+
+    internal static WorkInboxItemV1 Item(Guid id, int contractNo, string createdBy, DateTimeOffset createdAtUtc, IReadOnlyList<WorkApprovalRuleResultV1> rules)
+    {
+        var label = SalesWorkInboxItemsV1.RequireLabel($"Sözleşme #{contractNo.ToString(CultureInfo.InvariantCulture)}");
+        return new WorkInboxItemV1(
+                SalesWorkInboxSourceBaseV1.ModuleName,
+                KindName,
+                id,
+                label,
+                createdAtUtc.ToUniversalTime(),
+                SalesWorkInboxItemsV1.ContractsLink,
+                SalesWorkInboxItemsV1.RequireActor(createdBy),
+                rules,
+                [new WorkApprovalReferenceV1(SalesWorkInboxItemsV1.ContractRole, label, id, null)]);
     }
 
     private static IReadOnlyList<WorkApprovalRuleResultV1> Rules(SalesWorkInboxContractV1 contract, bool disclosePrices)

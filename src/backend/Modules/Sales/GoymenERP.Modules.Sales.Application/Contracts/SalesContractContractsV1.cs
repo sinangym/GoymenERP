@@ -142,7 +142,10 @@ public sealed record SalesContractView(
 public sealed record SalesContractListResponse(IReadOnlyList<SalesContractView> Items);
 
 /// <summary>The command's answer to the route: the contract, whether it was replayed, and the first correlation (replay header).</summary>
-public sealed record SalesContractCommandResult(SalesContractView Contract, bool IsReplay, string OriginalCorrelationId);
+public sealed record SalesContractCommandResult(SalesContractView Contract, bool IsReplay, string OriginalCorrelationId)
+{
+    [System.Text.Json.Serialization.JsonIgnore] public SalesContractDiscountOriginalReceiptV1? OriginalDecisionReceipt { get; init; }
+}
 
 /// <summary>The strict reader of the request bodies: unknown members, a null body, an empty id or malformed decimal text is a 400.</summary>
 public static class SalesContractJson

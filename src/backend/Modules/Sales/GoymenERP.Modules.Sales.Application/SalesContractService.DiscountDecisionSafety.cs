@@ -29,11 +29,11 @@ public sealed partial class SalesContractService
         try
         {
             var answer = await boundary.RunContractDiscountDecisionAsync(envelope, hash, commandName, cleanBeforeAuthority,
-                ct => DecideCoreAsync(contractId, request, commandName, metadata, decide, audit, ct),
+                async ct => await Attach(await DecideCoreAsync(contractId, request, commandName, metadata, decide, audit, ct), ct),
                 async ct =>
                 {
                     var replay = await FindReplayAsync(scope, ApprovePermission, envelope, hash, commandName, ct);
-                    return replay is null ? null : await ReplayedAsync(scope, replay, ct);
+                    return replay is null ? null : await Attach(await ReplayedAsync(scope, replay, ct), ct);
                 }, ct => RequireStillAsync(scope, ApprovePermission, ct), token);
             await RequireStillAsync(scope, ApprovePermission, token); token.ThrowIfCancellationRequested();
             var firstDisclosure = await DiscloseAmountsAsync(scope, token); token.ThrowIfCancellationRequested();
@@ -48,8 +48,18 @@ public sealed partial class SalesContractService
                     Installments = answer.Contract.Installments.Select(x => x with { Amount = null }).ToArray(),
                     DiscountRules = answer.Contract.DiscountRules.Select(x => x with { RatePercent = null }).ToArray(),
                 } };
+            if (answer.OriginalDecisionReceipt is { } receipt)
+                answer = answer with { OriginalDecisionReceipt = receipt with { CurrentResponseDigest = SalesContractDiscountDecisionDigestsV1.CurrentResponseDigest(answer) } };
             return answer;
         }
         catch (SalesDraftStoreException failure) { throw Store(failure); }
+        async Task<SalesContractCommandResult> Attach(SalesContractCommandResult response, CancellationToken ct)
+        {
+            if (contracts is not ISalesContractDiscountDecisionReadStoreV1 reader) return response;
+            var receipt = await reader.ReadContractDiscountDecisionReceiptAsync(envelope, hash, commandName, response,
+                async cancellation => { await RequireStillAsync(scope, ApprovePermission, cancellation); cancellation.ThrowIfCancellationRequested(); }, ct);
+            ct.ThrowIfCancellationRequested();
+            return response with { OriginalDecisionReceipt = receipt };
+        }
     }
 }
