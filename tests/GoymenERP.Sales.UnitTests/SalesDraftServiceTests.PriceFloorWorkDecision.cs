@@ -130,11 +130,12 @@ public sealed partial class SalesDraftServiceTests
         foreach (var drift in new[] { false, true })
         {
             var (world, id) = await FloorPurposeWorld(); var prices = 0;
+            world.Bindings = world.Bindings with { PriceReadPermission = SalesPermissionManifestV1.OrdersPriceRead };
             world.Authority.OnRead = (permission, _) =>
             {
-                if (permission != PriceReadPermission) return;
+                if (permission != SalesPermissionManifestV1.OrdersPriceRead) return;
                 prices++;
-                if (!drift && prices == 3) world.Authority.Denied.Add(PriceReadPermission);
+                if (!drift && prices == 3) world.Authority.Denied.Add(SalesPermissionManifestV1.OrdersPriceRead);
                 if (drift && prices == 4) world.User.Id = "other";
             };
             var source = FloorPurposeSource(world); var context = FloorPurposeContext(world);
