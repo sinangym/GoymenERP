@@ -66,6 +66,31 @@ const pendingWithoutLimit = (overrides: Body = {}): Body => activeWithoutDiscoun
 const decidedBy = { decidedBy: 'synthetic-manager', decidedAtUtc: '2026-11-15T09:00:00Z' }
 
 describe('S-11 sales contract decoder', () => {
+  it.each(['2', '9007199254740993', '9223372036854775807'])('opts into retained pending version %s without changing native defaults or the wire text', (version) => {
+    const body = pendingWithoutLimit({ version })
+    expect(decodeSalesContract(body)).toBeNull()
+    expect(decodeSalesContract(body, ID, { pendingVersion: () => true })?.version).toBe(version)
+    expect(decodeSalesContract(body, ID, { pendingVersion: () => false })).toBeNull()
+    expect(decodeSalesContractList({ items: [body] })).toBeNull()
+    expect(body.version).toBe(version)
+  })
+
+  it.each(['validFrom', 'validThrough', 'installment'])('applies an explicit date profile to %s and keeps native default reads unchanged', (field) => {
+    const forbidden = field === 'validFrom' ? '2026-11-01' : field === 'validThrough' ? '2027-10-31' : '2026-12-01'
+    const body = pendingWithoutLimit()
+    expect(decodeSalesContract(body)).not.toBeNull()
+    expect(decodeSalesContract(body, ID, { dateOnly: (value) => typeof value === 'string' && value !== forbidden })).toBeNull()
+    expect(decodeSalesContract(body, ID, {})).toEqual(decodeSalesContract(body))
+  })
+
+  it('keeps strict shape, state and identities even when an explicit profile is supplied', () => {
+    const profile = { pendingVersion: () => true }
+    expect(decodeSalesContract(pendingWithoutLimit({ version: '9007199254740993', receipt: 'private' }), ID, profile)).toBeNull()
+    expect(decodeSalesContract(pendingWithoutLimit({ version: '0' }), ID, profile)).toBeNull()
+    expect(decodeSalesContract(pendingWithoutLimit({ version: '2', decidedBy: 'checker' }), ID, profile)).toBeNull()
+    expect(decodeSalesContract(pendingWithoutLimit({ version: '2' }), OTHER_ID, profile)).toBeNull()
+  })
+
   it('reads an active contract with no discount, which never needs approval', () => {
     const contract = decodeSalesContract(activeWithoutDiscount())
     expect(contract).not.toBeNull()

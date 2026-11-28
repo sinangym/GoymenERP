@@ -173,9 +173,15 @@ export function isRateText(value: unknown, positive: boolean): value is string {
   return !positive || /[1-9]/.test(value)
 }
 
-function decodeInstallment(value: unknown, index: number, scale: number, visible: boolean): SalesContractInstallment | null {
+export interface SalesContractDecodeProfile {
+  readonly dateOnly?: (value: unknown) => boolean
+  readonly pendingVersion?: (value: string) => boolean
+}
+
+function decodeInstallment(value: unknown, index: number, scale: number, visible: boolean,
+  dateOnly: (value: unknown) => value is string): SalesContractInstallment | null {
   const o = exact(value, INSTALLMENT_KEYS)
-  if (o === null || !ordinal(o.installmentNo, index + 1) || !isDateOnly(o.dueDate)
+  if (o === null || !ordinal(o.installmentNo, index + 1) || !dateOnly(o.dueDate)
     || !(visible ? isAmountAtScale(o.amount, scale, true) : o.amount === null)) return null
   return { installmentNo: o.installmentNo as number, dueDate: o.dueDate, amount: o.amount as string | null }
 }
@@ -191,13 +197,16 @@ function decodeRule(value: unknown, index: number, visible: boolean): SalesContr
 }
 
 /** One contract; null unless every key is present, typed and consistent with the state. `expectedId` pins a detail read. */
-export function decodeSalesContract(value: unknown, expectedId?: string): SalesContract | null {
+export function decodeSalesContract(value: unknown, expectedId?: string, profile?: SalesContractDecodeProfile): SalesContract | null {
+  const requestedDate = profile?.dateOnly
+  const dateOnly = requestedDate === undefined ? isDateOnly
+    : (candidate: unknown): candidate is string => typeof candidate === 'string' && requestedDate(candidate)
   const o = exact(value, KEYS)
   if (o === null || !isReferenceId(o.id) || (expectedId !== undefined && o.id.toLowerCase() !== expectedId.toLowerCase())
     || typeof o.contractNo !== 'number' || !Number.isInteger(o.contractNo) || o.contractNo < 1
     || !isReferenceId(o.partyId) || !isReferenceId(o.companyAccountId) || !isReferenceId(o.currencyId) || !isScale(o.moneyScale)
     || typeof o.state !== 'string' || !states.includes(o.state) || !isVersionString(o.version)
-    || !isDateOnly(o.validFrom) || !(o.validThrough === null || (isDateOnly(o.validThrough) && o.validThrough >= o.validFrom))
+    || !dateOnly(o.validFrom) || !(o.validThrough === null || (dateOnly(o.validThrough) && o.validThrough >= o.validFrom))
     || typeof o.amountDisclosure !== 'string' || !disclosures.includes(o.amountDisclosure)
     || !Array.isArray(o.installments) || o.installments.length < 1 || o.installments.length > SALES_CONTRACT_LIMITS.installments
     || !(o.amountDisclosure === 'Visible' ? isAmountAtScale(o.plannedTotalAmount, o.moneyScale, true) : o.plannedTotalAmount === null)
@@ -209,7 +218,7 @@ export function decodeSalesContract(value: unknown, expectedId?: string): SalesC
   const visible = o.amountDisclosure === 'Visible'
   const installments: SalesContractInstallment[] = []
   for (const [index, item] of o.installments.entries()) {
-    const installment = decodeInstallment(item, index, scale, visible)
+    const installment = decodeInstallment(item, index, scale, visible, dateOnly)
     if (installment === null || (index > 0 && installment.dueDate < installments[index - 1].dueDate)) return null
     installments.push(installment)
   }
@@ -234,7 +243,7 @@ export function decodeSalesContract(value: unknown, expectedId?: string): SalesC
   const decided = text(o.decidedBy) && instant(o.decidedAtUtc) && o.decidedBy.trim() !== o.createdBy.trim()
   let consistent: boolean
   if (state === SALES_CONTRACT_STATE.pending) {
-    consistent = o.discountApprovalRequired && undecided && o.version === '1' && !o.isInEffectToday
+    consistent = o.discountApprovalRequired && undecided && (profile?.pendingVersion?.(o.version) ?? o.version === '1') && !o.isInEffectToday
   } else if (state === SALES_CONTRACT_STATE.active) {
     consistent = o.discountApprovalRequired
       ? decided && o.rejectionReason === null && o.version !== '1'
