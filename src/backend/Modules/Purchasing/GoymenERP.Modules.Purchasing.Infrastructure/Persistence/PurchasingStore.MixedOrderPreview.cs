@@ -105,7 +105,7 @@ public sealed partial class PurchasingStore : IPurchaseMixedOrderApprovalPreview
         }).ToArray());
     }
 
-    private static async Task<T> ReadMixedOwnerAsync<T>(Func<Task<T>> read, Func<CancellationToken, Task>? fence, CancellationToken token)
+    internal static async Task<T> ReadMixedOwnerAsync<T>(Func<Task<T>> read, Func<CancellationToken, Task>? fence, CancellationToken token)
     {
         if (fence is not null) { token.ThrowIfCancellationRequested(); await fence(token); token.ThrowIfCancellationRequested(); }
         var result = await read();

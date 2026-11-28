@@ -20,11 +20,13 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
     {
         await using var run = await Run.StartAsync();
         var f = await MembershipSourcesAsync(run, CompanyA);
-        await StageMembershipFixtureAsync(run, f);
+        // A pre-existing standalone approval remains history; linking its exact older Draft is only this metadata fixture,
+        // not a newly admitted binding. A new standalone approval AFTER binding is now refused by the parent participant gate.
         await using (var service = ServiceScope(run, CompanyA))
             await service.Store.WriteAsync(f.Service.OrderId, PurchaseServiceOrderCommandsV1.Approve, run.Envelope("membership-child-later-approve"),
                 Hash("membership-child-later-approve"), "SENTETIK child owner later transition",
                 (old, _) => Task.FromResult(PurchaseServiceOrder.Approve(old!, 1, OrderApprover, old!.UpdatedAtUtc)), _ => Task.CompletedTask, default);
+        await StageMembershipFixtureAsync(run, f);
         await using var restart = run.Store(CompanyA);
         var stored = (await restart.Store.FindOrderAsync(f.Parent.Order.Id))!;
         Assert.Equal((3L, PurchaseOrderStatus.Draft), (stored.Order.Version, stored.Order.Status));
@@ -99,11 +101,13 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
 
     private sealed record MembershipSources(StoredPurchaseOrder Parent, PurchaseServiceOrderState Service, DateTimeOffset BoundAt);
     private static async Task<MembershipSources> MembershipSourcesAsync(Run run, Guid company,
-        PurchaseServiceOrderState? sharedService = null, Guid? serviceId = null)
+        PurchaseServiceOrderState? sharedService = null, Guid? serviceId = null, bool functionalCurrency = false)
     {
         var owners = sharedService is null ? Owners.For(company) : new Owners(company, sharedService.SupplierPartyId, sharedService.CompanyAccountId);
         var draft = sharedService ?? ServiceDraft(run) with { CompanyId = company, OrderId = serviceId ?? Guid.NewGuid(),
             SupplierPartyId = owners.Party, CompanyAccountId = owners.Account };
+        if (functionalCurrency) draft = draft with { Money = draft.Money with {
+            CurrencyId = GoymenERP.Modules.Settings.Application.Contracts.V1.SettingsCurrencyIdentitiesV1.TurkishLira, CurrencyCode = "TRY" } };
         PurchaseServiceOrderState service;
         if (sharedService is null)
         {

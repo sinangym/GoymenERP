@@ -24,6 +24,14 @@ public sealed partial class PurchasingService
             return new Dictionary<Guid, PurchaseOrderLineTheoreticalKilograms>();
         }
 
+        return await ReadMixedTheoreticalKilogramsAsync(scope, stored, cancellationToken);
+    }
+
+    // Same native calculation/provenance, using the already selected parent inside its owned transaction.
+    private async Task<IReadOnlyDictionary<Guid, PurchaseOrderLineTheoreticalKilograms>> ReadMixedTheoreticalKilogramsAsync(
+        Scope scope, StoredPurchaseOrder stored, CancellationToken cancellationToken)
+    {
+        var permission = bindings.ApprovePermission;
         var pending = stored.Order.Lines.Where(line => line.NeedsTheoreticalKilograms && line.TheoreticalKilograms is null).ToArray();
         var result = new Dictionary<Guid, PurchaseOrderLineTheoreticalKilograms>();
         if (pending.Length == 0) return result;

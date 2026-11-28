@@ -65,7 +65,7 @@ public sealed partial class PurchasingServiceTests
     {
         var f = MixedPreviewFixture(); var before = f.World.Store.Replays;
         var denied = await Assert.ThrowsAsync<PurchasingServiceException>(() => MixedPreviewService(f.World, f.Preparation)
-            .ApproveOrderAsync(f.Source.Parent.Order.Id, new("3") { MixedServices = [] }, Metadata("mixed-still-closed")));
+            .ApproveOrderAsync(f.Source.Parent.Order.Id, new("3") { MixedServices = [new(f.Source.Services[0].OrderId, "2", f.Source.Services[0].Lines.Select(x => x.LineId).ToArray())] }, Metadata("mixed-still-closed")));
         Assert.Equal(503, denied.Status); Assert.Equal(before, f.World.Store.Replays); Assert.Empty(f.Preparation.Reads);
         Assert.Null(f.Source.Parent.Order.Approval);
     }

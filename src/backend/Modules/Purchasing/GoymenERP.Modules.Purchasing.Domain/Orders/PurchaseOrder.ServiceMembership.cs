@@ -130,6 +130,23 @@ public sealed partial class PurchaseOrder
         return approved.AsReadOnly();
     }
 
+    /// <summary>Persistence-only: the store first verifies the genuine parent Attempt/Audit and every exact child revision/audit.
+    /// This assigns the recorded scalar transition; it neither re-approves children nor touches the version/time.</summary>
+    internal void RestoreRecordedServiceApproval(long expectedVersion, long resultVersion, string approvedBy, DateTimeOffset recordedAtUtc)
+    {
+        RequireVersion(expectedVersion);
+        RequireStatus(PurchaseOrderStatus.Draft, PurchasingRuleCodes.OrderNotDraft, "Recorded mixed approval requires its exact Draft.");
+        var actor = RequireActor(approvedBy, nameof(approvedBy));
+        if (serviceMemberships.Count == 0 || resultVersion != checked(expectedVersion + 1) || recordedAtUtc.Offset != TimeSpan.Zero
+            || PreparedBy is null || PreparedBy == actor || lines.Count == 0)
+            throw new InvalidOperationException("Recorded mixed approval identity or maker/version binding is invalid.");
+        Approval = new PurchaseOrderApproval(actor, recordedAtUtc);
+        ApprovalVersion = resultVersion;
+        Status = PurchaseOrderStatus.Approved;
+        Version = resultVersion;
+        UpdatedAtUtc = recordedAtUtc;
+    }
+
     private void RequireNoServiceApprovalParticipant()
     {
         if (serviceMemberships.Count != 0)

@@ -14,7 +14,7 @@ using Microsoft.EntityFrameworkCore.Storage;
 namespace GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 
 /// <summary>Own Serializable transaction, immutable snapshots/attempts and Audit owner append. Borrowed state is never cleared.</summary>
-public sealed class PurchaseServiceOrderStoreV1(PurchasingDbContext database, ICompanyContext company,
+public sealed partial class PurchaseServiceOrderStoreV1(PurchasingDbContext database, ICompanyContext company,
     IAuditEventCollector audit, IAuditTransactionWriterV1 auditWriter, ISettingsDocumentNumberSeriesV1 numbers) : IPurchaseServiceOrderStoreV1,
     IPurchaseSubcontractOrderReadPortV1, IPurchaseServiceAcceptanceReadPortV1
 {
@@ -123,6 +123,12 @@ public sealed class PurchaseServiceOrderStoreV1(PurchasingDbContext database, IC
             await requireStill(token);
             var replay = await ReplayAsync(command, envelope, hash, token);
             if (replay is not null) { await requireStill(token); return replay; }
+            if (command == PurchaseServiceOrderCommandsV1.Approve)
+            {
+                var bound = await PurchasingStore.ReadMixedOwnerAsync(() => database.OrderServiceMemberships.AsNoTracking()
+                    .AnyAsync(x => x.CompanyId == scope && x.ServiceOrderId == orderId, token), requireStill, token);
+                if (bound) throw new PurchasingServiceException(503, "service_unavailable");
+            }
             var before = await ReadAsync(orderId, token);
             if (before is null && command != PurchaseServiceOrderCommandsV1.Create) return null;
             PurchaseServiceOrderState? after = null; PurchasingTerminalRefusal? refusal = null;
@@ -150,19 +156,7 @@ public sealed class PurchaseServiceOrderStoreV1(PurchasingDbContext database, IC
                         throw new InvalidOperationException("Numara kaynağı doğrulanamadı.");
                     after = after with { DocumentNumber = reserved.Number };
                 }
-                var parent = await database.ServiceOrders.SingleOrDefaultAsync(x => x.OrderId == orderId, token);
-                if (parent is null) database.ServiceOrders.Add(new PurchaseServiceOrderRow() { CompanyId = scope, OrderId = orderId, Version = after.Version });
-                else { if (parent.Version != before!.Version) throw new DbUpdateConcurrencyException(); parent.Version = after.Version; }
-                snapshot = JsonSerializer.Serialize(after, Json);
-                database.ServiceOrderRevisions.Add(new PurchaseServiceOrderRevisionRow() { CompanyId = scope, OrderId = orderId, Version = after.Version, SnapshotJson = snapshot });
-                foreach (var acceptance in after.Acceptances.Where(x => before is null || before.Acceptances.All(old => old.AcceptanceId != x.AcceptanceId)))
-                {
-                    var acceptedLine = after.Lines.Single(x => x.LineId == acceptance.LineId);
-                    database.ServiceAcceptances.Add(new PurchaseServiceAcceptanceRow() { CompanyId = scope, OrderId = orderId, LineId = acceptance.LineId,
-                        AcceptanceId = acceptance.AcceptanceId, Quantity = acceptance.Quantity, OrderVersionAfter = acceptance.OrderVersionAfter,
-                        SupplierPartyId = after.SupplierPartyId, CompanyAccountId = after.CompanyAccountId, CurrencyId = after.Money.CurrencyId,
-                        ServiceTypeId = acceptedLine.ServiceTypeId, UnitId = acceptedLine.UnitId });
-                }
+                snapshot = await StageStateAsync(database, scope, orderId, before, after, token, null);
             }
             database.ServiceOrderAttempts.Add(new PurchaseServiceOrderAttemptRow() { CompanyId = scope, Command = command, KeyHash = Hash(envelope.IdempotencyKey),
                 RequestHash = hash, ActorId = envelope.ActorId, CorrelationId = envelope.CorrelationId,

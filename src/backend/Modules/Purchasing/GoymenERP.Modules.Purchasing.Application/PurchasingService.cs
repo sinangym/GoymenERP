@@ -376,8 +376,8 @@ public sealed partial class PurchasingService(
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(metadata);
         cancellationToken.ThrowIfCancellationRequested();
+        if (request.MixedServices is not null) return await ApproveMixedOrderAsync(orderId, request, metadata, cancellationToken);
         var scope = await RequireAsync(bindings.ApprovePermission, cancellationToken);
-        if (request.MixedServices is not null) throw new PurchasingServiceException(503, "service_unavailable");
         var disclosure = await DiscloseAsync(scope, cancellationToken);
         var expectedVersion = ParseVersion(request.ExpectedVersion);
         var requestHash = PurchasingRequestHash.Compute(PurchasingCommands.OrderApproveV1, orderId, request);

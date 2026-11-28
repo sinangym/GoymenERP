@@ -1,4 +1,5 @@
 using System.Text.Json;
+using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Domain.Orders;
 using GoymenERP.Modules.Purchasing.Domain.Services;
 using Microsoft.EntityFrameworkCore;
@@ -75,10 +76,12 @@ public sealed partial class PurchasingStore
 
     private static Queue<(PurchaseOrderServiceMembershipBatch Batch, IReadOnlyList<PurchaseServiceOrderState> Prepared)>
         MembershipTimeline(PurchaseOrderRow parent, IReadOnlyList<PurchaseOrderServiceMembershipRow>? members,
-            IReadOnlyList<PurchaseServiceOrderRevisionRow>? prepared)
+            IReadOnlyList<PurchaseServiceOrderRevisionRow>? prepared, PurchaseMixedOrderApprovalReceiptV1? approval = null)
     {
         if (members is not { Count: > 0 }) return new();
-        if (parent.Status != (int)PurchaseOrderStatus.Draft)
+        if (parent.Status != (int)PurchaseOrderStatus.Draft && (approval is null || approval.CompanyId != parent.CompanyId
+            || approval.OrderId != parent.Id || approval.ResultVersion > parent.Version || approval.ActorId != parent.ApprovedBy
+            || approval.RecordedAtUtc != parent.ApprovedAtUtc))
             throw new InvalidOperationException(PurchaseOrder.ServiceMembershipUnavailable);
         if (members.Any(x => x.CompanyId != parent.CompanyId || x.OrderId != parent.Id)
             || members.Select(x => x.ServiceOrderId).Distinct().Count() != members.Count)
