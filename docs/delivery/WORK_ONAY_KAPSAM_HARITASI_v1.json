@@ -47,7 +47,49 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "sales.order-draft.v1",
+            "source": "src/backend/GoymenERP.Api/WorkRuntime/NativeApprovalWorkInboxSourceV1.cs:65",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "sales.orders.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "sales.order-draft.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/sales.order-draft.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "sales.order-draft.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "salesOrders.ApproveDraftAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs:701"
+          },
+          {
+            "call": "salesOrders.RejectDraftAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs:701"
+          }
+        ],
+        "native_permissions": [
+          "sales.orders.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 2,
@@ -75,7 +117,45 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "sales.price-floor-exception.v1",
+            "source": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesPriceFloorExceptionWorkInboxSourceV1.cs:17",
+            "source_decision_read": false,
+            "host_supported": false,
+            "owner_permission": "sales.orders.price-floor-exception.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": false,
+            "frontend_capability": null,
+            "capability_declared": false,
+            "route": null,
+            "route_parity": null,
+            "inbox_capability": "sales.orders.price-floor-exception.approve",
+            "inbox_capability_matches_work": null
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "SalesDraftService.ApprovePriceFloorExceptionsAsync",
+            "ref": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.cs:691"
+          }
+        ],
+        "native_permissions": [
+          "sales.orders.price-floor-exception.approve"
+        ],
+        "status": "LEGACY_INBOX_NATIVE_COMMAND_NO_WORK_HOST",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 3,
@@ -101,7 +181,45 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "sales.discount-exception.v1",
+            "source": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesDiscountExceptionWorkInboxSourceV1.cs:24",
+            "source_decision_read": false,
+            "host_supported": false,
+            "owner_permission": "sales.orders.discount-exception.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": false,
+            "frontend_capability": null,
+            "capability_declared": false,
+            "route": null,
+            "route_parity": null,
+            "inbox_capability": null,
+            "inbox_capability_matches_work": null
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "SalesDraftService.ApproveDiscountExceptionsAsync",
+            "ref": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.DiscountException.cs:36"
+          }
+        ],
+        "native_permissions": [
+          "sales.orders.discount-exception.approve"
+        ],
+        "status": "LEGACY_INBOX_NATIVE_COMMAND_NO_WORK_HOST",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 4,
@@ -129,7 +247,49 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "sales.over-delivery-request.v1",
+            "source": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesOverDeliveryRequestWorkInboxSourceV1.cs:17",
+            "source_decision_read": false,
+            "host_supported": false,
+            "owner_permission": "sales.orders.over-delivery.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": false,
+            "frontend_capability": null,
+            "capability_declared": false,
+            "route": null,
+            "route_parity": null,
+            "inbox_capability": "sales.orders.over-delivery.approve",
+            "inbox_capability_matches_work": null
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "SalesDraftService.ApproveOverDeliveryRequestAsync",
+            "ref": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.ApprovalRequests.cs:134"
+          },
+          {
+            "call": "SalesDraftService.RejectOverDeliveryRequestAsync",
+            "ref": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.ApprovalRequests.cs:128"
+          }
+        ],
+        "native_permissions": [
+          "sales.orders.over-delivery.approve"
+        ],
+        "status": "LEGACY_INBOX_NATIVE_COMMAND_NO_WORK_HOST",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 5,
@@ -156,7 +316,49 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "sales.risk-exception.v1",
+            "source": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesRiskExceptionWorkInboxSourceV1.cs:18",
+            "source_decision_read": false,
+            "host_supported": false,
+            "owner_permission": "sales.orders.risk-exception.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": false,
+            "frontend_capability": null,
+            "capability_declared": false,
+            "route": null,
+            "route_parity": null,
+            "inbox_capability": "sales.orders.risk-exception.approve",
+            "inbox_capability_matches_work": null
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "SalesRiskExceptionService.ApproveRiskExceptionAsync",
+            "ref": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesRiskExceptionService.cs:144"
+          },
+          {
+            "call": "SalesRiskExceptionService.RejectRiskExceptionAsync",
+            "ref": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesRiskExceptionService.cs:149"
+          }
+        ],
+        "native_permissions": [
+          "sales.orders.risk-exception.approve"
+        ],
+        "status": "LEGACY_INBOX_NATIVE_COMMAND_NO_WORK_HOST",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 6,
@@ -175,7 +377,34 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [],
+        "owner_commands": [
+          {
+            "call": "SalesDraftService.ApproveRemainderChangeAsync",
+            "ref": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.RemainderChange.cs:113"
+          },
+          {
+            "call": "SalesDraftService.RejectRemainderChangeAsync",
+            "ref": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.RemainderChange.cs:117"
+          }
+        ],
+        "native_permissions": [
+          "sales.orders.approve"
+        ],
+        "status": "NATIVE_AXIS_NO_INBOX_KIND",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "note": "Native changeNo/version axis exists; no separate Inbox kind/source. Generic order approval is not remainder approval.",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 7,
@@ -204,7 +433,49 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "sales.request.v1",
+            "source": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesRequestWorkInboxSourceV1.cs:15",
+            "source_decision_read": false,
+            "host_supported": false,
+            "owner_permission": "sales.requests.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": false,
+            "frontend_capability": null,
+            "capability_declared": false,
+            "route": null,
+            "route_parity": null,
+            "inbox_capability": "sales.requests.approve",
+            "inbox_capability_matches_work": null
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "SalesDraftService.ApproveRequestAsync",
+            "ref": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.Requests.cs:171"
+          },
+          {
+            "call": "SalesDraftService.RejectRequestAsync",
+            "ref": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.Requests.cs:177"
+          }
+        ],
+        "native_permissions": [
+          "sales.requests.approve"
+        ],
+        "status": "LEGACY_INBOX_NATIVE_COMMAND_NO_WORK_HOST",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 8,
@@ -232,7 +503,49 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "sales.quote-conversion-request.v1",
+            "source": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesQuoteConversionRequestWorkInboxSourceV1.cs:16",
+            "source_decision_read": false,
+            "host_supported": false,
+            "owner_permission": "sales.quotes.expired-conversion.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": false,
+            "frontend_capability": null,
+            "capability_declared": false,
+            "route": null,
+            "route_parity": null,
+            "inbox_capability": "sales.quotes.expired-conversion.approve",
+            "inbox_capability_matches_work": null
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "SalesDraftService.ApproveExpiredQuoteConversionAsync",
+            "ref": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.QuoteFollowUps.cs:28"
+          },
+          {
+            "call": "SalesDraftService.RejectQuoteConversionRequestAsync",
+            "ref": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesDraftService.ApprovalRequests.cs:122"
+          }
+        ],
+        "native_permissions": [
+          "sales.quotes.expired-conversion.approve"
+        ],
+        "status": "LEGACY_INBOX_NATIVE_COMMAND_NO_WORK_HOST",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 9,
@@ -260,7 +573,49 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "sales.invoice.v1",
+            "source": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesInvoiceWorkInboxSourceV1.cs:15",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "sales.invoices.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "sales.invoice.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/sales.invoice.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "sales.invoice.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "salesInvoices.ApproveInvoiceAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs:714"
+          },
+          {
+            "call": "salesInvoices.RejectInvoiceAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs:714"
+          }
+        ],
+        "native_permissions": [
+          "sales.invoices.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 10,
@@ -283,7 +638,49 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "sales.customer-return.v1",
+            "source": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesCustomerReturnWorkInboxSourceV1.cs:14",
+            "source_decision_read": false,
+            "host_supported": false,
+            "owner_permission": "sales.returns.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": false,
+            "frontend_capability": null,
+            "capability_declared": false,
+            "route": null,
+            "route_parity": null,
+            "inbox_capability": "sales.customer-returns.approve",
+            "inbox_capability_matches_work": null
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "SalesCustomerReturnService.ApproveCustomerReturnAsync",
+            "ref": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesCustomerReturnService.cs:139"
+          },
+          {
+            "call": "SalesCustomerReturnService.RejectCustomerReturnAsync",
+            "ref": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesCustomerReturnService.cs:145"
+          }
+        ],
+        "native_permissions": [
+          "sales.returns.approve"
+        ],
+        "status": "LEGACY_INBOX_NATIVE_COMMAND_NO_WORK_HOST",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 11,
@@ -306,7 +703,49 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "sales.contract-discount.v1",
+            "source": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesContractDiscountWorkInboxSourceV1.cs:20",
+            "source_decision_read": false,
+            "host_supported": false,
+            "owner_permission": "sales.contracts.discount.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": false,
+            "frontend_capability": null,
+            "capability_declared": false,
+            "route": null,
+            "route_parity": null,
+            "inbox_capability": null,
+            "inbox_capability_matches_work": null
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "SalesContractService.ApproveContractDiscountAsync",
+            "ref": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesContractService.cs:139"
+          },
+          {
+            "call": "SalesContractService.RejectContractDiscountAsync",
+            "ref": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Application/SalesContractService.cs:144"
+          }
+        ],
+        "native_permissions": [
+          "sales.contracts.discount.approve"
+        ],
+        "status": "LEGACY_INBOX_NATIVE_COMMAND_NO_WORK_HOST",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 12,
@@ -325,7 +764,51 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "sales.subcontract-invoice.v1",
+            "source": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesSubcontractInvoiceWorkInboxSourceV1.cs:14",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "sales.invoices.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "sales.subcontract-invoice.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/sales.subcontract-invoice.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "sales.subcontract-invoice.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "subcontractInvoices.ApproveSubcontractInvoiceAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs:708"
+          },
+          {
+            "call": "subcontractInvoices.RejectSubcontractInvoiceAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs:709"
+          }
+        ],
+        "native_permissions": [
+          "sales.invoices.approve",
+          "sales.orders.price.read"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "note": "Owner also requires sales.orders.price.read, not general order browsing.",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 13,
@@ -368,7 +851,49 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "purchasing.request.v1",
+            "source": "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/WorkInbox/PurchaseRequestWorkInboxSourceV1.cs:22",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "purchasing.requests.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "purchasing.request.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/purchasing.request.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "purchasing.request.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "purchasing.ApproveRequestAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs:684"
+          },
+          {
+            "call": "purchasing.RejectRequestAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs:685"
+          }
+        ],
+        "native_permissions": [
+          "purchasing.requests.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 14,
@@ -401,7 +926,45 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "purchasing.order.v1",
+            "source": "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/WorkInbox/PurchaseOrderWorkInboxSourceV1.cs:21",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "purchasing.orders.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "purchasing.order.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/purchasing.order.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "purchasing.order.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "purchasing.ApproveOrderAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs:677"
+          }
+        ],
+        "native_permissions": [
+          "purchasing.orders.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 15,
@@ -427,7 +990,49 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "purchasing.goods-receipt-batch.v1",
+            "source": "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/WorkInbox/PurchaseGoodsReceiptBatchWorkInboxSourceV1.cs:23",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "purchasing.goods-receipts.approve-variance",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "purchasing.goods-receipt-batch.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/purchasing.goods-receipt-batch.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "purchasing.goods-receipt-batch.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "goodsReceiptBatches.ApproveGoodsReceiptBatchAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs:618"
+          },
+          {
+            "call": "goodsReceiptBatches.RejectGoodsReceiptBatchAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs:619"
+          }
+        ],
+        "native_permissions": [
+          "purchasing.goods-receipts.approve-variance"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 16,
@@ -451,7 +1056,46 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "purchasing.incoming-invoice-variance.v1",
+            "source": "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/WorkInbox/PurchaseIncomingInvoiceVarianceWorkInboxSourceV1.cs:29",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "purchasing.invoices.approve-variance",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "purchasing.invoice-variance.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/purchasing.incoming-invoice-variance.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "purchasing.invoice-variance.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "purchaseInvoiceWorkflow.ApproveVarianceAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs:644"
+          }
+        ],
+        "native_permissions": [
+          "purchasing.invoices.approve-variance",
+          "purchasing.orders.price.read"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 17,
@@ -470,7 +1114,50 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "purchasing.supplier-return-cost-exception.v1",
+            "source": "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/WorkInbox/PurchaseSupplierReturnCostExceptionWorkInboxSourceV1.cs:23",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "purchasing.orders.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "purchasing.supplier-return-cost-exception.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/purchasing.supplier-return-cost-exception.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "purchasing.supplier-return-cost-exception.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "supplierReturns.ApproveSupplierReturnCostExceptionAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.SupplierReturn.cs:76"
+          },
+          {
+            "call": "supplierReturns.RejectSupplierReturnCostExceptionAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.SupplierReturn.cs:77"
+          }
+        ],
+        "native_permissions": [
+          "purchasing.orders.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "note": "Existing purchasing.orders.approve reuse is native and intentional.",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 18,
@@ -503,7 +1190,46 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "purchasing.service-order.v1",
+            "source": "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/WorkInbox/PurchaseServiceOrderWorkInboxSourceV1.cs:23",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "purchasing.orders.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "purchasing.service-order.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/purchasing.service-order.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "purchasing.service-order.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "purchasingServiceOrders.ApproveAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs:659"
+          }
+        ],
+        "native_permissions": [
+          "purchasing.orders.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "note": "Distinct service-order owner reuses purchasing.orders.approve; not the purchase-order command.",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 19,
@@ -536,7 +1262,45 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "inventory.stock-count.v1",
+            "source": "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/WorkInbox/InventoryStockCountWorkInboxSourceV1.cs:11",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "inventory.stock-count.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "inventory.stock-count.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/inventory.stock-count.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "inventory.stock-count.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "stockCounts.DecideAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.InventoryStockCount.cs:51"
+          }
+        ],
+        "native_permissions": [
+          "inventory.stock-count.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 20,
@@ -567,7 +1331,45 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "inventory.stock-scrap.v1",
+            "source": "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/WorkInbox/InventoryStockScrapWorkInboxSourceV1.cs:11",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "inventory.stock-scrap.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "inventory.stock-scrap.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/inventory.stock-scrap.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "inventory.stock-scrap.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "stockScraps.DecideAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.InventoryStockScrap.cs:52"
+          }
+        ],
+        "native_permissions": [
+          "inventory.stock-scrap.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 21,
@@ -598,7 +1400,50 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "inventory.transfer-overage.v1",
+            "source": "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/WorkInbox/InventoryTransferOverageWorkInboxSourceV1.cs:28",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "inventory.stock-transfer.overage-approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "inventory.transfer-overage.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/inventory.transfer-overage.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "inventory.transfer-overage.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "inventoryTransferReceipts.DecideOverageAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.InventoryTransferOverage.cs:64"
+          }
+        ],
+        "native_permissions": [
+          "inventory.stock-transfer.overage-approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": [
+          {
+            "source_commit": "3008a98a86e39cc27d442a5a4fee0a29b71967da",
+            "scope": "Source Inbox purpose mapping only; local regression NOT_RUN."
+          }
+        ]
+      }
     },
     {
       "flow": 22,
@@ -629,7 +1474,45 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "inventory.transfer-loss.v1",
+            "source": "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/WorkInbox/InventoryTransferLossWorkInboxSourceV1.cs:22",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "inventory.stock-transfer.loss-approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "inventory.transfer-loss.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/inventory.transfer-loss.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "inventory.transfer-loss.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "inventoryTransferReceipts.DecideLossAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.InventoryTransferLoss.cs:57"
+          }
+        ],
+        "native_permissions": [
+          "inventory.stock-transfer.loss-approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 23,
@@ -666,6 +1549,44 @@
         "sql_tests": "tests/GoymenERP.Api.IntegrationTests/FinanceCashAccountSqlServerRelationalAcceptanceTests.WorkDecisions.cs (cash opening only; NOT_RUN)",
         "runtime_acceptance": "NOT_RUN",
         "independent_review": "PENDING"
+      },
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "inventory.opening-cost.v1",
+            "source": "src/backend/Modules/Inventory/GoymenERP.Modules.Inventory.Infrastructure/WorkInbox/InventoryOpeningCostWorkInboxSourceV1.cs:21",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "inventory.opening-cost.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "inventory.opening-cost.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/inventory.opening-cost.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "inventory.opening-cost.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "openingCost.DecideAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs:722"
+          }
+        ],
+        "native_permissions": [
+          "inventory.opening-cost.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
       }
     },
     {
@@ -703,7 +1624,45 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "logistics.dispatch-note.v1",
+            "source": "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/WorkInbox/LogisticsDispatchNoteWorkInboxSourceV1.cs:25",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "logistics.dispatch-notes.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "logistics.dispatch-note.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/logistics.dispatch-note.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "logistics.dispatch-note.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "logisticsInstructions.ApproveDispatchNoteAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.LogisticsDispatchNote.cs:54"
+          }
+        ],
+        "native_permissions": [
+          "logistics.dispatch-notes.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 25,
@@ -735,7 +1694,50 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "logistics.plan-excess.v1",
+            "source": "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/WorkInbox/LogisticsPlanExcessWorkInboxSourceV1.cs:22",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "logistics.shipments.plan-excess.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "logistics.plan-excess.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/logistics.plan-excess.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "logistics.plan-excess.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "logisticsPlanExcess.ApproveAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.LogisticsPlanExcess.cs:39"
+          }
+        ],
+        "native_permissions": [
+          "logistics.shipments.plan-excess.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": [
+          {
+            "source_commit": "3008a98a86e39cc27d442a5a4fee0a29b71967da",
+            "scope": "Source Inbox purpose mapping only; local regression NOT_RUN."
+          }
+        ]
+      }
     },
     {
       "flow": 26,
@@ -761,7 +1763,45 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "logistics.weighing-difference.v1",
+            "source": "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/WorkInbox/LogisticsWeighingDifferenceWorkInboxSourceV1.cs:26",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "logistics.weighing-differences.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "logistics.weighing-difference.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/logistics.weighing-difference.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "logistics.weighing-difference.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "logisticsWeighingDifferences.ApproveAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.LogisticsWeighingDifference.cs:74"
+          }
+        ],
+        "native_permissions": [
+          "logistics.weighing-differences.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 27,
@@ -791,7 +1831,49 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native owner/Work paired source implemented under LOJ-D22 with readonly actual weighing proof and original receipt replay. Source review/local tests are distinct from real SQL/HTTP/browser/CI/K3; runtime acceptance remains NOT_RUN."
+      "limitation": "Native owner/Work paired source implemented under LOJ-D22 with readonly actual weighing proof and original receipt replay. Source review/local tests are distinct from real SQL/HTTP/browser/CI/K3; runtime acceptance remains NOT_RUN.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "logistics.customer-return.v1",
+            "source": "src/backend/Modules/Logistics/GoymenERP.Modules.Logistics.Infrastructure/WorkInbox/LogisticsCustomerReturnWorkInboxSourceV1.cs:24",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "logistics.customer-returns.decision",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "logistics.customer-return.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/logistics.customer-return.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "logistics.customer-return.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "logisticsCustomerReturns.ApproveAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.LogisticsCustomerReturn.cs:56"
+          },
+          {
+            "call": "logisticsCustomerReturns.RejectAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.LogisticsCustomerReturn.cs:57"
+          }
+        ],
+        "native_permissions": [
+          "logistics.customer-returns.decision"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 28,
@@ -841,7 +1923,49 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "manufacturing.plan.v1",
+            "source": "src/backend/Modules/Manufacturing/GoymenERP.Modules.Manufacturing.Infrastructure/WorkInbox/ManufacturingPlanWorkInboxSourceV1.cs:35",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "manufacturing.plans.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "manufacturing.plans.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/manufacturing.plan.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "manufacturing.plans.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "manufacturingPlans.ApprovePlanAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.Manufacturing.cs:27"
+          },
+          {
+            "call": "manufacturingPlans.RejectPlanAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.Manufacturing.cs:28"
+          }
+        ],
+        "native_permissions": [
+          "manufacturing.plans.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 29,
@@ -894,6 +2018,47 @@
         "reference": "T2/WP8.execution.historical_checkpoint_0ac",
         "sql_source_facts": 3,
         "actual_sql": "NOT_RUN"
+      },
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "finance.official-invoice-import.v1",
+            "source": "src/backend/GoymenERP.Api/WorkRuntime/NativeApprovalWorkInboxSourceV1.cs:65",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "finance.official-invoice-import.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "finance.official-invoice-import.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/finance.official-invoice-import.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "finance.official-invoice-import.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "officialInvoiceImports.ApproveAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.OfficialInvoiceImport.cs:57"
+          }
+        ],
+        "native_permissions": [
+          "finance.official-invoice-import.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "map_stale_source_paths": [
+          "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceOfficialInvoiceImportWorkInboxSourceV1.cs"
+        ],
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
       }
     },
     {
@@ -941,6 +2106,48 @@
         "sql_source_facts": 2,
         "actual_sql": "NOT_RUN",
         "note": "Flow30 owner-only3SQL and native prerequisite SQL remain separately historical;2 shared-purpose Facts are additional source registrations."
+      },
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "finance.official-sales-invoice.v1",
+            "source": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceOfficialSalesInvoiceWorkInboxSourceV1.cs:22",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "finance.official-sales-invoices.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "finance.official-sales-invoice.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/finance.official-sales-invoice.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "finance.official-sales-invoice.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "officialSalesInvoices.ApproveAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.OfficialSalesInvoice.cs:73"
+          },
+          {
+            "call": "officialSalesInvoices.RejectAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.OfficialSalesInvoice.cs:74"
+          }
+        ],
+        "native_permissions": [
+          "finance.official-sales-invoices.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
       }
     },
     {
@@ -1000,7 +2207,45 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "finance.manual-bank-payment.v1",
+            "source": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceManualBankPaymentWorkInboxSourceV1.cs:20",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "finance.manual-bank-payment.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "finance.manual-bank-payment.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/finance.manual-bank-payment.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "finance.manual-bank-payment.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "manualBankPayments.ApproveAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.ManualBankPayment.cs:25"
+          }
+        ],
+        "native_permissions": [
+          "finance.manual-bank-payment.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 32,
@@ -1039,7 +2284,49 @@
         "sql_source_facts": 8,
         "actual_sql": "NOT_RUN"
       },
-      "source_checkpoint_reference": "T2/WP8.execution.latest_checkpoint"
+      "source_checkpoint_reference": "T2/WP8.execution.latest_checkpoint",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "finance.manual-bank-payment-reversal.v1",
+            "source": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceManualBankPaymentReversalWorkInboxSourceV1.cs:22",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "finance.manual-bank-payment.reverse.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "finance.manual-bank-payment-reversal.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/finance.manual-bank-payment-reversal.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "finance.manual-bank-payment-reversal.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "manualBankPaymentReversals.ApproveAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.ManualBankPaymentReversal.cs:68"
+          },
+          {
+            "call": "manualBankPaymentReversals.RejectAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.ManualBankPaymentReversal.cs:69"
+          }
+        ],
+        "native_permissions": [
+          "finance.manual-bank-payment.reverse.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 33,
@@ -1069,7 +2356,49 @@
         "sql_source_facts": 9,
         "actual_sql": "NOT_RUN"
       },
-      "source_checkpoint_reference": "T2/WP8.execution.latest_checkpoint"
+      "source_checkpoint_reference": "T2/WP8.execution.latest_checkpoint",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "finance.manual-receipt-reversal.v1",
+            "source": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceManualReceiptReversalWorkInboxSourceV1.cs:21",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "finance.manual-receipt.reverse.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "finance.manual-receipt-reversal.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/finance.manual-receipt-reversal.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "finance.manual-receipt-reversal.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "manualReceiptReversals.ApproveAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.ManualReceiptReversal.cs:65"
+          },
+          {
+            "call": "manualReceiptReversals.RejectAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.ManualReceiptReversal.cs:66"
+          }
+        ],
+        "native_permissions": [
+          "finance.manual-receipt.reverse.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 34,
@@ -1093,7 +2422,45 @@
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
       "limitation": "Expense native approval-only owner/receipt/full human GET/shared host/UI paired;36native/36frontend/0staged. fecc Finance2316/Host929PASS0skip; Page410PASS after retained checkbox-fixture failure; earlier9 other files757PASS at958 remain separate-head. SQL/normalHTTP/browser/CI/K3 not accepted; all64 semantics NOT_VERIFIED/runtimeNOT_RUN.",
-      "source_checkpoint_reference": "T2/WP8.execution.expense_publication_and_native_guards_checkpoint"
+      "source_checkpoint_reference": "T2/WP8.execution.expense_publication_and_native_guards_checkpoint",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "finance.expense-payment.v1",
+            "source": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceExpensePaymentWorkInboxSourceV1.cs:22",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "finance.expense-payment.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "finance.expense-payment.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/finance.expense-payment.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "finance.expense-payment.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "expensePayments.ApproveAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.WorkExpensePayment.cs:66"
+          }
+        ],
+        "native_permissions": [
+          "finance.expense-payment.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 35,
@@ -1132,7 +2499,45 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "finance.bank-account.v1",
+            "source": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceBankAccountWorkInboxSourceV1.cs:21",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "finance.bank-account.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "finance.bank-account.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/finance.bank-account.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "finance.bank-account.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "bankAccounts.ApproveAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.BankAccount.cs:35"
+          }
+        ],
+        "native_permissions": [
+          "finance.bank-account.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 36,
@@ -1166,7 +2571,46 @@
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
       "limitation": "Historical matrix permission_cell is source context, not a new role/Critical decision. Paired IBAN source is one of28 kinds, not a verified flow. Human-only eight-field GET and original four-field command remain separate; actualSQL/normalHTTP/browser/fullCI/K3 NOT_RUN.",
-      "source_evidence": "Root3dd66/agent1f9 pairs FNS-D128, Finance1.24 standalone purpose and native links:776UI PASS0skip/tsc0/lint0 at1f9. Separate late-GET/cache P2 fix e3f (root46c6) has Page306PASS0skip/tsc0/lint0 and bounded source peer closure; do not sum distinct heads. Root3dd66 API0/0 and original Finance2051PASS/1FAIL log retained; test-onlyab959 fixes the exact screen list. Rootbe282 Finance2052PASS0skip and521DecisionHost/FinanceRegistryPASS0skip (IBAN25/FinanceRegistry4 included), full integration-source warm compile. Older4dad Finance2051/host494PASS0skip stays separate. SQL NOT_RUN; no grant/activation."
+      "source_evidence": "Root3dd66/agent1f9 pairs FNS-D128, Finance1.24 standalone purpose and native links:776UI PASS0skip/tsc0/lint0 at1f9. Separate late-GET/cache P2 fix e3f (root46c6) has Page306PASS0skip/tsc0/lint0 and bounded source peer closure; do not sum distinct heads. Root3dd66 API0/0 and original Finance2051PASS/1FAIL log retained; test-onlyab959 fixes the exact screen list. Rootbe282 Finance2052PASS0skip and521DecisionHost/FinanceRegistryPASS0skip (IBAN25/FinanceRegistry4 included), full integration-source warm compile. Older4dad Finance2051/host494PASS0skip stays separate. SQL NOT_RUN; no grant/activation.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "finance.bank-account-iban-change.v1",
+            "source": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceBankAccountIbanChangeWorkInboxSourceV1.cs:21",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "finance.bank-account.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "finance.bank-account-iban-change.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/finance.bank-account-iban-change.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "finance.bank-account-iban-change.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "bankAccounts.ApproveIbanChangeAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.BankAccountIbanChange.cs:52"
+          }
+        ],
+        "native_permissions": [
+          "finance.bank-account.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "note": "IBAN approval already paired; existing finance.bank-account.approve owns the human purpose.",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 37,
@@ -1208,6 +2652,48 @@
         "sql_tests": "tests/GoymenERP.Api.IntegrationTests/FinanceCashAccountSqlServerRelationalAcceptanceTests.WorkDecisions.cs (cash opening only; NOT_RUN)",
         "runtime_acceptance": "NOT_RUN",
         "independent_review": "PENDING"
+      },
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "finance.cash-account.v1",
+            "source": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceCashAccountWorkInboxSourcesV1.cs:92",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "finance.cash-account.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "finance.cash-account.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/finance.cash-account.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "finance.cash-account.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "cash.ApproveAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs:746"
+          },
+          {
+            "call": "cash.RejectAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs:747"
+          }
+        ],
+        "native_permissions": [
+          "finance.cash-account.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
       }
     },
     {
@@ -1253,6 +2739,48 @@
         "sql_tests": "tests/GoymenERP.Api.IntegrationTests/FinanceCashAccountSqlServerRelationalAcceptanceTests.WorkDecisions.cs (cash opening only; NOT_RUN)",
         "runtime_acceptance": "NOT_RUN",
         "independent_review": "PENDING"
+      },
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "finance.cash-account-passivation.v1",
+            "source": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceCashAccountWorkInboxSourcesV1.cs:118",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "finance.cash-account.passivation.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "finance.cash-account-passivation.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/finance.cash-account-passivation.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "finance.cash-account-passivation.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "cash.ApproveStateChangeAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs:751"
+          },
+          {
+            "call": "cash.RejectStateChangeAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs:752"
+          }
+        ],
+        "native_permissions": [
+          "finance.cash-account.passivation.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
       }
     },
     {
@@ -1296,6 +2824,48 @@
         "sql_tests": "tests/GoymenERP.Api.IntegrationTests/FinanceCashAccountSqlServerRelationalAcceptanceTests.WorkDecisions.cs (cash opening only; NOT_RUN)",
         "runtime_acceptance": "NOT_RUN",
         "independent_review": "PENDING"
+      },
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "finance.cash-account-reactivation.v1",
+            "source": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceCashAccountWorkInboxSourcesV1.cs:146",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "finance.cash-account.reactivation.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "finance.cash-account-reactivation.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/finance.cash-account-reactivation.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "finance.cash-account-reactivation.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "cash.ApproveStateChangeAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs:751"
+          },
+          {
+            "call": "cash.RejectStateChangeAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs:752"
+          }
+        ],
+        "native_permissions": [
+          "finance.cash-account.reactivation.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
       }
     },
     {
@@ -1372,6 +2942,48 @@
           "source_commit": "c42ed290f5c20a59065f79b70718e98adae926b3",
           "verification": "Exactc42ed290f5c20a59065f79b70718e98adae926b3: Finance2082/2082PASS0skip15.0051189s; Product1185/1185PASS0skip15.6066321s; Work187/187PASS0skip7.2977179s. Complete API integration-source build (including2new SQL Facts) and controlled DecisionHost filter590/590PASS0skip65.7391299s;38new PartyHost+1registry cases are included in551to590, not an additional sum. Root independently parsed TRX XML counters. Fulltsc exit0/54.6683913s;2explicitfilelint exit0/0diagnostics0.5130317s; complete financeMountDrift18/18PASS0skip21.067835s with root independently parsed JSON counters. Backend source tree43e-to-c42 diff exit0; no repeated full API build: API0errors/0warnings197.3834698s remains exact43e evidence. Original43e Finance2080PASS/2FAIL and Product/Work/Host NOT_RUN retained. Exact819794 frontend cases are separate-head evidence, not current794 or summed812. ActualSQL/normalHTTP/browser/fullCI/two independent K3 remain pending; no runtime acceptance."
         }
+      },
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "finance.party-credit-limit.v1",
+            "source": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinancePartyCreditLimitWorkInboxSourceV1.cs:20",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "finance.credit-limits.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "finance.party-credit-limit.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/finance.party-credit-limit.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "finance.party-credit-limit.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "partyCreditLimits.ApproveAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.PartyCreditLimit.cs:54"
+          },
+          {
+            "call": "partyCreditLimits.RejectAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.PartyCreditLimit.cs:55"
+          }
+        ],
+        "native_permissions": [
+          "finance.credit-limits.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
       }
     },
     {
@@ -1415,7 +3027,49 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "finance.credit-account.v1",
+            "source": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceCreditAccountWorkInboxSourceV1.cs:21",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "finance.credits.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "finance.credit-account.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/finance.credit-account.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "finance.credit-account.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "credits.ApproveAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs:735"
+          },
+          {
+            "call": "credits.RejectAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.cs:736"
+          }
+        ],
+        "native_permissions": [
+          "finance.credits.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 42,
@@ -1434,7 +3088,46 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Full owner receipt/human Work purpose and paired UI source implemented; Finance2445 atba5,controlledHost1054 at7ccb,frontend1116 at804 (separate exact heads). Purpose permission only, no general read/grant. ActualSQL/HTTP/browser/CI/K3 NOT_RUN; all64 semanticsNOT_VERIFIED/runtimeNOT_RUN."
+      "limitation": "Full owner receipt/human Work purpose and paired UI source implemented; Finance2445 atba5,controlledHost1054 at7ccb,frontend1116 at804 (separate exact heads). Purpose permission only, no general read/grant. ActualSQL/HTTP/browser/CI/K3 NOT_RUN; all64 semanticsNOT_VERIFIED/runtimeNOT_RUN.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "finance.bank-credit-limit.v1",
+            "source": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceBankCreditLimitWorkInboxSourceV1.cs:22",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "finance.credits.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "finance.bank-credit-limit.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/finance.bank-credit-limit.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "finance.bank-credit-limit.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "bankCreditLimits.DecideAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.BankCreditLimit.cs:69"
+          }
+        ],
+        "native_permissions": [
+          "finance.credits.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "note": "Native bank limit intentionally reuses finance.credits.approve.",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 43,
@@ -1453,7 +3146,46 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native/source/shared Work host, paired human UI and standalone capability publication integrated at39a. Finance2518 at2985, controlledHost1199/frontend1154 at39a passed0skip; separate exact-head checks. ActualSQL/normalHTTP/browser/fullCI/K3 pending. Semantic flags remainNOT_VERIFIED; runtimeNOT_RUN."
+      "limitation": "Native/source/shared Work host, paired human UI and standalone capability publication integrated at39a. Finance2518 at2985, controlledHost1199/frontend1154 at39a passed0skip; separate exact-head checks. ActualSQL/normalHTTP/browser/fullCI/K3 pending. Semantic flags remainNOT_VERIFIED; runtimeNOT_RUN.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "finance.credit-movement.v1",
+            "source": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceCreditMovementWorkInboxSourceV1.cs:22",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "finance.credits.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "finance.credit-movement.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/finance.credit-movement.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "finance.credit-movement.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "creditMovements.DecideAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.CreditMovement.cs:75"
+          }
+        ],
+        "native_permissions": [
+          "finance.credits.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "note": "Native credit movement intentionally reuses finance.credits.approve; distinct command from credit account.",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 44,
@@ -1494,7 +3226,49 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Full owner receipt/human Work purpose and paired UI source implemented; Finance2445 atba5,controlledHost1054 at7ccb,frontend1116 at804 (separate exact heads). Purpose permission only, no general read/grant. ActualSQL/HTTP/browser/CI/K3 NOT_RUN; all64 semanticsNOT_VERIFIED/runtimeNOT_RUN."
+      "limitation": "Full owner receipt/human Work purpose and paired UI source implemented; Finance2445 atba5,controlledHost1054 at7ccb,frontend1116 at804 (separate exact heads). Purpose permission only, no general read/grant. ActualSQL/HTTP/browser/CI/K3 NOT_RUN; all64 semanticsNOT_VERIFIED/runtimeNOT_RUN.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "finance.opening-balance.v1",
+            "source": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceOpeningBalanceWorkInboxSourceV1.cs:22",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "finance.opening-balances.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "finance.opening-balance.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/finance.opening-balance.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "finance.opening-balance.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "openingBalances.ApproveAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.OpeningBalance.cs:88"
+          },
+          {
+            "call": "openingBalances.RejectAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.OpeningBalance.cs:89"
+          }
+        ],
+        "native_permissions": [
+          "finance.opening-balances.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 45,
@@ -1513,7 +3287,50 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Full owner receipt/human Work purpose and paired UI source implemented; Finance2445 atba5,controlledHost1054 at7ccb,frontend1116 at804 (separate exact heads). Purpose permission only, no general read/grant. ActualSQL/HTTP/browser/CI/K3 NOT_RUN; all64 semanticsNOT_VERIFIED/runtimeNOT_RUN."
+      "limitation": "Full owner receipt/human Work purpose and paired UI source implemented; Finance2445 atba5,controlledHost1054 at7ccb,frontend1116 at804 (separate exact heads). Purpose permission only, no general read/grant. ActualSQL/HTTP/browser/CI/K3 NOT_RUN; all64 semanticsNOT_VERIFIED/runtimeNOT_RUN.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "finance.opening-balance-reversal.v1",
+            "source": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceOpeningBalanceReversalWorkInboxSourceV1.cs:23",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "finance.opening-balances.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "finance.opening-balance-reversal.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/finance.opening-balance-reversal.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "finance.opening-balance-reversal.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "owner.ApproveReversalDecisionAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.OpeningBalance.cs:85"
+          },
+          {
+            "call": "owner.RejectReversalDecisionAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.OpeningBalance.cs:86"
+          }
+        ],
+        "native_permissions": [
+          "finance.opening-balances.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "note": "Work reversal itemId is bound separately from native parent openingId; historical A receipt cannot decide B.",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 46,
@@ -1539,7 +3356,46 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native/source/shared Work host, paired human UI and standalone capability publication integrated at39a. Finance2518 at2985, controlledHost1199/frontend1154 at39a passed0skip; separate exact-head checks. ActualSQL/normalHTTP/browser/fullCI/K3 pending. Semantic flags remainNOT_VERIFIED; runtimeNOT_RUN."
+      "limitation": "Native/source/shared Work host, paired human UI and standalone capability publication integrated at39a. Finance2518 at2985, controlledHost1199/frontend1154 at39a passed0skip; separate exact-head checks. ActualSQL/normalHTTP/browser/fullCI/K3 pending. Semantic flags remainNOT_VERIFIED; runtimeNOT_RUN.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "finance.cash-exchange-book-value.v1",
+            "source": "src/backend/Modules/Finance/GoymenERP.Modules.Finance.Infrastructure/WorkInbox/FinanceCashExchangeBookValueWorkInboxSourceV1.cs:26",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "accounting.normal-journal.draft.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "finance.cash-exchange-book-value.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/finance.cash-exchange-book-value.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "finance.cash-exchange-book-value.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "cashExchangeBookValues.DecideAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.CashExchangeBookValue.cs:70"
+          }
+        ],
+        "native_permissions": [
+          "accounting.normal-journal.draft.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "note": "Finance owner intentionally uses accounting.normal-journal.draft.approve.",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 47,
@@ -1583,6 +3439,44 @@
         "evidence_ref": "#journal_reversal_paired_checkpoint",
         "sql": "NOT_RUN",
         "runtime_acceptance": "NOT_RUN"
+      },
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "accounting.period-opening.v1",
+            "source": "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingPeriodOpeningWorkInboxSourceV1.cs:19",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "accounting.periods.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "accounting.period-opening.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/accounting.period-opening.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "accounting.period-opening.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "accountingPeriods.ApprovePeriodAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.AccountingPeriods.cs:120"
+          }
+        ],
+        "native_permissions": [
+          "accounting.periods.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
       }
     },
     {
@@ -1628,6 +3522,44 @@
         "evidence_ref": "#journal_reversal_paired_checkpoint",
         "sql": "NOT_RUN",
         "runtime_acceptance": "NOT_RUN"
+      },
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "accounting.period-reopening.v1",
+            "source": "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingPeriodReopeningWorkInboxSourceV1.cs:20",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "accounting.periods.reopen",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "accounting.period-reopening.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/accounting.period-reopening.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "accounting.period-reopening.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "accountingPeriods.ApprovePeriodReopeningAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.AccountingPeriods.cs:142"
+          }
+        ],
+        "native_permissions": [
+          "accounting.periods.reopen"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
       }
     },
     {
@@ -1667,6 +3599,44 @@
         "publication_source_commit": "21d1fecbbe6d5de2ce49b9691975dd08dd73110f",
         "ui_source_commit": "7c944b060422942bdc5a5b40e712ddf3e5517853",
         "runtime_acceptance": "NOT_RUN"
+      },
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "accounting.normal-journal-draft.v1",
+            "source": "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingNormalJournalDraftWorkInboxSourceV1.cs:20",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "accounting.normal-journal.draft.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "accounting.normal-journal-draft.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/accounting.normal-journal-draft.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "accounting.normal-journal-draft.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "normalJournalDrafts.ApproveAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.NormalJournalDraft.cs:73"
+          }
+        ],
+        "native_permissions": [
+          "accounting.normal-journal.draft.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
       }
     },
     {
@@ -1708,6 +3678,44 @@
         "evidence_ref": "#journal_reversal_paired_checkpoint",
         "sql": "NOT_RUN",
         "runtime_acceptance": "NOT_RUN"
+      },
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "accounting.journal-reversal.v1",
+            "source": "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingJournalReversalWorkInboxSourceV1.cs:17",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "accounting.journal.reverse.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "accounting.journal-reversal.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/accounting.journal-reversal.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "accounting.journal-reversal.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "accountingJournalReversals.ApproveAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.JournalReversal.cs:74"
+          }
+        ],
+        "native_permissions": [
+          "accounting.journal.reverse.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
       }
     },
     {
@@ -1746,6 +3754,44 @@
         "evidence_ref": "#catalog_owner_mapping_native_checkpoint",
         "sql": "NOT_RUN",
         "runtime_acceptance": "NOT_RUN"
+      },
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "accounting.approved-source-catalog.v1",
+            "source": "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingApprovedSourceCatalogWorkInboxSourceV1.cs:9",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "accounting.approved-source-catalog.activate",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "accounting.approved-source-catalog.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/accounting.approved-source-catalog.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "accounting.approved-source-catalog.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "approvedSourceCatalogs.ActivateAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.ApprovedSourceCatalog.cs:74"
+          }
+        ],
+        "native_permissions": [
+          "accounting.approved-source-catalog.activate"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
       }
     },
     {
@@ -1783,6 +3829,44 @@
         "evidence_ref": "#catalog_owner_mapping_native_checkpoint",
         "sql": "NOT_RUN",
         "runtime_acceptance": "NOT_RUN"
+      },
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "accounting.posting-mapping.v1",
+            "source": "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingPostingAccountMappingWorkInboxSourceV1.cs:9",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "accounting.posting-mappings.activate",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "accounting.posting-mapping.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/accounting.posting-mapping.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "accounting.posting-mapping.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "postingAccountMappings.ActivateAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.PostingAccountMapping.cs:64"
+          }
+        ],
+        "native_permissions": [
+          "accounting.posting-mappings.activate"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
       }
     },
     {
@@ -1823,6 +3907,44 @@
         "source_commit": "c1a3809ad3fab2235f75fc5e91f671e3b557b938",
         "reference": "native_cost_work_checkpoint",
         "scope": "Source/local controlled evidence; actualSQL/runtime/business acceptance NOT_RUN."
+      },
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "accounting.manufacturing-cost-difference.v1",
+            "source": "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingManufacturingCostDifferenceWorkInboxSourceV1.cs:19",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "accounting.journal.reverse.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "accounting.manufacturing-cost-difference.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/accounting.manufacturing-cost-difference.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "accounting.manufacturing-cost-difference.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "manufacturingCostDifferences.ApproveAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.ManufacturingCostDifference.cs:63"
+          }
+        ],
+        "native_permissions": [
+          "accounting.journal.reverse.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
       }
     },
     {
@@ -1853,7 +3975,45 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Paired owner/Host/UI source and bounded local evidence only; all runtime semantics remain NOT_VERIFIED. Native numeric defaults preserved; Work-only Int32/empty-return guards added. Actual SQL/browser/CI/K3 pending."
+      "limitation": "Paired owner/Host/UI source and bounded local evidence only; all runtime semantics remain NOT_VERIFIED. Native numeric defaults preserved; Work-only Int32/empty-return guards added. Actual SQL/browser/CI/K3 pending.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "accounting.invoice-line-cogs-correction.v1",
+            "source": "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingInvoiceLineCogsCorrectionWorkInboxSourceV1.cs:20",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "accounting.journal.reverse.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "accounting.invoice-line-cogs-correction.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/accounting.invoice-line-cogs-correction.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "accounting.invoice-line-cogs-correction.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "invoiceLineCogs.ApproveAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.InvoiceLineCogs.cs:55"
+          }
+        ],
+        "native_permissions": [
+          "accounting.journal.reverse.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 55,
@@ -1885,13 +4045,70 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Both cost purposes paired owner/Host/UI in source with bounded local evidence; all64 runtime semantics remain NOT_VERIFIED/NOT_RUN. Actual SQL/browser/CI/K3 pending."
+      "limitation": "Both cost purposes paired owner/Host/UI in source with bounded local evidence; all64 runtime semantics remain NOT_VERIFIED/NOT_RUN. Actual SQL/browser/CI/K3 pending.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "accounting.invoiced-shipment-cost.v1",
+            "source": "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingInvoicedShipmentCostWorkInboxSourceV1.cs:10",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "accounting.normal-journal.draft.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "accounting.invoiced-shipment-cost.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/accounting.invoiced-shipment-cost.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "accounting.invoiced-shipment-cost.work-decision",
+            "inbox_capability_matches_work": true
+          },
+          {
+            "kind": "accounting.purchase-cost-difference.v1",
+            "source": "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingPurchaseCostDifferenceWorkInboxSourceV1.cs:10",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "accounting.journal.reverse.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "accounting.purchase-cost-difference.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/accounting.purchase-cost-difference.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "accounting.purchase-cost-difference.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "inventoryCosts.ApproveAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.InventoryCost.cs:67"
+          }
+        ],
+        "native_permissions": [
+          "accounting.journal.reverse.approve",
+          "accounting.normal-journal.draft.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "note": "One flow maps to two existing kinds with different native approval permissions.",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 56,
       "name": "Maliyet bileşeni iptali",
-      "permission_cell": "doğrulanmadı",
-      "registered_permission_candidates": [],
+      "permission_cell": "`accounting.journal.reverse.approve`",
+      "registered_permission_candidates": [
+        "accounting.journal.reverse.approve"
+      ],
       "source_row": 686,
       "preparer_proposal": "MUH",
       "approver_proposal": "ÖNERİ: MUHM, GM",
@@ -1910,13 +4127,54 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native safety prerequisite/source tests only; purpose owner/read/receipt/Host/UI not yet implemented. Separate outer/cancellation versions are preserved. Actual SQL NOT_RUN."
+      "limitation": "PAIRED_SOURCE; source/local controlled evidence only. RealSQL/HTTP/browser/fullCI/pins/twoK3 and business acceptance pending.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "accounting.inventory-cost-cancellation.v1",
+            "source": "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingInventoryCostCancellationWorkInboxSourceV1.cs:17",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "accounting.journal.reverse.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "accounting.inventory-cost-cancellation.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/accounting.inventory-cost-cancellation.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "accounting.inventory-cost-cancellation.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "inventoryCosts.ApproveCancellationAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.InventoryCostCancellation.cs:79"
+          }
+        ],
+        "native_permissions": [
+          "accounting.journal.reverse.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "note": "MAP STALE: row says safety-only/no owner/Host/UI. At this candidate owner+receipt+Host+paired UI publication exist.",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 57,
       "name": "Kaynak fiş",
-      "permission_cell": "doğrulanmadı",
-      "registered_permission_candidates": [],
+      "permission_cell": "`accounting.normal-journal.draft.approve`",
+      "registered_permission_candidates": [
+        "accounting.normal-journal.draft.approve"
+      ],
       "source_row": 687,
       "preparer_proposal": "sistem, MUH",
       "approver_proposal": "ÖNERİ: MUHM, GM",
@@ -1929,7 +4187,51 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Native owned approval safety prerequisite and scoped audit composition locally verified; purpose owner/read/receipt/Work/UI not yet integrated. No actual SQL/browser/CI/K3 acceptance."
+      "limitation": "PAIRED_SOURCE; source/local controlled evidence only. RealSQL/HTTP/browser/fullCI/pins/twoK3 and business acceptance pending.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "accounting.source-voucher.v1",
+            "source": "src/backend/Modules/Accounting/GoymenERP.Modules.Accounting.Infrastructure/WorkInbox/AccountingSourceVoucherWorkInboxSourceV1.cs:22",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "accounting.normal-journal.draft.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "accounting.source-voucher.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/accounting.source-voucher.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "accounting.source-voucher.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "sourceVouchers.ApproveAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.SourceVoucher.cs:68"
+          }
+        ],
+        "native_permissions": [
+          "accounting.normal-journal.draft.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "note": "MAP STALE: backend owner/read/receipt/source/Host exists. Frontend core d94 is separate; published Work kind/route/cap absent at this candidate.",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": [
+          {
+            "source_commit": "df6dca6306e8b46041bac7be5a917d793bab4c90",
+            "scope": "Paired publication; local test evidence separately records1499PASS/1FAIL and447PagePASS, not runtime acceptance."
+          }
+        ]
+      }
     },
     {
       "flow": 58,
@@ -1952,7 +4254,49 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "identity.access-grant-request.v1",
+            "source": "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/WorkInbox/IdentityAccessGrantRequestWorkInboxSourceV1.cs:27",
+            "source_decision_read": false,
+            "host_supported": false,
+            "owner_permission": "identity.access.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": false,
+            "frontend_capability": null,
+            "capability_declared": false,
+            "route": null,
+            "route_parity": null,
+            "inbox_capability": "identity.access.approve",
+            "inbox_capability_matches_work": null
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "IdentityAccessAssignmentService.ApproveAsync",
+            "ref": "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityAccessAssignmentService.Decisions.cs:16"
+          },
+          {
+            "call": "IdentityAccessAssignmentService.RejectAsync",
+            "ref": "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/Services/IdentityAccessAssignmentService.Decisions.cs:44"
+          }
+        ],
+        "native_permissions": [
+          "identity.access.approve"
+        ],
+        "status": "LEGACY_INBOX_NATIVE_COMMAND_NO_WORK_HOST",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 59,
@@ -1978,7 +4322,55 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "PAIRED_SOURCE; source/local controlled evidence only. RealSQL/HTTP/browser/fullCI/pins/twoK3 and business acceptance pending.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "organization.company-tax-id-change.v1",
+            "source": "src/backend/Modules/Organization/GoymenERP.Modules.Organization.Infrastructure/WorkInbox/OrganizationCompanyTaxIdChangeWorkInboxSourceV1.cs:17",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "organization.company.tax-id.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "organization.company-tax-id-change.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/organization.company-tax-id-change.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "organization.company-tax-id-change.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "organizationCompanyTaxIds.DecideCompanyTaxIdChangeAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.OrganizationCompanyTaxId.cs"
+          }
+        ],
+        "native_permissions": [
+          "organization.company.tax-id.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "note": "MAP STALE: guarded native Decide + owner read/receipt + decision source + DI alias exist; no Host/Work DTO/published UI at exact7cfd. Root54-kind later delta is separate.",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": [
+          {
+            "source_commit": "dc8ab705c9d61d8daa11a2a8b215f31dc0f270d2",
+            "scope": "Guarded owner+read+receipt+Host+DTO;109 controlled cases included in2244PASS. UI core sourcef486 staged, NOT_RUN."
+          },
+          {
+            "source_commit": "f6a113c15496f643bcb562bfc374a8b4466d9e76",
+            "scope": "Paired publication; Organization provider1.6/14; actual native screen preserved, exact purpose in same69 Inbox rows. Local evidence is recorded separately, not SQL/HTTP acceptance."
+          }
+        ]
+      }
     },
     {
       "flow": 60,
@@ -2007,7 +4399,46 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "counterparty.tax-identity-change.v1",
+            "source": "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/WorkInbox/CounterpartyTaxIdentityChangeWorkInboxSourceV1.cs:19",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "counterparty.parties.tax-identity.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "cari.tax-identity-change.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/counterparty.tax-identity-change.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "cari.tax-identity-change.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "counterpartyTaxIdentity.DecideTaxIdentityChangeAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.Counterparty.cs:56"
+          }
+        ],
+        "native_permissions": [
+          "counterparty.parties.tax-identity.approve",
+          "counterparty.parties.read"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 61,
@@ -2036,7 +4467,46 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "counterparty.legal-name-change.v1",
+            "source": "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/WorkInbox/CounterpartyLegalNameChangeWorkInboxSourceV1.cs:19",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "counterparties.legal_name.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "cari.legal-name-change.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/counterparty.legal-name-change.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "cari.legal-name-change.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "counterpartyLegalName.DecideLegalNameChangeAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.Counterparty.cs:58"
+          }
+        ],
+        "native_permissions": [
+          "counterparties.legal_name.approve",
+          "counterparty.parties.read"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 62,
@@ -2067,7 +4537,34 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command.",
+      "implementation_evidence": {
+        "bindings": [],
+        "owner_commands": [
+          {
+            "call": "CounterpartyCommandService.ApproveMergeAsync",
+            "ref": "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyCommandService.Merge.cs:74"
+          }
+        ],
+        "native_permissions": [
+          "counterparty.parties.merge.approve",
+          "counterparty.parties.read"
+        ],
+        "status": "NATIVE_SINGLE_STEP_NO_PENDING_APPROVAL",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "note": "Direct group-level native merge; no pending request/Inbox kind. Requires merge+read in all affected companies, not a fabricated maker/checker workflow.",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": [],
+        "open_decision_ref": "docs/decisions/SINAN_KARARLARI_2026-11-15_DALGA2_EK11.md:96",
+        "answered_decision_ref": "docs/decisions/SINAN_KARARLARI_2026-11-28_CARI_BIRLESTIRME.md:KIM-D59",
+        "decision_note": "KIM-D59: user approved current direct group-authorized single step; no separate pending request. Work native-link and affected counterparties/company/records preview are being checked. No extra approval or permission."
+      }
     },
     {
       "flow": 63,
@@ -2106,7 +4603,49 @@
       "runtime_acceptance": "NOT_RUN",
       "limitation": "Paired package purpose source, not accepted runtime. Agent ad41b1926b91d33f52dcff6db9fcd38411c7ec83 (root98c8aa9da308aa4812f9aa73b4a7207ef02f179a) changes only the new Inbox fixture: open the existing explanation toggle; native reference assertion unchanged. Full Inbox48/48PASS0skip17.15s, fulltsc0/50.49s,13explicitlint0/0diagnostics. Original2f6 batch751PASS/1FAIL/7520skip retained; six unchanged files704PASS at2f6 are separate-head evidence, not752PASS atad41. At2f6 fulltsc0/51.38s and13lint0 also terminal. Exact98c8aa9da308aa4812f9aa73b4a7207ef02f179a: Product.Infrastructure warm build0errors/0warnings; Product1174/1174PASS0skip and complete integration-source build/selected DecisionHost-registry522/522PASS0skip. Full API build evidence belongs separately to3b8cc andb1. This is before staged price-list purpose/ROL-D18 and Finance limit safety, not evidence for their later code. ActualSQL/HTTP/browser/fullCI/K3 remain pending.",
       "source_evidence": "Root2852361f4/agent406a48718ffcd6dee6dcc8b619935d1a59de9a9e adds exact immutable table source and private command/key/actor/company/decision/attempt/header receipt; old keys do not remap to later pending versions. Full12-file bounded peer found no concrete P0/P1/P2, notK3. Root3dd66 API0/0 and Product1161PASS0skip; separatebe282 full integration-source warm compile/521DecisionHost/FinanceRegistryPASS0skip includes23Product cases, not added to Product1161. Native6+postcommit2+purpose1 SQL Facts NOT_RUN. Paired19-file2f6 source peer has no concrete P0/P1/P2, notK3; PRODUCT-PRICE-LISTS1.1 standalone CompanyWide approve preserves native links and no grants/activation. Source count29native=29frontend, staged0 atcc379; runtime NOT_RUN.",
-      "historical_limitation": "Product package-standard purpose/UI source paired atcc379/agent2f6, not an accepted flow. Explicit human date and native mandatory4000 reason; unchanged native version and full5000+5000 evidence. New Node batch751PASS/1FAIL0skip (collapsed-reference fixture); correction/rerun/tsc/lint and C# publication warm checks pending. ActualSQL/HTTP/browser/fullCI/K3 remain pending."
+      "historical_limitation": "Product package-standard purpose/UI source paired atcc379/agent2f6, not an accepted flow. Explicit human date and native mandatory4000 reason; unchanged native version and full5000+5000 evidence. New Node batch751PASS/1FAIL0skip (collapsed-reference fixture); correction/rerun/tsc/lint and C# publication warm checks pending. ActualSQL/HTTP/browser/fullCI/K3 remain pending.",
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "product.package-standard-version.v1",
+            "source": "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/WorkInbox/ProductWorkInboxSourcesV1.cs:18",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "product.package-standards.approve",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "price-lists.package-standard-version.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/product.package-standard-version.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "price-lists.package-standard-version.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "productPackageStandards.ApproveAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.ProductPackageStandard.cs:56"
+          },
+          {
+            "call": "productPackageStandards.RejectAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.ProductPackageStandard.cs:57"
+          }
+        ],
+        "native_permissions": [
+          "product.package-standards.approve"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": []
+      }
     },
     {
       "flow": 64,
@@ -2155,6 +4694,47 @@
         "scope": "Paired product.price-list-version.v1 UI8f8b7b3fa31e5186c51178d5ca42eaeb534bbaa5+c8dbce8d792db109361fa94f1fa33004820b53bc+282d65270e338b4a9de9abaa858f71aa6b1f8e31+e14d6aa4631f60bf08c707e88b439ddf4b470ebb (root0b767/2c1/f95/819): full11header/10line raw price human preview, full rows, companywide Read+Publish standalone purpose. ROL-D18 authorized creator/editor self-publish and preparer history retained; original terminal409 receipt never re-executes. Frozen four-field body/key/version/delegation retained; cached/late current prices suppressed during historical reconciliation. Private receipt omitted from public JSON; authorized human/native views retain price-bearing contracts. No grant/activation.",
         "frontend": "Exact819eead49:9complete frontend files794/794PASS0skip83.0462s; API373/Page323/Inbox48/mount8/nativeApi16/Attempt6/Lines3/Lists13/Kinds4 included in794, not additional sums. Root independently read JSON counters. Fulltsc exit0/57.553s;16explicitlint exit0/1.189s. Initial CLI rejected unsupported minWorkers in0.291s before tests started: NOT_RUN, original failure retained. Same-head retry maxWorkers1 used installed/pinned4.1.12 matching lock; no install. Source peer read full21files plus5file correction delta and final literal: four P2 source-closed (canonical-before-BigInt/no throw; real denied grants; exact mount30; price-specific retained copy), notK3. ActualSQL/HTTP/browser/fullCI/K3 NOT_RUN.",
         "backend_current_checkpoint": "Exact43ebf5ec240e23f7e3c56443e5a2b10c68e2adf4: API build PASS0errors/0warnings197.3834698s. Finance2082total:2080PASS/2FAIL/0skip17.5274839s; original failures retained (missing staged frontend capability/route parity literals and new Remove-proposal fixture expected987.50 versus existing native formatter987.5). Product/Work/Host NOT_RUN after stopped batch. Narrow source/fixture correction and later-head rerun pending; no formatter/policy/assertion weakening. Earlier b1/b4 results remain separate-head evidence."
+      },
+      "implementation_evidence": {
+        "bindings": [
+          {
+            "kind": "product.price-list-version.v1",
+            "source": "src/backend/Modules/Product/GoymenERP.Modules.Product.Infrastructure/WorkInbox/ProductWorkInboxSourcesV1.cs:125",
+            "source_decision_read": true,
+            "host_supported": true,
+            "owner_permission": "product.price-lists.publish",
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "price-lists.price-list-version.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/product.price-list-version.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "price-lists.price-list-version.work-decision",
+            "inbox_capability_matches_work": true
+          }
+        ],
+        "owner_commands": [
+          {
+            "call": "productPriceLists.PublishAsync",
+            "ref": "src/backend/GoymenERP.Api/WorkRuntime/WorkDecisionHostV1.ProductPriceList.cs:70"
+          }
+        ],
+        "native_permissions": [
+          "product.price-lists.publish",
+          "product.price-lists.read"
+        ],
+        "status": "PAIRED_SOURCE",
+        "source": "CHECKED_AT_EXACT_HEAD",
+        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "actual_SQL": "NOT_RUN",
+        "browser_HTTP": "NOT_RUN",
+        "CI": "NO_CURRENT_HEAD_EVIDENCE",
+        "K3": "NOT_PERFORMED",
+        "map_runtime": "NOT_RUN",
+        "note": "Read+Publish purpose and native self-publish exception are intentional; no generic Product read grant.",
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "later_deltas": [],
+        "local_test_attention": "Original-key unknown retry failed once in1500-case batch; isolated selected case and full447 Page later passed at same code head. Cause not established; failure retained."
       }
     }
   ],
@@ -3171,17 +5751,14 @@
   },
   "current_checkpoint_ref": "invoice_and_inventory_cost_work_checkpoint",
   "invoice_and_inventory_cost_work_checkpoint": {
-    "source_commit": "b5db1126304ad1fdb324a544babdb0004bafb8f1",
+    "source_commit": "5884ecfd2c878012b542e3b09f8f45707505c9f3",
     "status": "SOURCE_AND_BOUNDED_LOCAL_TESTS_ONLY",
-    "backend_supported_kinds": 53,
-    "frontend_paired_kinds": 51,
-    "staged_frontend_kinds": [
-      "accounting.inventory-cost-cancellation.v1",
-      "accounting.source-voucher.v1"
-    ],
+    "backend_supported_kinds": 54,
+    "frontend_paired_kinds": 54,
+    "staged_frontend_kinds": [],
     "flow54": "Retained invoice-line COGS owner, private original Commands receipt, full human Work5/25 transport and paired purpose under the existing company-wide journal reversal approval. Native proposal1→2 remains separate from current invoice-line revision. No new permission. Work-only empty return-list and exact Int32 boundaries source-reviewed; native numeric decoder defaults unchanged.",
     "flow55": "Both native cost kinds now have paired purpose-only Work UI, provider1.19/40 declarations, exact canonical record links and separate existing approval permissions. Old native screens remain;12 Accounting and69 unique global Inbox rows remain. Existing nested human whitelist, Int64 text, genuine Posted/RoundedNoCost/Stale outcomes and original-key unknown recovery preserved.",
-    "flow56_prerequisite": "Native cancellation owner read, retained independent original N / preparation M, immutable recorded time, source cancellation and genuine19-field Commands receipt integrated. Work POST selects M and sends native N/M exactly; original N unchanged, cancellation M+1. Typed human5/source10 whitelist, long text, no private hashes/receipt. API Host126 new cases included in1944 source3ade; frontend core is frozen separately and not integrated/published.",
+    "flow56_prerequisite": "Native cancellation owner/read/private original receipt/Host and paired Work UI are integrated. Existing native N/M versions and independent original proposal N remain; Accounting provider1.20/41 was followed by1.21/42 for57. Source and bounded local tests only, no SQL/browser/CI/K3 acceptance.",
     "local_evidence": {
       "accounting": {
         "seconds": 35.367425,
@@ -3348,6 +5925,231 @@
           "head": "b5db1126304ad1fdb324a544babdb0004bafb8f1",
           "artifact": "source-voucher-host-bound-20261128/api-refresh"
         }
+      },
+      "three_deliveries_tsc": {
+        "seconds": 52.9584196,
+        "freeGiB": 3.697193145751953,
+        "exit": 0,
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "artifact": "work-three-deliveries-20261128/tsc"
+      },
+      "three_deliveries_lint": {
+        "seconds": 0.428195,
+        "freeGiB": 3.7597198486328125,
+        "exit": 0,
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "artifact": "work-three-deliveries-20261128/lint"
+      },
+      "three_deliveries_frontend": {
+        "seconds": 117.3755319,
+        "freeGiB": 3.748493194580078,
+        "exit": 0,
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "artifact": "work-three-deliveries-20261128/frontend",
+        "total": 1456,
+        "passed": 1456,
+        "failed": 0,
+        "skipped": 0,
+        "files": 14
+      },
+      "three_deliveries_organization": {
+        "seconds": 27.642919,
+        "freeGiB": 3.8448448181152344,
+        "exit": 0,
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "artifact": "work-three-deliveries-20261128/organization",
+        "total": 335,
+        "passed": 335,
+        "failed": 0,
+        "skipped": 0
+      },
+      "three_deliveries_accounting": {
+        "seconds": 32.361466,
+        "freeGiB": 3.7641639709472656,
+        "exit": 0,
+        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "artifact": "work-three-deliveries-20261128/accounting",
+        "total": 1754,
+        "passed": 1754,
+        "failed": 0,
+        "skipped": 0
+      },
+      "tax_id_organization-build": {
+        "exit": 0,
+        "seconds": 19.417947,
+        "freeGiB": 3.749664306640625,
+        "source_commit": "55441ab04803fd3d46a7b5235b7bc1b63136161d",
+        "artifact": "tax-id-host-compile-20261128/organization-build"
+      },
+      "tax_id_api-refresh": {
+        "exit": 0,
+        "seconds": 27.2156,
+        "freeGiB": 3.7249908447265625,
+        "source_commit": "55441ab04803fd3d46a7b5235b7bc1b63136161d",
+        "artifact": "tax-id-host-compile-20261128/api-refresh"
+      },
+      "tax_id_test-source-build": {
+        "exit": 0,
+        "seconds": 65.4465967,
+        "freeGiB": 3.576519012451172,
+        "source_commit": "55441ab04803fd3d46a7b5235b7bc1b63136161d",
+        "artifact": "tax-id-host-compile-20261128/test-source-build"
+      },
+      "source_voucher_pair_tsc": {
+        "freeGiB": 3.81829833984375,
+        "exit": 0,
+        "seconds": 58.9125444,
+        "source_commit": "df6dca6306e8b46041bac7be5a917d793bab4c90",
+        "artifact": "source-voucher-paired-ui-20261128/tsc"
+      },
+      "source_voucher_pair_lint": {
+        "freeGiB": 3.782794952392578,
+        "exit": 0,
+        "seconds": 0.0871712,
+        "source_commit": "df6dca6306e8b46041bac7be5a917d793bab4c90",
+        "artifact": "source-voucher-paired-ui-20261128/lint"
+      },
+      "source_voucher_pair_frontend": {
+        "freeGiB": 3.7835464477539062,
+        "exit": 1,
+        "seconds": 109.5023602,
+        "source_commit": "df6dca6306e8b46041bac7be5a917d793bab4c90",
+        "artifact": "source-voucher-paired-ui-20261128/frontend",
+        "total": 1500,
+        "passed": 1499,
+        "failed": 1,
+        "skipped": 0,
+        "files": 14
+      },
+      "price_full_page_diagnostic_frontend": {
+        "seconds": 62.7924553,
+        "exit": 0,
+        "freeGiB": 3.7711830139160156,
+        "source_commit": "df6dca6306e8b46041bac7be5a917d793bab4c90",
+        "artifact": "source-voucher-price-full-page-diagnostic-20261128/frontend",
+        "total": 447,
+        "passed": 447,
+        "failed": 0,
+        "skipped": 0,
+        "files": 1
+      },
+      "price_full_page_diagnostic_accounting": {
+        "seconds": 40.1275882,
+        "exit": 0,
+        "freeGiB": 3.7055130004882812,
+        "source_commit": "df6dca6306e8b46041bac7be5a917d793bab4c90",
+        "artifact": "source-voucher-price-full-page-diagnostic-20261128/accounting",
+        "total": 1755,
+        "passed": 1755,
+        "failed": 0,
+        "skipped": 0
+      },
+      "company_tax_id_work_api-refresh": {
+        "freeGiB": 3.7268142700195312,
+        "seconds": 24.1655298,
+        "exit": 0,
+        "source_commit": "dc8ab705c9d61d8daa11a2a8b215f31dc0f270d2",
+        "artifact": "company-tax-id-work-host-20261128/api-refresh"
+      },
+      "company_tax_id_work_host": {
+        "freeGiB": 3.6562538146972656,
+        "seconds": 81.8794481,
+        "exit": 0,
+        "source_commit": "dc8ab705c9d61d8daa11a2a8b215f31dc0f270d2",
+        "artifact": "company-tax-id-work-host-20261128/host",
+        "total": 2244,
+        "passed": 2244,
+        "failed": 0,
+        "skipped": 0
+      },
+      "company_tax_id_pair_tsc": {
+        "exit": 0,
+        "seconds": 59.6924554,
+        "freeGiB": 4.183948516845703,
+        "source_commit": "f6a113c15496f643bcb562bfc374a8b4466d9e76",
+        "artifact": "company-tax-id-paired-20261128/tsc"
+      },
+      "company_tax_id_pair_lint": {
+        "exit": 0,
+        "seconds": 0.7267469,
+        "freeGiB": 4.1698760986328125,
+        "source_commit": "f6a113c15496f643bcb562bfc374a8b4466d9e76",
+        "artifact": "company-tax-id-paired-20261128/lint"
+      },
+      "company_tax_id_pair_frontend": {
+        "exit": 1,
+        "seconds": 125.3364087,
+        "freeGiB": 4.111766815185547,
+        "source_commit": "f6a113c15496f643bcb562bfc374a8b4466d9e76",
+        "artifact": "company-tax-id-paired-20261128/frontend",
+        "total": 1733,
+        "passed": 1730,
+        "failed": 3,
+        "skipped": 0,
+        "files": 16
+      },
+      "company_tax_id_shell_admission_frontend": {
+        "seconds": 8.1089117,
+        "freeGiB": 4.150730133056641,
+        "exit": 0,
+        "source_commit": "0b56ad8b32df9eccbbebe8a2e07797c7fff8de05",
+        "artifact": "company-tax-id-shell-admission-20261128/frontend",
+        "total": 37,
+        "passed": 37,
+        "failed": 0,
+        "skipped": 0,
+        "files": 1
+      },
+      "company_tax_id_shell_admission_organization": {
+        "seconds": 28.2549713,
+        "freeGiB": 4.104770660400391,
+        "exit": 0,
+        "source_commit": "0b56ad8b32df9eccbbebe8a2e07797c7fff8de05",
+        "artifact": "company-tax-id-shell-admission-20261128/organization",
+        "total": 335,
+        "passed": 335,
+        "failed": 0,
+        "skipped": 0
+      },
+      "company_tax_id_shell_admission_api-refresh": {
+        "seconds": 26.6292474,
+        "freeGiB": 4.029884338378906,
+        "exit": 0,
+        "source_commit": "0b56ad8b32df9eccbbebe8a2e07797c7fff8de05",
+        "artifact": "company-tax-id-shell-admission-20261128/api-refresh"
+      },
+      "company_tax_id_shell_admission_host": {
+        "seconds": 45.9863566,
+        "freeGiB": 4.0832672119140625,
+        "exit": 1,
+        "source_commit": "0b56ad8b32df9eccbbebe8a2e07797c7fff8de05",
+        "artifact": "company-tax-id-shell-admission-20261128/host",
+        "test_execution": "NOT_RUN: new candidate registry test missing API.Shell using caused3compile errors, fixed5884ecfd2. No TRX, not a test failure or PASS; fresh controlled run pending."
+      },
+      "company_tax_id_initial_boundary_fix_frontend": {
+        "freeGiB": 4.160778045654297,
+        "seconds": 8.3374076,
+        "exit": 1,
+        "source_commit": "d3c440a00d39a9357e0c03aa1f9854ef94b41065",
+        "artifact": "company-tax-id-boundary-fix-20261128/frontend",
+        "total": 37,
+        "passed": 35,
+        "failed": 2,
+        "skipped": 0,
+        "files": 1
+      },
+      "price_single_case_diagnostic": {
+        "exit": 0,
+        "seconds": 13.8247148,
+        "freeGiB": 3.8013992309570312,
+        "source_commit": "df6dca6306e8b46041bac7be5a917d793bab4c90",
+        "artifact": "source-voucher-price-retry-diagnostic-20261128/frontend",
+        "total": 447,
+        "passed": 1,
+        "failed": 0,
+        "skipped": 446,
+        "files": 1,
+        "selection_note": "One selected existing case; remaining cases filtered, not a full-file or skip0 acceptance run."
       }
     },
     "evidence_scope": "Exact source SHA per artifact;3ade Accounting1753,Organization278,Work195 and controlledHost1944 are separate from b5db API refresh/Host2077. References=false API refresh follows freshly rebuilt Accounting/Organization; not a new full all-reference build. Accounting260 and Organization41 SQL source FQNs compiled in controlled integration-source build; actualSQL NOT_RUN. Frontend51 pairing evidence remains separate prior877/ba5; staged2 have no integrated UI acceptance. All64 runtime semantics remain NOT_VERIFIED/NOT_RUN and verified_runtime_flows=0.",
@@ -3428,12 +6230,141 @@
         "source_commit": "3ade25586b7b2f52ec7c77498810f9c78b8d4989",
         "artifact": "cancellation-source-voucher-tax-id-import-fixed-20261128/host",
         "result": "exit1/49.5097553s CS0246/CS1061 against stale OrganizationInfrastructure DLL because Organization tests had not built. No test execution. Corrected by actual targeted restore/build/test278, not source weakening; laterHost1944 PASS."
+      },
+      {
+        "source_commit": "f6a113c15496f643bcb562bfc374a8b4466d9e76",
+        "artifact": "company-tax-id-paired-20261128/frontend",
+        "result": "1733 total1730PASS/3FAIL/0skip: two tests wrongly forbade shell organization admission reads; one expected an isolated403 page instead of existing shell capability re-fence/not-found. Test-only corrections d3c440a00 and0b56ad8b3; production security unchanged. Original failures and subsequent35PASS/2FAIL atd3c retained; subsequent37-case pass is separate, not a1733PASS claim."
+      },
+      {
+        "source_commit": "df6dca6306e8b46041bac7be5a917d793bab4c90",
+        "artifact": "source-voucher-paired-ui-20261128/frontend",
+        "result": "1500 total:1499PASS/1FAIL/0skip. Existing price original-key retry after unknown/remount did not reach applied UI. Same-head isolated selected case and full447-case Page later passed without code/assertion/timeout changes. Cause remains unexplained; original failure retained, no combined1500PASS claim and no CI rerun."
       }
     ],
-    "sql": "Accounting260 unique SQL source FQNs +Organization41. Native cancellation4 owner/source SQL Facts, source-voucher5 owner/source/real-native-period-close restart SQL Facts, Organization9 guard SQL Facts added/compiled only. Period-close replay SOURCE now uses existing Accounting+Finance carry fixture rather than fake PeriodOpen flag; actual execution still NOT_RUN. Guard pins/full SQL acceptance deferred to train closure.",
-    "bounded_source_peers": "Other-author full bounded native59 four-file peer; native57 owner/source17-file peer; native56 Host/DTO5-file +2test peer and root null-guard delta; new actual-period-close SQL source peer. No open concrete P0/P1/P2 in those bounded scopes; no formal K3. New56 frontend core review found CLR decimal overflow gap; correction/publication in progress, not integrated.",
-    "limits": "41 packages/50 references/64 flow rows retained; verified_runtime_flows=0 and all64 runtime NOT_RUN/semantics NOT_VERIFIED. ActualSQL/normalHTTP/browser/fullCI/pins/two independent K3/business acceptance remain pending. No grants/roles/Critical/provider/secrets/deployment/AI activation. Token telemetry unavailable; measured local phase durations are retained.",
-    "native_source_voucher_safety": "Native source-voucher owned Audit/TX safety plus exact purpose owner/source/private16-scalar binding, immutable commercial8 totals and genuine17-field original Commands receipt integrated. Work human4/native25 whitelist, Int64 text, typed public lines/reversal, native approve-only expected1→Posted2. Current cancellation/period state never substitutes the original result. Source read and native command reuse existing owners; no general read/grant. SourceVoucher Host131+2 snapshot-version cases included in2077 at b5db. Frontend not integrated/published.",
-    "native_company_tax_id_safety": "Native Organization company-tax-id approve/reject now uses the existing scoped master through guarded IOrganizationCompanyTaxIdService, actual Audit writer/collector and owned serializable TX. Native204/hash/company-version/known errors remain; clean entry, post-save/precommit/release, caller preservation and single read-only race reconciliation added.18 new unit source variants included in278 actual tests;2 actual-DI no-SQL composition facts included in1944 and2077.9 new SQL Facts compiled only. Narrow selected-request owner/receipt read remains in progress; no Work decision kind/publication for59 yet."
+    "sql": "Accounting260 +Organization45 unique SQL source FQNs; new Sales close settlement-change Fact registered. Sources compiled at55441ab04, actualSQL NOT_RUN. No migration/pin generation in this checkpoint.",
+    "bounded_source_peers": "Other-author full bounded native59 four-file peer; native57 owner/source17-file peer; native56 Host/DTO5-file +2test peer and root null-guard delta; new actual-period-close SQL source peer. No open concrete P0/P1/P2 in those bounded scopes; no formal K3. New56 frontend core review found CLR decimal overflow gap; correction/publication in progress, not integrated. Full bounded57UIcore and56publication source peers found no open P0/P1/P2; formalK3 not performed. Root59Host peer found source403→503 mismatch, fixed764e1a6f3 and covered by actual-source controlled maker case. A proposed duplicate old/new VKN Work guard was withdrawn after verifying the reused native decoder already rejects equality; no duplicate production validation added.",
+    "limits": "41 packages/50 references/64 flow rows retained.54 backend kinds cover53 distinct mapped flows;54 frontend kinds cover53 flows because flow55 has two kinds.64 runtimeNOT_RUN/semanticsNOT_VERIFIED/verified_runtime_flows0. ActualSQL/normalHTTP/browser/fullCI/pins/two independentK3/business acceptance pending. No grants/roles/Critical/provider/secrets/deployment/AI activation. Token telemetry unavailable; measured durations retained.",
+    "native_source_voucher_safety": "Native owned approval/read/receipt and Work Host/full human DTO plus paired UI are integrated; provider1.21/42; Organization1.6/14,54 frontend kinds. Original4 body/key and full native lines/receipt-only replay preserved; current cancellation or period state cannot substitute original evidence. Existing native screen and12/69 Inbox rows retained.",
+    "native_company_tax_id_safety": "Same scoped guarded native tax-id service now supplies exact selected request and genuine immutable204 Commands receipt. Work Host54th kind preserves current COMPANY version, optional note on both decisions, stale reject-only, maker denial, native422/409 and frozen native fingerprint. Human6/native request10 whitelist; bothInt64 versions text.109 new controlled Host/DTO cases plus58 existing Sales owner cases included in2244PASS atdc8. Core UI116 plus43 publication source cases integrated atf6a113c15; local verification pending. No general Organization.Read grant.",
+    "inbox_capability_parity_fix": "Source audit found flow21 transfer overage and25 plan excess used native Inbox capabilities despite published standalone Work purposes.3008a98a8 corrects only two Inbox mappings and adds real queue-to-detail controlled browser-component regression sources; native routes/permissions unchanged. Tests pending."
+  },
+  "source_parity": {
+    "candidate": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+    "map_path": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json",
+    "map_blob": "4943dee61649bd98874ad80ee097ee060e368e98",
+    "scope": "BOUNDED_SOURCE_PARITY_NOT_K3_NOT_RUNTIME_ACCEPTANCE",
+    "summary": {
+      "backend_kinds": 53,
+      "frontend_published_kinds": 52,
+      "backend_supported_flows": 52,
+      "paired_flows": 51,
+      "no_Host_flows": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        10,
+        11,
+        58,
+        59,
+        62
+      ],
+      "legacy_Inbox_no_Host": [
+        2,
+        3,
+        4,
+        5,
+        7,
+        8,
+        10,
+        11,
+        58
+      ],
+      "no_Inbox_kind": [
+        6,
+        62
+      ],
+      "source_ready_no_Host": [
+        59
+      ],
+      "backend_only_frontend_staged": [
+        57
+      ],
+      "one_flow_two_kinds": {
+        "55": [
+          "accounting.invoiced-shipment-cost.v1",
+          "accounting.purchase-cost-difference.v1"
+        ]
+      },
+      "route_mismatches": [],
+      "unresolved_sources_or_permissions": [],
+      "unresolved_command_refs": [],
+      "inbox_capability_mismatches": [
+        {
+          "flow": 21,
+          "kind": "inventory.transfer-overage.v1"
+        },
+        {
+          "flow": 25,
+          "kind": "logistics.plan-excess.v1"
+        }
+      ]
+    },
+    "evidence_note": "Local test records are historical map evidence only, not re-run or transferred to this exact candidate. SQL/browser/HTTP/CI/K3 remain unverified. Native policy and transaction internals are not a new 64-owner safety audit.",
+    "verified_runtime_flows": 0,
+    "all64_semantics": "NOT_VERIFIED",
+    "historical_checkpoint_policy": "Preserve recorded heads/counts; only current-map pointers and stale flow rows need root reconciliation.",
+    "inbox_capability_mismatch_effect": "Published Work purpose detail routes exist. With only the corresponding Work purpose capability, old native Inbox capability does not admit queue/home entry or enable WorkQueuePage reads. This is an Inbox access mismatch, not a missing Work detail route or new permission.",
+    "inbox_mismatch_refs": [
+      "src/frontend/goymen-erp-web/src/work/inboxKinds/inventory.ts:14",
+      "src/frontend/goymen-erp-web/src/work/inboxKinds/logistics.ts:7",
+      "src/frontend/goymen-erp-web/src/work/WorkQueuePage.tsx:31",
+      "src/frontend/goymen-erp-web/src/work/workRoutes.tsx:37",
+      "src/frontend/goymen-erp-web/src/work/ApprovalsHomeEntry.tsx:16"
+    ],
+    "root_later_deltas": [
+      {
+        "head": "55441ab04",
+        "note": "Org59 Host raises backend kinds to54 after candidate; not counted in exact7cfd table."
+      },
+      {
+        "head": "df6dca",
+        "note": "Flow57 paired publication raises frontend published kinds to53 after candidate; not counted in exact7cfd table."
+      }
+    ],
+    "audit_sha256": "7b99cf7b328d015372dc2a31cd0afd74c8c40edebd9e72ae822f61d7ee529680",
+    "current_source_commit": "5884ecfd2c878012b542e3b09f8f45707505c9f3",
+    "current_source_summary": {
+      "backend_kinds": 54,
+      "frontend_published_kinds": 54,
+      "backend_supported_flows": 53,
+      "paired_flows": 53,
+      "no_host_flows": [
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        10,
+        11,
+        58,
+        62
+      ],
+      "frontend_staged_flows": [],
+      "inbox_capability_mismatches_source_corrected": [
+        21,
+        25
+      ],
+      "runtime_verified_flows": 0,
+      "native_single_step_no_pending_flows": [
+        62
+      ]
+    }
   }
 }

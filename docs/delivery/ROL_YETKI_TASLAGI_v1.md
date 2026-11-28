@@ -683,8 +683,8 @@ zincirleme devredilmez, Sistem Yöneticisi vekil olamaz (YOL-D17, ROL-D4).
 | 53 | Üretim maliyet farkı | doğrulanmadı | sistem | ÖNERİ: MUHM, GM | 2 iş günü | — |
 | 54 | Fatura satırı SMM düzeltmesi | doğrulanmadı | MUH | ÖNERİ: MUHM, GM | 2 iş günü | — |
 | 55 | Stok maliyet teklifleri | doğrulanmadı | sistem, MUH | ÖNERİ: MUHM, GM | 2 iş günü | — |
-| 56 | Maliyet bileşeni iptali | doğrulanmadı | MUH | ÖNERİ: MUHM, GM | 2 iş günü | — |
-| 57 | Kaynak fiş | doğrulanmadı | sistem, MUH | ÖNERİ: MUHM, GM | 2 iş günü | KLN-D17: kaynağı kesinleştiren kendi fişini onaylayamaz. |
+| 56 | Maliyet bileşeni iptali | `accounting.journal.reverse.approve` | MUH | ÖNERİ: MUHM, GM | 2 iş günü | — |
+| 57 | Kaynak fiş | `accounting.normal-journal.draft.approve` | sistem, MUH | ÖNERİ: MUHM, GM | 2 iş günü | KLN-D17: kaynağı kesinleştiren kendi fişini onaylayamaz. |
 | 58 | Kritik rol erişim talebi | `identity.access.approve` **(Critical)** | herkes (`identity.access.request`); kurgulayan Sistem Yöneticisi | Sistem Yöneticisi (IK) | 2 iş günü | 🟡 kabul edildi (ROL-D17): şimdilik aynı kişi kurgular ve onaylar; geçici istisna. |
 | 59 | Şirket VKN değişikliği | `organization.company.tax-id.approve` | MUHM | GM | 2 iş günü | ÖNERİ. |
 | 60 | Cari vergi kimliği değişikliği | `counterparty.parties.tax-identity.approve` **(Critical)** | MUH, MUHM | MUHM veya GM (IK) | 2 iş günü | IK. |

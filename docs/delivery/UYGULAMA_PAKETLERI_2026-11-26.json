@@ -1025,7 +1025,7 @@
       ],
       "reuse_mode": "SMALL_EXTENSION",
       "source_findings": [
-        "Normal sales owner axes now composed by SalesOrderOwnerAxesHostV1; subcontract invoice proof family remains NoSource, not full package completion.",
+        "Normal and subcontract owner evidence families are connected; no duplicate implementation needed. Full physical-chain SQL/browser acceptance remains pending.",
         "SAT-D478/479 recorded; native all-axes readiness and explicit human close command retained; bank matching is independent.",
         "Purchasing reads unconverted request obligations and each sales order share in shared orders; ALS-D68 cancelled purchase quantities retain used request shares.",
         "Actual posted shipment coverage must equal Sales realization; immutable Logistics, Inventory and finalized Sales invoice claims are checked. Unknown cost does not block the physical source proof.",
@@ -1044,7 +1044,8 @@
         "tests/GoymenERP.Api.IntegrationTests/FinanceInvoiceOpenItemAdmissionSqlServerRelationalAcceptanceTests.cs",
         "tests/GoymenERP.Api.IntegrationTests/SalesOrderOwnerAxesHostTests.cs",
         "tests/GoymenERP.Purchasing.UnitTests/PurchaseSalesOrderObligationReadTests.cs",
-        "tests/GoymenERP.Api.IntegrationTests/SalesOrderUserCloseSqlServerRelationalAcceptanceTests.OwnerAxes.cs"
+        "tests/GoymenERP.Api.IntegrationTests/SalesOrderUserCloseSqlServerRelationalAcceptanceTests.OwnerAxes.cs",
+        "tests/GoymenERP.Api.IntegrationTests/SalesOrderUserCloseSqlServerRelationalAcceptanceTests.OwnerAxesSettlementChange.cs"
       ],
       "technical_acceptance": [
         "Değişen davranış, negatif şirket/yetki ve stale version; gerekiyorsa replay/rollback/concurrency kanıtı.",
@@ -1058,7 +1059,7 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Normal and subcontract owner evidence families are connected. Run native SQL and real authorized close/cancellation/replacement journeys, then browser/train pins/full CI/two K3. Ambiguous or unavailable evidence stays fail-closed.",
+      "next_action": "Run native Sales+Finance settlement release/reallocation close regression source650/root7b68117; existing physical fixture remains synthetic, not full physical E2E. Complete full native-chain SQL/browser/train acceptance.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -1180,6 +1181,12 @@
             "browser": "NOT_RUN"
           }
         ]
+      },
+      "delivery_tracking": {
+        "kodlandi": "OWNER_CONNECTIONS_AND_REGRESSION_SOURCE",
+        "yerel_test_gecti": "58CONTROLLED_OWNER_HOST_CASES_INCLUDED_IN2244_AT_DC8",
+        "butunlesik_kabul_gecti": false,
+        "tamamlandi": false
       }
     },
     {
@@ -2324,6 +2331,7 @@
       "execution": {
         "source_commit": "b5db1126304ad1fdb324a544babdb0004bafb8f1",
         "implemented_kinds": [
+          "organization.company-tax-id-change.v1",
           "accounting.invoiced-shipment-cost.v1",
           "accounting.purchase-cost-difference.v1",
           "accounting.invoice-line-cogs-correction.v1",
@@ -2455,8 +2463,8 @@
           "existing Work post transport and SQL fixtures"
         ],
         "remaining": [
-          "Complete remaining owner/purpose/UI adapters outside51 supported source kinds; native flows56/57 safety prerequisites do not complete their Work purposes.",
-          "All64 actual SQL, normal HTTP/runtime/browser acceptance, shell/OpenAPI/guard/recovery pins, full CI and two independent exact-head K3 reviews."
+          "Finish mapped owner/Host/UI gaps for flows2,3,4,5,6,7,8,10,11,58; flow62 user approved preserving the native single step (KIM-D59); preview/link verification remains. Preserve native exceptions. 59 UI publication integrated; verify and investigate retained intermittent price retry failure.",
+          "All64 actualSQL/normalHTTP/browser business acceptance, generated pins, full mandatoryCI and two independent exact-headK3 remain pending."
         ],
         "sql": "NOT_RUN",
         "browser": "NOT_RUN",
@@ -3518,11 +3526,8 @@
           "7898cc30397ab51d38464c5ac674de2422890d07",
           "9f9442c4e9382033ea97f54e62d7238ab50e91c4"
         ],
-        "kind_count_scope": "53 backend /51 frontend paired /2 staged; source pairing only,64 runtime flows NOT_VERIFIED/NOT_RUN,verified0.",
-        "staged_kinds": [
-          "accounting.inventory-cost-cancellation.v1",
-          "accounting.source-voucher.v1"
-        ],
+        "kind_count_scope": "54backend/54pairedUI/0staged;53/53 distinct mapped flows, not64 runtime acceptance.",
+        "staged_kinds": [],
         "historical_kind_count_scope": "29 paired source kinds/29 native kinds with exact set equality atcc379ff28f74d5810ed51ad537ebece821440d72, including Product package-standard; staged0. Native price-list publish safety is a prerequisite, not a30th Work purpose. All64 runtime flows remain NOT_VERIFIED/NOT_RUN; source pairing is not acceptance.",
         "historical_kind_count_scopes": [
           "Atb1cacee89f805a05959b5b79af034270b80b8103 source-derived sets:30native/29paired frontend; only product.price-list-version.v1 staged, no unknown frontend kind. Historicalcc379 exact29/29 remains valid only at that head. verified_runtime_flows=0; all64 semantics/runtime remain NOT_VERIFIED/NOT_RUN.",
@@ -3756,10 +3761,7 @@
           "sql": "Finance389 unique test source names,15 new native SQL Facts (opening9/banklimit6) compiled; actual SQL NOT_RUN. No new migration in this increment.",
           "limits": "ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 pending;41packages/50references/64flows;verified_runtime_flows=0, all64 semantics NOT_VERIFIED/runtimeNOT_RUN."
         },
-        "staged_native_kinds": [
-          "accounting.inventory-cost-cancellation.v1",
-          "accounting.source-voucher.v1"
-        ],
+        "staged_native_kinds": [],
         "native_finance_paired_checkpoint": {
           "source_commit": "8046fd301ca682a4dda01eb4dbdd71cfc9735b42",
           "scope": "Flow42 bank limit and Flow44/45 opening/reversal now have private scalar proofs, original native receipts, complete purpose-only human GET, paired Work UI and Finance provider1.32/67 declarations. Existing owner commands and permissions reused; no grant, new permission, policy or activation.",
@@ -4126,17 +4128,14 @@
           "runtime_acceptance": "NOT_RUN"
         },
         "invoice_and_inventory_cost_work_checkpoint": {
-          "source_commit": "b5db1126304ad1fdb324a544babdb0004bafb8f1",
+          "source_commit": "5884ecfd2c878012b542e3b09f8f45707505c9f3",
           "status": "SOURCE_AND_BOUNDED_LOCAL_TESTS_ONLY",
-          "backend_supported_kinds": 53,
-          "frontend_paired_kinds": 51,
-          "staged_frontend_kinds": [
-            "accounting.inventory-cost-cancellation.v1",
-            "accounting.source-voucher.v1"
-          ],
+          "backend_supported_kinds": 54,
+          "frontend_paired_kinds": 54,
+          "staged_frontend_kinds": [],
           "flow54": "Retained invoice-line COGS owner, private original Commands receipt, full human Work5/25 transport and paired purpose under the existing company-wide journal reversal approval. Native proposal1→2 remains separate from current invoice-line revision. No new permission. Work-only empty return-list and exact Int32 boundaries source-reviewed; native numeric decoder defaults unchanged.",
           "flow55": "Both native cost kinds now have paired purpose-only Work UI, provider1.19/40 declarations, exact canonical record links and separate existing approval permissions. Old native screens remain;12 Accounting and69 unique global Inbox rows remain. Existing nested human whitelist, Int64 text, genuine Posted/RoundedNoCost/Stale outcomes and original-key unknown recovery preserved.",
-          "flow56_prerequisite": "Native cancellation owner read, retained independent original N / preparation M, immutable recorded time, source cancellation and genuine19-field Commands receipt integrated. Work POST selects M and sends native N/M exactly; original N unchanged, cancellation M+1. Typed human5/source10 whitelist, long text, no private hashes/receipt. API Host126 new cases included in1944 source3ade; frontend core is frozen separately and not integrated/published.",
+          "flow56_prerequisite": "Native cancellation owner/read/private original receipt/Host and paired Work UI are integrated. Existing native N/M versions and independent original proposal N remain; Accounting provider1.20/41 was followed by1.21/42 for57. Source and bounded local tests only, no SQL/browser/CI/K3 acceptance.",
           "local_evidence": {
             "accounting": {
               "seconds": 35.367425,
@@ -4303,6 +4302,231 @@
                 "head": "b5db1126304ad1fdb324a544babdb0004bafb8f1",
                 "artifact": "source-voucher-host-bound-20261128/api-refresh"
               }
+            },
+            "three_deliveries_tsc": {
+              "seconds": 52.9584196,
+              "freeGiB": 3.697193145751953,
+              "exit": 0,
+              "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+              "artifact": "work-three-deliveries-20261128/tsc"
+            },
+            "three_deliveries_lint": {
+              "seconds": 0.428195,
+              "freeGiB": 3.7597198486328125,
+              "exit": 0,
+              "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+              "artifact": "work-three-deliveries-20261128/lint"
+            },
+            "three_deliveries_frontend": {
+              "seconds": 117.3755319,
+              "freeGiB": 3.748493194580078,
+              "exit": 0,
+              "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+              "artifact": "work-three-deliveries-20261128/frontend",
+              "total": 1456,
+              "passed": 1456,
+              "failed": 0,
+              "skipped": 0,
+              "files": 14
+            },
+            "three_deliveries_organization": {
+              "seconds": 27.642919,
+              "freeGiB": 3.8448448181152344,
+              "exit": 0,
+              "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+              "artifact": "work-three-deliveries-20261128/organization",
+              "total": 335,
+              "passed": 335,
+              "failed": 0,
+              "skipped": 0
+            },
+            "three_deliveries_accounting": {
+              "seconds": 32.361466,
+              "freeGiB": 3.7641639709472656,
+              "exit": 0,
+              "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+              "artifact": "work-three-deliveries-20261128/accounting",
+              "total": 1754,
+              "passed": 1754,
+              "failed": 0,
+              "skipped": 0
+            },
+            "tax_id_organization-build": {
+              "exit": 0,
+              "seconds": 19.417947,
+              "freeGiB": 3.749664306640625,
+              "source_commit": "55441ab04803fd3d46a7b5235b7bc1b63136161d",
+              "artifact": "tax-id-host-compile-20261128/organization-build"
+            },
+            "tax_id_api-refresh": {
+              "exit": 0,
+              "seconds": 27.2156,
+              "freeGiB": 3.7249908447265625,
+              "source_commit": "55441ab04803fd3d46a7b5235b7bc1b63136161d",
+              "artifact": "tax-id-host-compile-20261128/api-refresh"
+            },
+            "tax_id_test-source-build": {
+              "exit": 0,
+              "seconds": 65.4465967,
+              "freeGiB": 3.576519012451172,
+              "source_commit": "55441ab04803fd3d46a7b5235b7bc1b63136161d",
+              "artifact": "tax-id-host-compile-20261128/test-source-build"
+            },
+            "source_voucher_pair_tsc": {
+              "freeGiB": 3.81829833984375,
+              "exit": 0,
+              "seconds": 58.9125444,
+              "source_commit": "df6dca6306e8b46041bac7be5a917d793bab4c90",
+              "artifact": "source-voucher-paired-ui-20261128/tsc"
+            },
+            "source_voucher_pair_lint": {
+              "freeGiB": 3.782794952392578,
+              "exit": 0,
+              "seconds": 0.0871712,
+              "source_commit": "df6dca6306e8b46041bac7be5a917d793bab4c90",
+              "artifact": "source-voucher-paired-ui-20261128/lint"
+            },
+            "source_voucher_pair_frontend": {
+              "freeGiB": 3.7835464477539062,
+              "exit": 1,
+              "seconds": 109.5023602,
+              "source_commit": "df6dca6306e8b46041bac7be5a917d793bab4c90",
+              "artifact": "source-voucher-paired-ui-20261128/frontend",
+              "total": 1500,
+              "passed": 1499,
+              "failed": 1,
+              "skipped": 0,
+              "files": 14
+            },
+            "price_full_page_diagnostic_frontend": {
+              "seconds": 62.7924553,
+              "exit": 0,
+              "freeGiB": 3.7711830139160156,
+              "source_commit": "df6dca6306e8b46041bac7be5a917d793bab4c90",
+              "artifact": "source-voucher-price-full-page-diagnostic-20261128/frontend",
+              "total": 447,
+              "passed": 447,
+              "failed": 0,
+              "skipped": 0,
+              "files": 1
+            },
+            "price_full_page_diagnostic_accounting": {
+              "seconds": 40.1275882,
+              "exit": 0,
+              "freeGiB": 3.7055130004882812,
+              "source_commit": "df6dca6306e8b46041bac7be5a917d793bab4c90",
+              "artifact": "source-voucher-price-full-page-diagnostic-20261128/accounting",
+              "total": 1755,
+              "passed": 1755,
+              "failed": 0,
+              "skipped": 0
+            },
+            "company_tax_id_work_api-refresh": {
+              "freeGiB": 3.7268142700195312,
+              "seconds": 24.1655298,
+              "exit": 0,
+              "source_commit": "dc8ab705c9d61d8daa11a2a8b215f31dc0f270d2",
+              "artifact": "company-tax-id-work-host-20261128/api-refresh"
+            },
+            "company_tax_id_work_host": {
+              "freeGiB": 3.6562538146972656,
+              "seconds": 81.8794481,
+              "exit": 0,
+              "source_commit": "dc8ab705c9d61d8daa11a2a8b215f31dc0f270d2",
+              "artifact": "company-tax-id-work-host-20261128/host",
+              "total": 2244,
+              "passed": 2244,
+              "failed": 0,
+              "skipped": 0
+            },
+            "company_tax_id_pair_tsc": {
+              "exit": 0,
+              "seconds": 59.6924554,
+              "freeGiB": 4.183948516845703,
+              "source_commit": "f6a113c15496f643bcb562bfc374a8b4466d9e76",
+              "artifact": "company-tax-id-paired-20261128/tsc"
+            },
+            "company_tax_id_pair_lint": {
+              "exit": 0,
+              "seconds": 0.7267469,
+              "freeGiB": 4.1698760986328125,
+              "source_commit": "f6a113c15496f643bcb562bfc374a8b4466d9e76",
+              "artifact": "company-tax-id-paired-20261128/lint"
+            },
+            "company_tax_id_pair_frontend": {
+              "exit": 1,
+              "seconds": 125.3364087,
+              "freeGiB": 4.111766815185547,
+              "source_commit": "f6a113c15496f643bcb562bfc374a8b4466d9e76",
+              "artifact": "company-tax-id-paired-20261128/frontend",
+              "total": 1733,
+              "passed": 1730,
+              "failed": 3,
+              "skipped": 0,
+              "files": 16
+            },
+            "company_tax_id_shell_admission_frontend": {
+              "seconds": 8.1089117,
+              "freeGiB": 4.150730133056641,
+              "exit": 0,
+              "source_commit": "0b56ad8b32df9eccbbebe8a2e07797c7fff8de05",
+              "artifact": "company-tax-id-shell-admission-20261128/frontend",
+              "total": 37,
+              "passed": 37,
+              "failed": 0,
+              "skipped": 0,
+              "files": 1
+            },
+            "company_tax_id_shell_admission_organization": {
+              "seconds": 28.2549713,
+              "freeGiB": 4.104770660400391,
+              "exit": 0,
+              "source_commit": "0b56ad8b32df9eccbbebe8a2e07797c7fff8de05",
+              "artifact": "company-tax-id-shell-admission-20261128/organization",
+              "total": 335,
+              "passed": 335,
+              "failed": 0,
+              "skipped": 0
+            },
+            "company_tax_id_shell_admission_api-refresh": {
+              "seconds": 26.6292474,
+              "freeGiB": 4.029884338378906,
+              "exit": 0,
+              "source_commit": "0b56ad8b32df9eccbbebe8a2e07797c7fff8de05",
+              "artifact": "company-tax-id-shell-admission-20261128/api-refresh"
+            },
+            "company_tax_id_shell_admission_host": {
+              "seconds": 45.9863566,
+              "freeGiB": 4.0832672119140625,
+              "exit": 1,
+              "source_commit": "0b56ad8b32df9eccbbebe8a2e07797c7fff8de05",
+              "artifact": "company-tax-id-shell-admission-20261128/host",
+              "test_execution": "NOT_RUN: new candidate registry test missing API.Shell using caused3compile errors, fixed5884ecfd2. No TRX, not a test failure or PASS; fresh controlled run pending."
+            },
+            "company_tax_id_initial_boundary_fix_frontend": {
+              "freeGiB": 4.160778045654297,
+              "seconds": 8.3374076,
+              "exit": 1,
+              "source_commit": "d3c440a00d39a9357e0c03aa1f9854ef94b41065",
+              "artifact": "company-tax-id-boundary-fix-20261128/frontend",
+              "total": 37,
+              "passed": 35,
+              "failed": 2,
+              "skipped": 0,
+              "files": 1
+            },
+            "price_single_case_diagnostic": {
+              "exit": 0,
+              "seconds": 13.8247148,
+              "freeGiB": 3.8013992309570312,
+              "source_commit": "df6dca6306e8b46041bac7be5a917d793bab4c90",
+              "artifact": "source-voucher-price-retry-diagnostic-20261128/frontend",
+              "total": 447,
+              "passed": 1,
+              "failed": 0,
+              "skipped": 446,
+              "files": 1,
+              "selection_note": "One selected existing case; remaining cases filtered, not a full-file or skip0 acceptance run."
             }
           },
           "evidence_scope": "Exact source SHA per artifact;3ade Accounting1753,Organization278,Work195 and controlledHost1944 are separate from b5db API refresh/Host2077. References=false API refresh follows freshly rebuilt Accounting/Organization; not a new full all-reference build. Accounting260 and Organization41 SQL source FQNs compiled in controlled integration-source build; actualSQL NOT_RUN. Frontend51 pairing evidence remains separate prior877/ba5; staged2 have no integrated UI acceptance. All64 runtime semantics remain NOT_VERIFIED/NOT_RUN and verified_runtime_flows=0.",
@@ -4383,14 +4607,31 @@
               "source_commit": "3ade25586b7b2f52ec7c77498810f9c78b8d4989",
               "artifact": "cancellation-source-voucher-tax-id-import-fixed-20261128/host",
               "result": "exit1/49.5097553s CS0246/CS1061 against stale OrganizationInfrastructure DLL because Organization tests had not built. No test execution. Corrected by actual targeted restore/build/test278, not source weakening; laterHost1944 PASS."
+            },
+            {
+              "source_commit": "f6a113c15496f643bcb562bfc374a8b4466d9e76",
+              "artifact": "company-tax-id-paired-20261128/frontend",
+              "result": "1733 total1730PASS/3FAIL/0skip: two tests wrongly forbade shell organization admission reads; one expected an isolated403 page instead of existing shell capability re-fence/not-found. Test-only corrections d3c440a00 and0b56ad8b3; production security unchanged. Original failures and subsequent35PASS/2FAIL atd3c retained; subsequent37-case pass is separate, not a1733PASS claim."
+            },
+            {
+              "source_commit": "df6dca6306e8b46041bac7be5a917d793bab4c90",
+              "artifact": "source-voucher-paired-ui-20261128/frontend",
+              "result": "1500 total:1499PASS/1FAIL/0skip. Existing price original-key retry after unknown/remount did not reach applied UI. Same-head isolated selected case and full447-case Page later passed without code/assertion/timeout changes. Cause remains unexplained; original failure retained, no combined1500PASS claim and no CI rerun."
             }
           ],
-          "sql": "Accounting260 unique SQL source FQNs +Organization41. Native cancellation4 owner/source SQL Facts, source-voucher5 owner/source/real-native-period-close restart SQL Facts, Organization9 guard SQL Facts added/compiled only. Period-close replay SOURCE now uses existing Accounting+Finance carry fixture rather than fake PeriodOpen flag; actual execution still NOT_RUN. Guard pins/full SQL acceptance deferred to train closure.",
-          "bounded_source_peers": "Other-author full bounded native59 four-file peer; native57 owner/source17-file peer; native56 Host/DTO5-file +2test peer and root null-guard delta; new actual-period-close SQL source peer. No open concrete P0/P1/P2 in those bounded scopes; no formal K3. New56 frontend core review found CLR decimal overflow gap; correction/publication in progress, not integrated.",
-          "limits": "41 packages/50 references/64 flow rows retained; verified_runtime_flows=0 and all64 runtime NOT_RUN/semantics NOT_VERIFIED. ActualSQL/normalHTTP/browser/fullCI/pins/two independent K3/business acceptance remain pending. No grants/roles/Critical/provider/secrets/deployment/AI activation. Token telemetry unavailable; measured local phase durations are retained.",
-          "native_source_voucher_safety": "Native source-voucher owned Audit/TX safety plus exact purpose owner/source/private16-scalar binding, immutable commercial8 totals and genuine17-field original Commands receipt integrated. Work human4/native25 whitelist, Int64 text, typed public lines/reversal, native approve-only expected1→Posted2. Current cancellation/period state never substitutes the original result. Source read and native command reuse existing owners; no general read/grant. SourceVoucher Host131+2 snapshot-version cases included in2077 at b5db. Frontend not integrated/published.",
-          "native_company_tax_id_safety": "Native Organization company-tax-id approve/reject now uses the existing scoped master through guarded IOrganizationCompanyTaxIdService, actual Audit writer/collector and owned serializable TX. Native204/hash/company-version/known errors remain; clean entry, post-save/precommit/release, caller preservation and single read-only race reconciliation added.18 new unit source variants included in278 actual tests;2 actual-DI no-SQL composition facts included in1944 and2077.9 new SQL Facts compiled only. Narrow selected-request owner/receipt read remains in progress; no Work decision kind/publication for59 yet."
+          "sql": "Accounting260 +Organization45 unique SQL source FQNs; new Sales close settlement-change Fact registered. Sources compiled at55441ab04, actualSQL NOT_RUN. No migration/pin generation in this checkpoint.",
+          "bounded_source_peers": "Other-author full bounded native59 four-file peer; native57 owner/source17-file peer; native56 Host/DTO5-file +2test peer and root null-guard delta; new actual-period-close SQL source peer. No open concrete P0/P1/P2 in those bounded scopes; no formal K3. New56 frontend core review found CLR decimal overflow gap; correction/publication in progress, not integrated. Full bounded57UIcore and56publication source peers found no open P0/P1/P2; formalK3 not performed. Root59Host peer found source403→503 mismatch, fixed764e1a6f3 and covered by actual-source controlled maker case. A proposed duplicate old/new VKN Work guard was withdrawn after verifying the reused native decoder already rejects equality; no duplicate production validation added.",
+          "limits": "41 packages/50 references/64 flow rows retained.54 backend kinds cover53 distinct mapped flows;54 frontend kinds cover53 flows because flow55 has two kinds.64 runtimeNOT_RUN/semanticsNOT_VERIFIED/verified_runtime_flows0. ActualSQL/normalHTTP/browser/fullCI/pins/two independentK3/business acceptance pending. No grants/roles/Critical/provider/secrets/deployment/AI activation. Token telemetry unavailable; measured durations retained.",
+          "native_source_voucher_safety": "Native owned approval/read/receipt and Work Host/full human DTO plus paired UI are integrated; provider1.21/42; Organization1.6/14,54 frontend kinds. Original4 body/key and full native lines/receipt-only replay preserved; current cancellation or period state cannot substitute original evidence. Existing native screen and12/69 Inbox rows retained.",
+          "native_company_tax_id_safety": "Same scoped guarded native tax-id service now supplies exact selected request and genuine immutable204 Commands receipt. Work Host54th kind preserves current COMPANY version, optional note on both decisions, stale reject-only, maker denial, native422/409 and frozen native fingerprint. Human6/native request10 whitelist; bothInt64 versions text.109 new controlled Host/DTO cases plus58 existing Sales owner cases included in2244PASS atdc8. Core UI116 plus43 publication source cases integrated atf6a113c15; local verification pending. No general Organization.Read grant.",
+          "inbox_capability_parity_fix": "Source audit found flow21 transfer overage and25 plan excess used native Inbox capabilities despite published standalone Work purposes.3008a98a8 corrects only two Inbox mappings and adds real queue-to-detail controlled browser-component regression sources; native routes/permissions unchanged. Tests pending."
         }
+      },
+      "delivery_tracking": {
+        "kodlandi": "PARTIAL_SOURCE",
+        "yerel_test_gecti": "BOUNDED_SCOPES_AT_RECORDED_HEADS_ONLY",
+        "butunlesik_kabul_gecti": false,
+        "tamamlandi": false
       }
     },
     {
