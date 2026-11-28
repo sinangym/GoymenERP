@@ -47,6 +47,7 @@ export type WorkInventoryCostProposal=Omit<InventoryCostProposal,'invoiceVersion
   readonly officialInvoiceNumber?:string;readonly approvedBy?:string;readonly approvedAtUtc?:string;readonly journalId?:string;readonly cancellationId?:string
   readonly reversalProposal?:NonNullable<InventoryCostProposal['reversalProposal']>;readonly currentPostedJournalId?:string;readonly componentCancellation?:WorkInventoryCostCancellation
   readonly staleClosure?:WorkInventoryCostStaleClosure;readonly renewedFrom?:WorkInventoryCostRenewal}
+export type WorkInventoryCostRetainedProposal=Omit<WorkInventoryCostProposal,'preparation'> & {readonly preparation?:WorkInventoryCostPreparation}
 export interface WorkInventoryCostPreview {readonly proposal:WorkInventoryCostProposal;readonly preparedRecordedAtUtc:string}
 
 const rec=(v:unknown):v is Record<string,unknown>=>typeof v==='object'&&v!==null&&!Array.isArray(v)
@@ -77,7 +78,12 @@ const cancelledComponent:Check=v=>shape(v,{origin:x=>x==='Known'||x==='Manufactu
   &&!same(v.cogsAccountId,v.counterAccountId)&&typeof v.journalTotal==='string'&&!v.journalTotal.startsWith('-')
   &&(v.signedAmount==='0'?!Object.hasOwn(v,'reversingJournalId'):guid(v.sourceJournalId)&&guid(v.reversingJournalId)&&!same(v.sourceJournalId,v.reversingJournalId))
 
-export function validInventoryCostPreview(value:Record<string,unknown>,company:string,id:string,kind:InventoryCostWorkKind,date:(v:unknown)=>v is string):value is Record<string,unknown>&{readonly inventoryCost:WorkInventoryCostPreview} {
+// Shared retained transport validation; only the explicit retained profile admits native N=1 without preparation.
+export function validInventoryCostRetainedProposal(value:unknown,company:string,id:string,date:(v:unknown)=>v is string):value is WorkInventoryCostRetainedProposal {
+  if(!rec(value)||(value.kind!==1&&value.kind!==2))return false
+  return validInventoryCostProposal(value,company,id,value.kind===1?'accounting.invoiced-shipment-cost.v1':'accounting.purchase-cost-difference.v1',date,true)
+}
+function validInventoryCostProposal(p:unknown,company:string,id:string,kind:InventoryCostWorkKind,date:(v:unknown)=>v is string,retained:boolean):p is WorkInventoryCostRetainedProposal {
   const validDate:Check=v=>date(v)&&v!=='0001-01-01'
   const returns=(v:unknown,issue:unknown)=>shape(v,{returnId:guid,movementId:guid,movementLineNumber:int,sourceIssueMovementId:guid,quantityKg:quantity,recordedAtUtc:utc})&&same(v.sourceIssueMovementId,issue)
   const shipment=(v:unknown,manufacturing:boolean,product:unknown):v is Record<string,unknown>=>shape(v,{shipmentId:guid,movementId:guid,movementLineNumber:int,loadingInstructionLineId:guid,productId:guid,labelId:guid,physicalQuantityKg:quantity,rootShare:positiveRatio,netRootQuantityKg:positiveRatio,recordedAtUtc:utc,...(manufacturing?{hasReturns:(x:unknown)=>typeof x==='boolean'}:{returns:list(()=>true,0,65536)})},
@@ -108,14 +114,11 @@ export function validInventoryCostPreview(value:Record<string,unknown>,company:s
   const renewal:Check=v=>shape(v,{previousProposalId:guid,previousClosedVersion:x=>inventoryCostWorkLong(x,3),closureEventId:guid})
   const cancellation:Check=v=>shape(v,{id:guid,companyId:guid,inventoryCostProposalId:guid,cancellationId:guid,version:long,status:x=>x==='Prepared'||x==='Approved',invoiceLineRevision:zeroLong,periodId:guid,accountingDate:validDate,transactionDate:validDate,reason:text,preparedBy:guid,preparedAtUtc:utc,components:list(cancelledComponent,1),moneyProfiles:list(x=>shape(x,{currencyId:guid,profileId:guid,version:long,scale}),1)},{approvedBy:guid,approvedAtUtc:utc})
     &&same(v.companyId,company)&&same(v.inventoryCostProposalId,id)&&(v.status==='Prepared'?v.approvedBy===undefined&&v.approvedAtUtc===undefined:guid(v.approvedBy)&&utc(v.approvedAtUtc)&&!same(v.approvedBy,v.preparedBy))
-  const human=value.inventoryCost
-  if(!shape(human,{proposal:()=>true,preparedRecordedAtUtc:utc}))return false
-  const p=human.proposal
-  if(!shape(p,{proposalId:guid,companyId:guid,eventId:guid,kind:x=>x===(kind==='accounting.invoiced-shipment-cost.v1'?1:2),invoiceId:guid,invoiceVersion:long,admissionId:guid,invoiceDate:validDate,component:rec,version:x=>inventoryCostWorkLong(x,2),status:x=>x==='Prepared'||x==='Posted'||x==='RoundedNoCost'||x==='Stale',sourceOccurredAtUtc:utc,preparation,exactTlAmount:text},
-    {officialInvoiceNumber:text,approvedBy:guid,approvedAtUtc:utc,journalId:guid,cancellationId:guid,reversalProposal:v=>decodeJournalReversalProposal(v,company,date)!==null&&rec(v)&&int(v.version)&&utc(v.proposedAtUtc)&&(v.decidedAtUtc===null||utc(v.decidedAtUtc)),currentPostedJournalId:guid,componentCancellation:cancellation,staleClosure:stale,renewedFrom:renewal,unpostedTlAmountText:text})
-    ||!same(p.companyId,company)||!same(p.proposalId,id)||p.version!==value.sourceVersion||value.approvalReasonRequired!==false||value.rejectionSupported!==false)return false
+  if(!shape(p,{proposalId:guid,companyId:guid,eventId:guid,kind:x=>x===(kind==='accounting.invoiced-shipment-cost.v1'?1:2),invoiceId:guid,invoiceVersion:long,admissionId:guid,invoiceDate:validDate,component:rec,version:x=>inventoryCostWorkLong(x,retained?1:2),status:x=>x==='Prepared'||x==='Posted'||x==='RoundedNoCost'||x==='Stale'||retained&&(x==='AwaitingPreparation'||x==='NoCost'||x==='AlreadyAccounted'),sourceOccurredAtUtc:utc,exactTlAmount:text},
+    {preparation,officialInvoiceNumber:text,approvedBy:guid,approvedAtUtc:utc,journalId:guid,cancellationId:guid,reversalProposal:v=>decodeJournalReversalProposal(v,company,date)!==null&&rec(v)&&int(v.version)&&utc(v.proposedAtUtc)&&(v.decidedAtUtc===null||utc(v.decidedAtUtc)),currentPostedJournalId:guid,componentCancellation:cancellation,staleClosure:stale,renewedFrom:renewal,unpostedTlAmountText:text})
+    ||!same(p.companyId,company)||!same(p.proposalId,id))return false
   const c=p.component,prep=p.preparation
-  if(!rec(c)||!rec(prep)||!shape(c,{componentKey:text,productId:guid,signedTlAmount:ratio},{invoiceLineId:guid,invoiceLineNumber:int,locationId:guid,salesPhysicalClaims:list(physical),alreadyPostedComponents:list(x=>manufacturing(x,c.productId),1),recordedRounding:recorded,unpostedTlAmount:positiveRatio,alreadyPostedPurchaseComponents:list(x=>purchase(x,c.productId),1),claimSuccession:rec}))return false
+  if(!rec(c)||!shape(c,{componentKey:text,productId:guid,signedTlAmount:ratio},{invoiceLineId:guid,invoiceLineNumber:int,locationId:guid,salesPhysicalClaims:list(physical),alreadyPostedComponents:list(x=>manufacturing(x,c.productId),1),recordedRounding:recorded,unpostedTlAmount:positiveRatio,alreadyPostedPurchaseComponents:list(x=>purchase(x,c.productId),1),claimSuccession:rec}))return false
   if(!rec(c.signedTlAmount)||!ratio(c.signedTlAmount))return false
   const firstLine=typeof c.componentKey==='string'&&c.componentKey===`purchase-first-line/${String(c.componentKey).split('/')[1]}`&&guid(c.componentKey.split('/')[1])
   const first=firstLine||typeof c.componentKey==='string'&&/^purchase-first\//.test(c.componentKey)&&c.componentKey.split('/').length===3&&c.componentKey.split('/').slice(1).every(guid)
@@ -129,10 +132,6 @@ export function validInventoryCostPreview(value:Record<string,unknown>,company:s
   if(!ratio(posting))return false
   if(first){if(p.kind!==2||!rec(c.recordedRounding)||!rec(c.recordedRounding.rounding)||c.recordedRounding.rounding.roundedSignedAmount!==p.exactTlAmount||!ratio(c.recordedRounding.rounding.exactSignedAmount)||c.recordedRounding.rounding.exactSignedAmount.numerator.startsWith('-'))return false}
   else if(c.recordedRounding!==undefined)return false
-  if(prep.rounding!==undefined){if(!roundingProof(prep.rounding)||prep.rounding.roundedSignedAmount!==prep.signedAmount)return false
-    if(rec(c.recordedRounding)){if(!roundingProof(c.recordedRounding.rounding)||!equalRounding(prep.rounding,c.recordedRounding.rounding)||!same(c.recordedRounding.currencyId,prep.currencyId))return false}
-    else if(prep.rounding.exactSignedAmount.numerator!==posting.numerator||prep.rounding.exactSignedAmount.denominator!==posting.denominator||prep.rounding.exactSignedAmountText!==postingText)return false
-  }else if(first||mixed||p.exactTlAmount!==prep.signedAmount)return false
   if(c.claimSuccession!==undefined){const s=c.claimSuccession
     if(p.kind!==1||posted||mixed||!shape(s,{previousEventId:guid,previousInvoiceId:guid,previousInvoiceLineId:guid,previousAdmissionId:guid,previousFinalizedVersion:long,previousProposalId:guid,previousProposalVersion:long,cancellationId:guid,invoiceLineRevision:zeroLong,claims:list(x=>shape(x,{physical,previousGeneration:long}),1,10000),reversedComponents:list(cancelledComponent),originalSourceAmount:positiveRatio,knownBaseAmount:positiveRatio,restoredAmount:positiveRatio})
       ||same(s.previousInvoiceId,p.invoiceId)||same(s.previousEventId,p.eventId)||same(s.previousAdmissionId,p.admissionId)||!rec(s.restoredAmount)||s.restoredAmount.numerator!==c.signedTlAmount.numerator||s.restoredAmount.denominator!==c.signedTlAmount.denominator
@@ -140,15 +139,30 @@ export function validInventoryCostPreview(value:Record<string,unknown>,company:s
       ||new Set(s.claims.map(g=>rec(g)&&rec(g.physical)?`${g.physical.movementId}:${g.physical.movementLineNumber}`.toLowerCase():'')).size!==s.claims.length
       ||!s.claims.every(g=>rec(g)&&rec(g.physical)&&same(g.physical.productId,c.productId)&&Array.isArray(c.salesPhysicalClaims)&&c.salesPhysicalClaims.some(a=>rec(a)&&rec(g.physical)&&same(a.shipmentId,g.physical.shipmentId)&&same(a.movementId,g.physical.movementId)&&a.movementLineNumber===g.physical.movementLineNumber&&a.quantityKg===g.physical.quantityKg)))return false
   }
+  if(retained&&(p.status==='AwaitingPreparation'||p.status==='NoCost'||p.status==='AlreadyAccounted'))
+    return p.version==='1'&&prep===undefined&&p.approvedBy===undefined&&p.approvedAtUtc===undefined&&p.journalId===undefined
+      &&p.staleClosure===undefined&&p.cancellationId===undefined&&p.reversalProposal===undefined&&p.componentCancellation===undefined
+  if(!rec(prep)||!inventoryCostWorkLong(p.version,2))return false
+  if(prep.rounding!==undefined){if(!roundingProof(prep.rounding)||prep.rounding.roundedSignedAmount!==prep.signedAmount)return false
+    if(rec(c.recordedRounding)){if(!roundingProof(c.recordedRounding.rounding)||!equalRounding(prep.rounding,c.recordedRounding.rounding)||!same(c.recordedRounding.currencyId,prep.currencyId))return false}
+    else if(prep.rounding.exactSignedAmount.numerator!==posting.numerator||prep.rounding.exactSignedAmount.denominator!==posting.denominator||prep.rounding.exactSignedAmountText!==postingText)return false
+  }else if(first||mixed||p.exactTlAmount!==prep.signedAmount)return false
   if(p.status!=='Prepared'&&!inventoryCostWorkLong(p.version,3))return false
   if(p.status==='Prepared'||p.status==='Stale'){if(p.approvedBy!==undefined||p.approvedAtUtc!==undefined||p.journalId!==undefined)return false}
   else if(!guid(p.approvedBy)||same(p.approvedBy,prep.preparedBy)||!utc(p.approvedAtUtc)||(p.status==='Posted'?!guid(p.journalId)||prep.signedAmount==='0':p.journalId!==undefined||prep.signedAmount!=='0'||!rec(prep.rounding)))return false
   if(p.status==='Stale'){if(!rec(p.staleClosure)||!inventoryCostWorkLong(p.staleClosure.preparedVersion,2)||BigInt(p.staleClosure.preparedVersion)+1n!==BigInt(String(p.version))||!same(p.staleClosure.preparedBy,prep.preparedBy)||p.cancellationId!==undefined||p.reversalProposal!==undefined)return false}
   else if(p.staleClosure!==undefined)return false
   if(rec(p.renewedFrom)&&(!inventoryCostWorkLong(p.renewedFrom.previousClosedVersion,3)||same(p.renewedFrom.previousProposalId,p.proposalId)||BigInt(p.renewedFrom.previousClosedVersion)>=BigInt(String(p.version))))return false
-  if(p.status!=='Prepared'&&value.pending!==false||p.currentPostedJournalId!==undefined&&!guid(p.journalId))return false
+  if(p.currentPostedJournalId!==undefined&&!guid(p.journalId))return false
   if(rec(p.componentCancellation)&&(!same(p.componentCancellation.cancellationId,p.cancellationId)))return false
   if(rec(p.reversalProposal)&&!same(p.reversalProposal.sourceJournalId,p.currentPostedJournalId??p.journalId))return false
+  return true
+}
+export function validInventoryCostPreview(value:Record<string,unknown>,company:string,id:string,kind:InventoryCostWorkKind,date:(v:unknown)=>v is string):value is Record<string,unknown>&{readonly inventoryCost:WorkInventoryCostPreview} {
+  const human=value.inventoryCost
+  if(!shape(human,{proposal:()=>true,preparedRecordedAtUtc:utc})||!validInventoryCostProposal(human.proposal,company,id,kind,date,false))return false
+  const p=human.proposal,prep=p.preparation
+  if(!prep||p.version!==value.sourceVersion||value.approvalReasonRequired!==false||value.rejectionSupported!==false||p.status!=='Prepared'&&value.pending!==false)return false
   const label=(raw:unknown,fallback:unknown)=>typeof raw==='string'&&raw.trim().length>0&&raw.length<=200?raw:String(fallback).toLowerCase().slice(0,8)
   if(value.documentLabel!==label(p.officialInvoiceNumber,id)||!Array.isArray(value.rules)||value.rules.length!==1||!rec(value.rules[0]))return false
   const rule=value.rules[0],amount=String(prep.signedAmount),formatted=amount.includes('.')?amount.replace(/0+$/,'').replace(/\.$/,''):amount
