@@ -83,6 +83,9 @@ public sealed record PurchaseServiceOrderWriteV1(PurchaseServiceOrderState? Orde
 public interface IPurchaseServiceOrderStoreV1
 {
     Task<PurchaseServiceOrderState?> ReadAsync(Guid orderId, CancellationToken token);
+    Task<PurchaseServiceOrderState?> ReadForApprovalPreparationAsync(Guid orderId,
+        Func<CancellationToken, Task> freshFence, CancellationToken token) =>
+        Task.FromException<PurchaseServiceOrderState?>(new PurchasingServiceException(503, "service_unavailable"));
     Task<IReadOnlyList<PurchaseServiceOrderState>> ListAsync(CancellationToken token);
     Task<bool> HasApprovedPhysicalReferencesAsync(PurchaseServiceOrderState order, CancellationToken token) => Task.FromResult(false);
     Task<bool> HasApprovedTaxSnapshotAsync(PurchaseServiceOrderState order, Guid lineId, CancellationToken token) => Task.FromResult(false);

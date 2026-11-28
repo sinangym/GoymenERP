@@ -19,17 +19,42 @@ public sealed class PurchaseServiceOrderStoreV1(PurchasingDbContext database, IC
     IPurchaseSubcontractOrderReadPortV1, IPurchaseServiceAcceptanceReadPortV1
 {
     internal static readonly JsonSerializerOptions Json = new JsonSerializerOptions(JsonSerializerDefaults.Web);
-    public async Task<PurchaseServiceOrderState?> ReadAsync(Guid orderId, CancellationToken token)
+    public Task<PurchaseServiceOrderState?> ReadAsync(Guid orderId, CancellationToken token) =>
+        ReadOwnerAsync(orderId, null, token);
+
+    public Task<PurchaseServiceOrderState?> ReadForApprovalPreparationAsync(Guid orderId,
+        Func<CancellationToken, Task> freshFence, CancellationToken token)
+    {
+        ArgumentNullException.ThrowIfNull(freshFence);
+        return ReadOwnerAsync(orderId, freshFence, token);
+    }
+
+    private async Task<PurchaseServiceOrderState?> ReadOwnerAsync(Guid orderId,
+        Func<CancellationToken, Task>? freshFence, CancellationToken token)
     {
         var scope = Company();
+        if (freshFence is not null) await Fence();
         var parent = await database.ServiceOrders.AsNoTracking().SingleOrDefaultAsync(x => x.OrderId == orderId, token);
+        if (freshFence is not null) await Fence();
         if (parent is null) return null;
+        if (freshFence is not null) await Fence();
         var revision = await database.ServiceOrderRevisions.AsNoTracking()
-            .SingleOrDefaultAsync(x => x.OrderId == orderId && x.Version == parent.Version, token) ?? throw new InvalidOperationException("Hizmet siparişi sürümü okunamadı.");
+            .SingleOrDefaultAsync(x => x.OrderId == orderId && x.Version == parent.Version, token);
+        if (freshFence is not null) await Fence();
+        if (revision is null) throw new InvalidOperationException("Hizmet siparişi sürümü okunamadı.");
         var value = Restore(revision.SnapshotJson);
         if (Company() != scope || value.CompanyId != scope || value.OrderId != orderId || value.Version != parent.Version)
             throw new InvalidOperationException("Hizmet siparişi kapsamı değişti.");
         return value;
+
+        async Task Fence()
+        {
+            token.ThrowIfCancellationRequested();
+            if (Company() != scope) throw new InvalidOperationException("Hizmet siparişi kapsamı değişti.");
+            await freshFence!(token);
+            token.ThrowIfCancellationRequested();
+            if (Company() != scope) throw new InvalidOperationException("Hizmet siparişi kapsamı değişti.");
+        }
     }
     public async Task<IReadOnlyList<PurchaseServiceOrderState>> ListAsync(CancellationToken token)
     {

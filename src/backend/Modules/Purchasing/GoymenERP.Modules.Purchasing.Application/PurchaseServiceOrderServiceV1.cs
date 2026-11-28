@@ -14,9 +14,10 @@ public sealed partial class PurchaseServiceOrderServiceV1(ICompanyContext compan
     ISettingsReferenceListReaderV1 referenceLists, ISettingsPrerequisiteProvider profiles, ISettingsUnitIdentityCatalogV1 unitIdentities, TimeProvider clock,
     IPurchaseServiceOrderReferenceProofV1? physicalReferences = null,
     ISettingsSubcontractTaxDefaultProviderV1? subcontractTax = null,
-    ISettingsSubcontractTaxCatalogV1? taxCatalog = null) : IPurchaseServiceOrderServiceV1
+    ISettingsSubcontractTaxCatalogV1? taxCatalog = null) : IPurchaseServiceOrderServiceV1, IPurchaseServiceOrderApprovalPreparationV1
 {
-    private sealed record Scope(Guid Company, string Actor, IReadOnlyCollection<string> Roles);
+    private sealed record Scope(Guid Company, string Actor, IReadOnlyCollection<string> Roles,
+        Func<CancellationToken, Task>? ApprovalPreparationFence = null);
     public async Task<PurchaseServiceOrderReferencesV1> ReferencesAsync(CancellationToken token = default)
     {
         var scope = await RequireAsync(PurchasingPermissionManifestV1.OrdersCreate, token);
@@ -105,26 +106,8 @@ public sealed partial class PurchaseServiceOrderServiceV1(ICompanyContext compan
             request, request.Reason, metadata, async (scope, old, ct) =>
             {
                 var value = old ?? throw Failure(404);
-                var supplier = await SupplierAsync(scope, value.SupplierPartyId, value.CompanyAccountId, value.Kind, PurchasingPermissionManifestV1.OrdersApprove, ct);
-                foreach (var line in value.PriceRevision == 0 ? value.Lines : [])
-                {
-                    var type = await ReadAsync(scope, PurchasingPermissionManifestV1.OrdersApprove,
-                        () => referenceLists.GetAsync(scope.Company, SettingsReferenceListKindV1.ServiceType, line.ServiceTypeId, ct), ct);
-                    if (type.Outcome == SettingsReferenceListLookupOutcomeV1.Unavailable) throw Failure(503);
-                    if (type.Outcome != SettingsReferenceListLookupOutcomeV1.Found || type.Entry?.Active != true || type.Entry.Id != line.ServiceTypeId)
-                        throw new PurchaseServiceOrderException(PurchaseServiceOrder.StateConflict);
-                    if (type.Entry.Version != line.ServiceTypeVersion) throw new PurchaseServiceOrderException(PurchaseServiceOrder.VersionConflict);
-                }
-                // A price-only revision retains the original approved material identities. A later stock movement
-                // cannot invalidate already performed service or require the same label to be physically sent again.
-                if (!await ReadAsync(scope, PurchasingPermissionManifestV1.OrdersApprove,
-                    () => store.HasApprovedPhysicalReferencesAsync(value, ct), ct))
-                {
-                    await VerifyPhysicalAsync(scope, PurchasingPermissionManifestV1.OrdersApprove, value.BusinessDate, value.Materials, value.ExpectedOutputs, ct);
-                }
-                if (value.Kind == PurchaseServiceOrderKind.OwnMaterialSubcontract)
-                    await VerifyTaxSnapshotsAsync(scope, value, ct);
-                return PurchaseServiceOrder.Approve(value with { PartyVersion = supplier.PartyVersion, AccountVersion = supplier.AccountVersion },
+                var prepared = await PrepareApprovalStateAsync(scope, value, ct);
+                return PurchaseServiceOrder.Approve(prepared,
                     Version(request.ExpectedVersion), scope.Actor, clock.GetUtcNow());
             }, token);
     }
@@ -227,7 +210,15 @@ public sealed partial class PurchaseServiceOrderServiceV1(ICompanyContext compan
     private async Task StillAsync(Scope scope, string permission, CancellationToken token)
     { var fresh = await RequireAsync(permission, token); if (fresh.Company != scope.Company || fresh.Actor != scope.Actor) throw Failure(403); }
     private async Task<T> ReadAsync<T>(Scope scope, string permission, Func<Task<T>> read, CancellationToken token)
-    { var value = await read(); await StillAsync(scope, permission, token); return value; }
+    {
+        // Only the new readonly owner-preparation scope has a consumer fence. Legacy command/read ordering is unchanged.
+        if (scope.ApprovalPreparationFence is { } before) await before(token);
+        var value = await read();
+        if (scope.ApprovalPreparationFence is not null) token.ThrowIfCancellationRequested();
+        await StillAsync(scope, permission, token);
+        if (scope.ApprovalPreparationFence is { } after) await after(token);
+        return value;
+    }
     private async Task<bool> DiscloseAsync(Scope scope, CancellationToken token)
     {
         var grant = await authority.RevalidatePermissionScopeAsync(PurchasingPermissionManifestV1.OrdersPriceRead, scope.Company, token);
