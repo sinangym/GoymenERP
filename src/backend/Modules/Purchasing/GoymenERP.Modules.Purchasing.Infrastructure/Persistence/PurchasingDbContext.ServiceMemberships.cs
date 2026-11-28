@@ -9,7 +9,7 @@ public sealed partial class PurchasingDbContext
     internal const string ServiceMembershipIdentityCheck = "[CompanyId] <> " + EmptyGuid + " AND [OrderId] <> " + EmptyGuid
         + " AND [ServiceOrderId] <> " + EmptyGuid + " AND [SupplierPartyId] <> " + EmptyGuid
         + " AND [CompanyAccountId] <> " + EmptyGuid + " AND [CurrencyId] <> " + EmptyGuid
-        + " AND [PreparedVersion] > 0 AND [OrderVersionAfter] > 1 AND [MemberNo] > 0";
+        + " AND [PreparedVersion] > 0 AND [OrderVersionAfter] > 1 AND [MemberNo] > 0 AND [MemberCount] >= [MemberNo]";
     internal const string ServiceMembershipSnapshotCheck = "ISJSON([LineIdsJson]) = 1 AND LEFT(LTRIM([LineIdsJson]), 1) = N'['"
         + " AND DATEPART(TZOFFSET, [RecordedAtUtc]) = 0";
 
@@ -60,7 +60,7 @@ public sealed partial class PurchasingDbContext
             .Select(x => x.Entity).GroupBy(x => new { x.CompanyId, x.OrderId, x.OrderVersionAfter }))
         {
             var rows = group.OrderBy(x => x.MemberNo).ToArray();
-            if (rows.Select((x, i) => x.MemberNo != i + 1).Any(x => x) || rows.Select(x => x.ServiceOrderId).Distinct().Count() != rows.Length
+            if (rows.Any(x => x.MemberCount != rows.Length) || rows.Select((x, i) => x.MemberNo != i + 1).Any(x => x) || rows.Select(x => x.ServiceOrderId).Distinct().Count() != rows.Length
                 || rows.Any(x => x.RecordedAtUtc != rows[0].RecordedAtUtc))
                 throw new InvalidOperationException("A membership batch must be complete, ordered and unique.");
         }
@@ -78,6 +78,7 @@ internal sealed class PurchaseOrderServiceMembershipRow : IPurchasingTenantRow
     public Guid CurrencyId { get; set; }
     public long OrderVersionAfter { get; set; }
     public int MemberNo { get; set; }
+    public int MemberCount { get; set; }
     public DateTimeOffset RecordedAtUtc { get; set; }
     public string LineIdsJson { get; set; } = "";
 }

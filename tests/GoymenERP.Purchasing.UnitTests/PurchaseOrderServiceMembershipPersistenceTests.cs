@@ -54,7 +54,7 @@ public sealed class PurchaseOrderServiceMembershipPersistenceTests
     [Theory]
     [InlineData("parent")] [InlineData("company")] [InlineData("slot")] [InlineData("memberNo")]
     [InlineData("duplicate")] [InlineData("emptyLines")] [InlineData("lineDuplicate")] [InlineData("noncanonical")]
-    [InlineData("offset")] [InlineData("approvedParent")]
+    [InlineData("offset")] [InlineData("approvedParent")] [InlineData("missingBatchTail")]
     public void Malformed_or_unproved_timeline_never_substitutes_current_parent_state(string changed)
     {
         var f = Fixture(); var row = f.Members[0];
@@ -62,6 +62,7 @@ public sealed class PurchaseOrderServiceMembershipPersistenceTests
         if (changed == "company") row.CompanyId = Guid.NewGuid();
         if (changed == "slot") row.OrderVersionAfter = 4;
         if (changed == "memberNo") row.MemberNo = 2;
+        if (changed == "missingBatchTail") row.MemberCount = 2;
         if (changed == "emptyLines") row.LineIdsJson = "[]";
         if (changed == "lineDuplicate") row.LineIdsJson = JsonSerializer.Serialize(new[] { f.Service.Lines[0].LineId, f.Service.Lines[0].LineId });
         if (changed == "noncanonical") row.LineIdsJson += " ";

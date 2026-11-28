@@ -19,7 +19,7 @@ public sealed partial class PurchasingStore
                 SupplierPartyId = member.SupplierPartyId, CompanyAccountId = member.CompanyAccountId,
                 CurrencyId = member.CurrencyId, PreparedVersion = member.PreparedVersion,
                 OrderVersionAfter = batch.OrderVersionAfter, RecordedAtUtc = batch.RecordedAtUtc,
-                MemberNo = i + 1, LineIdsJson = JsonSerializer.Serialize(member.LineIds)
+                MemberNo = i + 1, MemberCount = batch.Members.Count, LineIdsJson = JsonSerializer.Serialize(member.LineIds)
             })).ToArray();
     }
 
@@ -27,7 +27,7 @@ public sealed partial class PurchasingStore
     {
         if (row.CompanyId == Guid.Empty || row.OrderId == Guid.Empty || row.ServiceOrderId == Guid.Empty
             || row.SupplierPartyId == Guid.Empty || row.CompanyAccountId == Guid.Empty || row.CurrencyId == Guid.Empty
-            || row.PreparedVersion <= 0 || row.OrderVersionAfter <= 1 || row.MemberNo <= 0
+            || row.PreparedVersion <= 0 || row.OrderVersionAfter <= 1 || row.MemberNo <= 0 || row.MemberCount < row.MemberNo
             || row.RecordedAtUtc.Offset != TimeSpan.Zero)
             throw new InvalidOperationException("Stored membership identity or timeline is invalid.");
         Guid[] ids;
@@ -87,7 +87,7 @@ public sealed partial class PurchasingStore
         foreach (var group in members.GroupBy(x => x.OrderVersionAfter).OrderBy(x => x.Key))
         {
             var rows = group.OrderBy(x => x.MemberNo).ToArray();
-            if (rows.Select((x, i) => x.MemberNo != i + 1).Any(x => x)
+            if (rows.Any(x => x.MemberCount != rows.Length) || rows.Select((x, i) => x.MemberNo != i + 1).Any(x => x)
                 || rows.Any(x => x.RecordedAtUtc != rows[0].RecordedAtUtc))
                 throw new InvalidOperationException("Stored membership batch is incomplete.");
             var states = rows.Select(member =>
