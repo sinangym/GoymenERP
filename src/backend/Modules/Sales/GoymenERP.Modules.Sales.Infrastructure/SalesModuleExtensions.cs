@@ -155,7 +155,9 @@ public static class SalesModuleExtensions
         services.AddScoped<ISalesRiskExceptionStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
         // EK56 SAT-D284: the request's within-limit refusal reads the same deterministic risk evaluation as the S-04 risk check.
         services.AddScoped<ISalesOrderRiskOutcomeSource>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
-        services.AddScoped<ISalesRiskExceptionService>(CreateRiskExceptionService);
+        services.AddScoped<SalesRiskExceptionService>(CreateRiskExceptionService);
+        services.AddScoped<ISalesRiskExceptionService>(p => p.GetRequiredService<SalesRiskExceptionService>());
+        services.AddScoped<ISalesRiskExceptionDecisionReadV1>(p => p.GetRequiredService<SalesRiskExceptionService>());
         services.AddScoped<ISalesShipmentRiskExceptionReadPortV1, SalesShipmentRiskExceptionReadPort>();
         // LOJ-D19 (SAT-D285): the usage mirror of the Logistics definite-shipment events over the Sales store, and its inbox
         // consumer. The host hands the consumer to the Work dispatcher (SAT-S10, AddSalesRiskExceptionUsageInbox) after the Logistics
