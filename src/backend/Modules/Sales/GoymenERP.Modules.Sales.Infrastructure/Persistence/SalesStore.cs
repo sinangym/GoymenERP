@@ -148,10 +148,12 @@ public sealed partial class SalesStore(
         RequirePriceFloorApprovalCommand(envelope, requestHash, commandName, writes: false);
         RequireDiscountApprovalCommand(envelope, requestHash, commandName, writes: false);
         RequireRemainderDecisionCommand(envelope, requestHash, commandName, writes: false);
+        RequireContractDiscountDecisionCommand(envelope, requestHash, commandName, writes: false);
         await PriceFloorApprovalFenceAsync(cancellationToken);
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         RequireResolvedCompany();
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
@@ -163,6 +165,7 @@ public sealed partial class SalesStore(
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         if (attempt is null)
         {
@@ -202,10 +205,12 @@ public sealed partial class SalesStore(
         RequirePriceFloorApprovalCommand(envelope, requestHash, commandName, writes: true);
         RequireDiscountApprovalCommand(envelope, requestHash, commandName, writes: true);
         RequireRemainderDecisionCommand(envelope, requestHash, commandName, writes: true);
+        RequireContractDiscountDecisionCommand(envelope, requestHash, commandName, writes: true);
         await PriceFloorApprovalFenceAsync(cancellationToken);
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         var companyId = RequireResolvedCompany();
         if (refusal.Status is < 400 or > 599 || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null
@@ -221,6 +226,7 @@ public sealed partial class SalesStore(
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         if (existingAttempt)
         {
@@ -573,10 +579,12 @@ public sealed partial class SalesStore(
         RequirePriceFloorApprovalCommand(envelope, requestHash, commandName, writes: true);
         RequireDiscountApprovalCommand(envelope, requestHash, commandName, writes: true);
         RequireRemainderDecisionCommand(envelope, requestHash, commandName, writes: true);
+        RequireContractDiscountDecisionCommand(envelope, requestHash, commandName, writes: true);
         await PriceFloorApprovalFenceAsync(cancellationToken);
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
 
         if (string.IsNullOrWhiteSpace(audit.EventType) || string.IsNullOrWhiteSpace(audit.Operation) || string.IsNullOrWhiteSpace(audit.Reason))
@@ -593,6 +601,7 @@ public sealed partial class SalesStore(
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         if (attempt is not null)
         {
@@ -623,6 +632,7 @@ public sealed partial class SalesStore(
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         if (row is null)
         {
@@ -635,12 +645,14 @@ public sealed partial class SalesStore(
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         var draft = (await RestoreAsync([row], cancellationToken)).Single();
         await beforeWrite(draft, cancellationToken);
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         var before = picture(draft);
         var versionBefore = draft.Version;
@@ -1844,6 +1856,7 @@ public sealed partial class SalesStore(
         RequireHash(requestHash);
         RequireCommand(commandName);
         RequireRemainderDecisionCommand(envelope, requestHash, commandName, writes: true);
+        RequireContractDiscountDecisionCommand(envelope, requestHash, commandName, writes: true);
         if (!SalesDraftCommands.IsRemainderCommand(commandName))
         {
             throw new ArgumentException("Yalnız kalan değişikliği komutları satır kalanını değiştirir.", nameof(commandName));
@@ -2105,12 +2118,14 @@ public sealed partial class SalesStore(
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         var row = await dbContext.Drafts.AsNoTracking().SingleOrDefaultAsync(candidate => candidate.Id == draftId, cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         return row is null ? null : (await RestoreAsync([row], cancellationToken)).Single();
     }
@@ -2199,6 +2214,7 @@ public sealed partial class SalesStore(
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         var ids = rows.Select(row => row.Id).ToArray();
         var marginCostRows = await dbContext.DraftMarginCosts.AsNoTracking().Where(cost => ids.Contains(cost.DraftId)).ToListAsync(cancellationToken);
@@ -2206,102 +2222,119 @@ public sealed partial class SalesStore(
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         var kilogramsPerUnitRows = await dbContext.DraftLineKilogramsPerUnit.AsNoTracking().Where(item => ids.Contains(item.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         var lines = await dbContext.DraftLines.AsNoTracking().Where(line => ids.Contains(line.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         var slices = await dbContext.DraftDeliverySlices.AsNoTracking().Where(slice => ids.Contains(slice.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         var revisions = await dbContext.DraftRevisions.AsNoTracking().Where(revision => ids.Contains(revision.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         var revisionLines = await dbContext.DraftRevisionLines.AsNoTracking().Where(line => ids.Contains(line.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         var revisionHeaders = await dbContext.DraftRevisionHeaders.AsNoTracking().Where(header => ids.Contains(header.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         var schedules = await dbContext.DraftDeliverySchedules.AsNoTracking().Where(schedule => ids.Contains(schedule.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         var scheduleDates = await dbContext.DraftDeliveryScheduleDates.AsNoTracking().Where(date => ids.Contains(date.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         var cancellations = await dbContext.DraftCancellations.AsNoTracking().Where(cancellation => ids.Contains(cancellation.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         var forceClosures = await dbContext.DraftForceClosures.AsNoTracking().Where(closure => ids.Contains(closure.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         var userClosures = await dbContext.DraftUserClosures.AsNoTracking().Where(closure => ids.Contains(closure.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         var remainderChanges = await dbContext.DraftRemainderChanges.AsNoTracking().Where(change => ids.Contains(change.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         var remainderDecisions = await dbContext.DraftRemainderDecisions.AsNoTracking().Where(decision => ids.Contains(decision.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         var customerRejections = await dbContext.DraftCustomerRejections.AsNoTracking().Where(rejection => ids.Contains(rejection.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         var overDeliveryApprovals = await dbContext.DraftOverDeliveryApprovals.AsNoTracking().Where(approval => ids.Contains(approval.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         var lineClosures = await dbContext.DraftLineClosures.AsNoTracking().Where(closure => ids.Contains(closure.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
         await DiscountApprovalFenceAsync(cancellationToken);
         await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         await RiskExceptionDecisionFenceAsync(cancellationToken);
+        await ContractDiscountDecisionFenceAsync(cancellationToken);
         await RemainderDecisionFenceAsync(cancellationToken);
         var drafts = new List<SalesOrderDraft>(rows.Count);
         foreach (var row in rows)

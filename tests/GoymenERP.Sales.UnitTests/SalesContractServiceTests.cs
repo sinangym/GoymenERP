@@ -17,7 +17,7 @@ namespace GoymenERP.Sales.UnitTests;
 /// planned total) are answered only beside the sales order price read granted company-wide, otherwise null beside Withheld; the
 /// price read is asked, never required. SAT-D362: no end date is an open-ended contract. Every identity is synthetic.
 /// </summary>
-public sealed class SalesContractServiceTests
+public sealed partial class SalesContractServiceTests
 {
     private static readonly Guid Company = Guid.Parse("11111111-1111-4111-8111-111111111111");
     private static readonly Guid Party = Guid.Parse("22222222-2222-4222-8222-222222222222");

@@ -34,7 +34,7 @@ namespace GoymenERP.Modules.Sales.Application;
 /// The contract is a separate record: no order, quote or price is read or changed. The agreement price tier (SAT-D58) is not
 /// evaluated here.
 /// </summary>
-public sealed class SalesContractService(
+public sealed partial class SalesContractService(
     ICompanyContext companyContext,
     ICurrentUser currentUser,
     IErpAuthorityRevalidationService authority,
@@ -172,7 +172,14 @@ public sealed class SalesContractService(
         return new SalesContractListResponse([.. items.Select(item => View(item, today, disclosure))]);
     }
 
-    private async Task<SalesContractCommandResult> DecideAsync(Guid contractId, SalesDraftStateCommandRequest? request,
+    private Task<SalesContractCommandResult> DecideAsync(Guid contractId, SalesDraftStateCommandRequest? request,
+        string commandName, SalesCommandMetadata metadata, Action<SalesContract, string, long, DateTimeOffset> decide,
+        SalesDraftStateAudit audit, CancellationToken cancellationToken) => contractDiscountDecisionSafety
+            ? RunContractDiscountDecisionAsync(contractId, request ?? throw new ArgumentNullException(nameof(request)),
+                commandName, metadata, decide, audit, cancellationToken)
+            : DecideCoreAsync(contractId, request, commandName, metadata, decide, audit, cancellationToken);
+
+    private async Task<SalesContractCommandResult> DecideCoreAsync(Guid contractId, SalesDraftStateCommandRequest? request,
         string commandName, SalesCommandMetadata metadata, Action<SalesContract, string, long, DateTimeOffset> decide,
         SalesDraftStateAudit audit, CancellationToken cancellationToken)
     {

@@ -24,6 +24,7 @@ public sealed partial class SalesStore : ISalesContractStore
         RequireEnvelope(envelope);
         RequireHash(requestHash);
         RequireContractCommand(commandName);
+        RequireContractDiscountDecisionCommand(envelope, requestHash, commandName, writes: false);
         RequireResolvedCompany();
         var attempt = await FindContractAttemptAsync(commandName, IdempotencyKeyHash(envelope.IdempotencyKey), cancellationToken);
         if (attempt is null)
@@ -45,6 +46,7 @@ public sealed partial class SalesStore : ISalesContractStore
         var companyId = RequireResolvedCompany();
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
         var actorId = envelope.ActorId.Trim();
+        RequireContractDiscountDecisionCommand(envelope, requestHash, SalesContractCommands.CreateV1, writes: true);
         var attempt = await FindContractAttemptAsync(SalesContractCommands.CreateV1, keyHash, cancellationToken);
         if (attempt is not null)
         {
@@ -78,6 +80,7 @@ public sealed partial class SalesStore : ISalesContractStore
         RequireEnvelope(envelope);
         RequireHash(requestHash);
         RequireContractCommand(commandName);
+        RequireContractDiscountDecisionCommand(envelope, requestHash, commandName, writes: true);
         if (commandName == SalesContractCommands.CreateV1)
         {
             throw new ArgumentException("Yalnız bir iskonto kararı terminal ret kaydeder; reddedilen kayıt hiçbir şey kaydetmez.", nameof(commandName));
@@ -103,7 +106,8 @@ public sealed partial class SalesStore : ISalesContractStore
 
         dbContext.ContractAttempts.Add(NewContractAttempt(companyId, commandName, keyHash, requestHash, envelope.ActorId.Trim(),
             AttemptOutcomeRefused, contractId, JsonSerializer.Serialize(refusal, Json), envelope.CorrelationId, timeProvider.GetUtcNow()));
-        await SaveAsync(cancellationToken);
+        if (ownedContractDiscountDecision is not null) await SaveContractDiscountDecisionAsync(cancellationToken, refusal);
+        else await SaveAsync(cancellationToken);
     }
 
     public async Task<SalesContractStoreResult?> DecideContractAsync(SalesDraftWriteEnvelope envelope, string requestHash,
@@ -115,6 +119,7 @@ public sealed partial class SalesStore : ISalesContractStore
         RequireEnvelope(envelope);
         RequireHash(requestHash);
         RequireContractCommand(commandName);
+        RequireContractDiscountDecisionCommand(envelope, requestHash, commandName, writes: true);
         if (commandName == SalesContractCommands.CreateV1)
         {
             throw new ArgumentException("Kayıt kendi mağaza yöntemini kullanır.", nameof(commandName));
@@ -134,7 +139,7 @@ public sealed partial class SalesStore : ISalesContractStore
             return null;
         }
 
-        var row = await dbContext.Contracts.SingleOrDefaultAsync(candidate => candidate.Id == contractId, cancellationToken);
+        var row = await ContractDiscountDecisionReadAsync(() => dbContext.Contracts.SingleOrDefaultAsync(candidate => candidate.Id == contractId, cancellationToken), cancellationToken);
         if (row is null)
         {
             return null;
@@ -156,15 +161,16 @@ public sealed partial class SalesStore : ISalesContractStore
         dbContext.ContractAttempts.Add(NewContractAttempt(companyId, commandName, keyHash, requestHash, actorId, AttemptOutcomeRecorded,
             item.Id, null, envelope.CorrelationId, now));
         EnqueueContractAudit(envelope, companyId, audit, item, versionBefore, before);
-        await SaveAsync(cancellationToken);
+        if (ownedContractDiscountDecision is not null) await SaveContractDiscountDecisionAsync(cancellationToken);
+        else await SaveAsync(cancellationToken);
         return new SalesContractStoreResult(item, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 
     public async Task<SalesContract?> FindContractAsync(Guid contractId, CancellationToken cancellationToken = default)
     {
         RequireResolvedCompany();
-        var row = await dbContext.Contracts.AsNoTracking()
-            .SingleOrDefaultAsync(candidate => candidate.Id == contractId, cancellationToken);
+        var row = await ContractDiscountDecisionReadAsync(() => dbContext.Contracts.AsNoTracking()
+            .SingleOrDefaultAsync(candidate => candidate.Id == contractId, cancellationToken), cancellationToken);
         return row is null ? null : SalesContractRows.Restore(row);
     }
 
@@ -182,8 +188,8 @@ public sealed partial class SalesStore : ISalesContractStore
     }
 
     private Task<ContractAttemptRow?> FindContractAttemptAsync(string commandName, string keyHash, CancellationToken cancellationToken) =>
-        dbContext.ContractAttempts.AsNoTracking()
-            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken);
+        ContractDiscountDecisionReadAsync(() => dbContext.ContractAttempts.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken), cancellationToken);
 
     private static ContractAttemptRow NewContractAttempt(Guid companyId, string commandName, string keyHash, string requestHash,
         string actorId, int outcome, Guid? contractId, string? refusalJson, string correlationId, DateTimeOffset now) => new()
@@ -258,8 +264,8 @@ public sealed partial class SalesStore : ISalesContractStore
     {
         if (attempt.Outcome == AttemptOutcomeRecorded && attempt.ContractId is { } contractId && attempt.RefusalJson is null)
         {
-            var row = await dbContext.Contracts.AsNoTracking()
-                .SingleOrDefaultAsync(candidate => candidate.Id == contractId, cancellationToken)
+            var row = await ContractDiscountDecisionReadAsync(() => dbContext.Contracts.AsNoTracking()
+                .SingleOrDefaultAsync(candidate => candidate.Id == contractId, cancellationToken), cancellationToken)
                 ?? throw new InvalidOperationException("Kayıtlı deneme kaydının sözleşmesi bulunamadı.");
             return new SalesContractReplay(SalesContractRows.Restore(row), null, attempt.CorrelationId);
         }
