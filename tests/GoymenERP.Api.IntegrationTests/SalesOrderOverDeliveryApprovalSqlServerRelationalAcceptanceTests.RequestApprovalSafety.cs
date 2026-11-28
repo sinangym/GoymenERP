@@ -329,6 +329,8 @@ public sealed partial class SalesOrderOverDeliveryApprovalSqlServerRelationalAcc
     {
         public bool IsResolved => true; public string CorrelationId => "SENTETIK-over-original"; public string? CausationId => null;
         public string SourceChannel => "test"; public string? ClientIpAddress => null; public string? UserAgent => null;
+        public void Set(string correlationId, string? causationId, string sourceChannel, string? clientIpAddress, string? userAgent) =>
+            throw new NotSupportedException();
     }
     private sealed class OverRequestUser : ICurrentUser
     {
