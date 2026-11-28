@@ -110,6 +110,60 @@ public sealed class AiAnswerReceiptTests
         Assert.DoesNotContain("answerId", JsonSerializer.Serialize(legacy, options));
         var id = Guid.NewGuid(); Assert.Contains(id.ToString("D"), JsonSerializer.Serialize(legacy with { AnswerId = id }, options));
     }
+    [Fact]
+    public async Task Explicit_general_chat_receipt_is_content_free_mode_bound_and_uses_existing_panel_retention()
+    {
+        var store = new Capture(); var writer = new AiAnswerReceiptWriterV1(store, new Clock());
+        var chat = Answer() with { Grounded = false, Citations = [] };
+        Assert.NotNull(await writer.RecordGeneralChatAsync(Company, "actor", "correlation", chat, _ => Task.CompletedTask));
+        Assert.NotNull(await writer.RecordGeneralChatAsync(Company, "actor", "correlation", chat, _ => Task.CompletedTask));
+        Assert.NotNull(await writer.RecordGeneralChatAsync(Company, "actor", "correlation", chat with { Text = "SENTETIK changed" }, _ => Task.CompletedTask));
+        Assert.NotNull(await writer.RecordGeneralChatAsync(Company, "actor", "correlation", chat with { PolicyVersion = "8" }, _ => Task.CompletedTask));
+        var receipt = store.Values[0];
+        Assert.True(AiAnswerReceiptRulesV1.IsValid(receipt)); Assert.Equal("Panel", receipt.Feature);
+        Assert.Equal((At, At.AddDays(90)), (receipt.CreatedAtUtc, receipt.RetainUntilUtc));
+        Assert.Equal(receipt.AnswerSha256, store.Values[1].AnswerSha256);
+        Assert.All(store.Values.Skip(2), x => Assert.NotEqual(receipt.AnswerSha256, x.AnswerSha256));
+        var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
+        string Hash(object value) => Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(
+            System.Text.Encoding.UTF8.GetBytes(AiCanonicalJson.Canonicalize(JsonSerializer.Serialize(value, options)))));
+        Assert.Equal(Hash(Array.Empty<string>()), receipt.CitationsSha256);
+        // The explicit chat mode is not the legacy ERP fingerprint, even with identical text/model/policy.
+        Assert.NotEqual(Hash(new { companyId = Company, chat.Text, chat.ModelDeployment, chat.Placement, chat.PolicyVersion,
+            citationsHash = receipt.CitationsSha256 }), receipt.AnswerSha256);
+        var grounded = Answer();
+        Assert.NotNull(await writer.RecordAsync(Company, "actor", "correlation", grounded, _ => Task.CompletedTask));
+        var legacy = store.Values[^1];
+        Assert.Equal(Hash(new { companyId = Company, grounded.Text, grounded.ModelDeployment, grounded.Placement,
+            grounded.PolicyVersion, citationsHash = legacy.CitationsSha256 }), legacy.AnswerSha256);
+        Assert.DoesNotContain(chat.Text, JsonSerializer.Serialize(receipt));
+        Assert.DoesNotContain("actor", JsonSerializer.Serialize(receipt));
+    }
+
+    [Theory]
+    [InlineData("grounded-empty")] [InlineData("ungrounded-cited")] [InlineData("grounded-cited")]
+    [InlineData("empty")] [InlineData("bad-policy")]
+    public async Task General_chat_profile_never_turns_empty_citations_into_a_grounded_ERP_bypass(string fault)
+    {
+        var store = new Capture(); var writer = new AiAnswerReceiptWriterV1(store, new Clock());
+        var chat = Answer() with { Grounded = false, Citations = [] };
+        chat = fault switch { "grounded-empty" => chat with { Grounded = true },
+            "ungrounded-cited" => chat with { Citations = [Citation] }, "grounded-cited" => Answer(),
+            "empty" => chat with { Text = " " }, _ => chat with { PolicyVersion = " " } };
+        Assert.Null(await writer.RecordGeneralChatAsync(Company, "actor", "correlation", chat, _ => Task.CompletedTask));
+        Assert.Empty(store.Values);
+    }
+
+    [Fact]
+    public async Task Precancelled_general_chat_does_not_reach_a_token_ignoring_owner()
+    {
+        var store = new Capture(); using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new AiAnswerReceiptWriterV1(store, new Clock())
+            .RecordGeneralChatAsync(Company, "actor", "correlation", Answer() with { Grounded = false, Citations = [] },
+                _ => Task.CompletedTask, cancelled.Token));
+        Assert.Empty(store.Values);
+    }
+
     private sealed class Clock : TimeProvider { public override DateTimeOffset GetUtcNow() => At; }
     private sealed class Capture : IAiAnswerReceiptPersistenceV1
     {
