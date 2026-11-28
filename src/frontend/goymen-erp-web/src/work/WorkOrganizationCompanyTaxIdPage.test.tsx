@@ -97,8 +97,8 @@ describe('paired company VKN generic Work page',()=>{
   fireEvent.click(screen.getByRole('button',{name:approve?W.approve:W.reject}));await screen.findByText(W.done)
   expect(calls.filter(c=>c.method==='POST').map(c=>c.body)).toEqual([{expectedVersion:'9007199254740993',approve,reason:null,delegationId:null}])
   expect(calls.filter(c=>c.url.includes(ownerPath)&&c.method==='GET')).toHaveLength(1);expect(screen.queryByRole('region',{name:T.title})).toBeNull()
-  // The shell still needs its authorized company directory; the purpose must not call a native tax-id read.
-  expect(calls.filter(c=>c.url.includes('/organization/')&&!c.url.endsWith('/organization/companies'))).toEqual([])
+  // Shell directory/setup admission remain; neither is the general native tax-id read.
+  expect(calls.filter(c=>c.url.includes('/organization/')&&!c.url.endsWith('/organization/companies')&&!c.url.endsWith('/organization/company-setup/capabilities'))).toEqual([])
   expect(calls.some(c=>c.url.endsWith('/organization/companies'))).toBe(true)
  })
  it.each([true,false])('keeps a full1000-character note and permits it on approve=%s',async approve=>{
