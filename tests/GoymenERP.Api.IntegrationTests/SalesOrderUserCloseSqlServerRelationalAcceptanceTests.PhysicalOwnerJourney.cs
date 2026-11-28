@@ -223,7 +223,7 @@ public sealed partial class SalesOrderUserCloseSqlServerRelationalAcceptanceTest
             .UseSqlServer(run.Factory.DatabaseConnectionString, sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", InventoryDbContext.Schema)).Options, company))
         {
             db.Lots.Add(new LotRow { Id = lot, CompanyId = CompanyA, ProductId = Product, Version = 1, CreatedAtUtc = T0, CreatedBy = run.Actor });
-            db.Labels.Add(new LabelRow { Id = label, CompanyId = CompanyA, Code = "SENTETIK-PHYSICAL-CLOSURE", ProductId = Product,
+            db.Labels.Add(new LabelRow { Id = label, CompanyId = CompanyA, Code = "SENTETIK-PHYSICAL-CLOSURE", ProductId = Product, ProductVersion = "7",
                 LotId = lot, RequiredDocumentsJson = "[]", Version = 1, CreatedAtUtc = T0, UpdatedAtUtc = T0 });
             db.Balances.Add(new BalanceRow { Id = Guid.NewGuid(), CompanyId = CompanyA, OwnerKind = (int)StockPartyKind.Company,
                 OwnerId = CompanyA, CustodianKind = (int)StockPartyKind.Company, CustodianId = CompanyA, LocationId = location,
