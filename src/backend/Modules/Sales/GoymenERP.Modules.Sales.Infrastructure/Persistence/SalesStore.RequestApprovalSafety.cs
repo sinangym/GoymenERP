@@ -11,7 +11,8 @@ public sealed partial class SalesStore : ISalesRequestApprovalStoreV1
     private OwnedRequestApproval? ownedRequestApproval;
 
     public bool RequestApprovalEntryIsClean => officialCancellationAuditWriter is not null
-        && ownedRequestApproval is null && dbContext.Database.IsRelational()
+        && ownedRequestApproval is null && ownedQuoteApproval is null && ownedPriceFloorApproval is null
+        && dbContext.Database.IsRelational()
         && System.Transactions.Transaction.Current is null && dbContext.Database.CurrentTransaction is null
         && !dbContext.ChangeTracker.HasChanges() && !officialCancellationAuditWriter.HasPendingDrafts;
 
