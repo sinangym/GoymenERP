@@ -4128,7 +4128,7 @@
           "runtime_acceptance": "NOT_RUN"
         },
         "invoice_and_inventory_cost_work_checkpoint": {
-          "source_commit": "5884ecfd2c878012b542e3b09f8f45707505c9f3",
+          "source_commit": "9386df64820c0e99137a6dada429e3185be96113",
           "status": "SOURCE_AND_BOUNDED_LOCAL_TESTS_ONLY",
           "backend_supported_kinds": 54,
           "frontend_paired_kinds": 54,
@@ -4527,6 +4527,65 @@
               "skipped": 446,
               "files": 1,
               "selection_note": "One selected existing case; remaining cases filtered, not a full-file or skip0 acceptance run."
+            },
+            "native_access_and_merge_identity": {
+              "seconds": 30.0191822,
+              "freeGiB": 4.175876617431641,
+              "exit": 0,
+              "source_commit": "9386df64820c0e99137a6dada429e3185be96113",
+              "artifact": "native-access-and-merge-20261128/identity",
+              "total": 907,
+              "passed": 907,
+              "failed": 0,
+              "skipped": 0
+            },
+            "native_access_and_merge_counterparty": {
+              "seconds": 38.1133918,
+              "freeGiB": 4.080284118652344,
+              "exit": 0,
+              "source_commit": "9386df64820c0e99137a6dada429e3185be96113",
+              "artifact": "native-access-and-merge-20261128/counterparty",
+              "total": 415,
+              "passed": 415,
+              "failed": 0,
+              "skipped": 0
+            },
+            "native_access_and_merge_api-refresh": {
+              "seconds": 21.1899699,
+              "freeGiB": 3.7929115295410156,
+              "exit": 0,
+              "source_commit": "9386df64820c0e99137a6dada429e3185be96113",
+              "artifact": "native-access-and-merge-20261128/api-refresh"
+            },
+            "native_access_and_merge_host": {
+              "seconds": 74.2795244,
+              "freeGiB": 3.7715225219726562,
+              "exit": 0,
+              "source_commit": "9386df64820c0e99137a6dada429e3185be96113",
+              "artifact": "native-access-and-merge-20261128/host",
+              "total": 2250,
+              "passed": 2250,
+              "failed": 0,
+              "skipped": 0
+            },
+            "native_request_safety_sales": {
+              "freeGiB": 4.299587249755859,
+              "seconds": 59.9406421,
+              "exit": 0,
+              "source_commit": "6f0ac3421a6aa3cdcbc8fb22fa7dcfe119602838",
+              "artifact": "native-request-safety-20261128/sales",
+              "total": 2494,
+              "passed": 2494,
+              "failed": 0,
+              "skipped": 0
+            },
+            "native_request_safety_initial_host_compile": {
+              "freeGiB": 4.124706268310547,
+              "seconds": 42.4514991,
+              "exit": 1,
+              "source_commit": "6f0ac3421a6aa3cdcbc8fb22fa7dcfe119602838",
+              "artifact": "native-request-safety-20261128/host",
+              "test_execution": "NOT_RUN: integration-source missing Audit.Persistence import and xUnit expected/actual order; two compile errors fixed8c19ba259. Original log retained. Separate fresh execution below is not a PASS at the failed source."
             }
           },
           "evidence_scope": "Exact source SHA per artifact;3ade Accounting1753,Organization278,Work195 and controlledHost1944 are separate from b5db API refresh/Host2077. References=false API refresh follows freshly rebuilt Accounting/Organization; not a new full all-reference build. Accounting260 and Organization41 SQL source FQNs compiled in controlled integration-source build; actualSQL NOT_RUN. Frontend51 pairing evidence remains separate prior877/ba5; staged2 have no integrated UI acceptance. All64 runtime semantics remain NOT_VERIFIED/NOT_RUN and verified_runtime_flows=0.",
@@ -4624,7 +4683,10 @@
           "limits": "41 packages/50 references/64 flow rows retained.54 backend kinds cover53 distinct mapped flows;54 frontend kinds cover53 flows because flow55 has two kinds.64 runtimeNOT_RUN/semanticsNOT_VERIFIED/verified_runtime_flows0. ActualSQL/normalHTTP/browser/fullCI/pins/two independentK3/business acceptance pending. No grants/roles/Critical/provider/secrets/deployment/AI activation. Token telemetry unavailable; measured durations retained.",
           "native_source_voucher_safety": "Native owned approval/read/receipt and Work Host/full human DTO plus paired UI are integrated; provider1.21/42; Organization1.6/14,54 frontend kinds. Original4 body/key and full native lines/receipt-only replay preserved; current cancellation or period state cannot substitute original evidence. Existing native screen and12/69 Inbox rows retained.",
           "native_company_tax_id_safety": "Same scoped guarded native tax-id service now supplies exact selected request and genuine immutable204 Commands receipt. Work Host54th kind preserves current COMPANY version, optional note on both decisions, stale reject-only, maker denial, native422/409 and frozen native fingerprint. Human6/native request10 whitelist; bothInt64 versions text.109 new controlled Host/DTO cases plus58 existing Sales owner cases included in2244PASS atdc8. Core UI116 plus43 publication source cases integrated atf6a113c15; local verification pending. No general Organization.Read grant.",
-          "inbox_capability_parity_fix": "Source audit found flow21 transfer overage and25 plan excess used native Inbox capabilities despite published standalone Work purposes.3008a98a8 corrects only two Inbox mappings and adds real queue-to-detail controlled browser-component regression sources; native routes/permissions unchanged. Tests pending."
+          "inbox_capability_parity_fix": "Source audit found flow21 transfer overage and25 plan excess used native Inbox capabilities despite published standalone Work purposes.3008a98a8 corrects only two Inbox mappings and adds real queue-to-detail controlled browser-component regression sources; native routes/permissions unchanged. Tests pending.",
+          "native_request_approval_prerequisite": "14d92c566 protects the existing native Sales request transaction/actual Audit writer/caller state/fresh authority; native selfapproval exception and linked-order reject restriction unchanged.2494Sales unitPASS at6f0.12SQL sourceFacts registered, actualSQL NOT_RUN. Bounded source peer found post-cleanup nonrecorded-refusal release fence gap; author fix/regression pending. No Work owner receipt/Host publication claimed.",
+          "native_access_grant_prerequisite": "2abb4c72f protects native Identity Approve/Reject with same native applock/ReadCommitted/Commands/outbox/actual Audit writer. DI interface+concrete require guarded core; no actual role/grant/Critical changes.907unitPASS at9386.6SQL sourceFacts registered, actualSQL NOT_RUN. Genuine selected owner read/original receipt/Work publication still missing.",
+          "party_merge_preview": "KIM-D59 answered.696e73c64 adds existing-permission read-only selected-pair effect preview: actual parties/all holding accounts/record changes, no inferred Finance counts or side effects.415Counterparty unitPASS at9386 includes12new cases.3SQL sourceFacts registered, actualSQL NOT_RUN. Existing native PUT/hash/replay unchanged; UI/Work native entry and atomic viewed-membership-to-decision fence still pending."
         }
       },
       "delivery_tracking": {
