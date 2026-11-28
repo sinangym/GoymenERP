@@ -14,17 +14,25 @@ interface FrozenNeed { readonly key: string; readonly body: Readonly<CreateTaskB
 const pending = new Map<string, FrozenNeed>()
 export function resetPendingCreationNeeds(): void { pending.clear() }
 
-export function CariCreationNeed({ disabled = false, onUnresolvedChange }: {
+interface Props {
   readonly disabled?: boolean; readonly onUnresolvedChange?: (value: boolean) => void
-}) {
+}
+export function CariCreationNeed(props: Props) {
+  const shell = useShellState()
+  return <CreationNeed key={JSON.stringify([shell.activeContext?.userId, shell.activeContext?.companyId,
+    shell.sessionEpoch, shell.sessionBinding])} {...props} />
+}
+function CreationNeed({ disabled = false, onUnresolvedChange }: Props) {
   const shell = useShellState(), boundary = useAuthBoundary()
   const context = contextKey(shell), namespace = context === null ? null : contextKeyString(context)
   const actor = shell.activeContext?.userId ?? null
   const company = shell.activeContext?.scopeMode === 'single' ? shell.activeContext.companyId : null
-  const scope = company === null || actor === null ? null : JSON.stringify([actor, company, shell.sessionEpoch, 'counterparty-creation-need'])
+  const scope = company === null || actor === null ? null : JSON.stringify([actor, company, shell.sessionEpoch, shell.sessionBinding, 'counterparty-creation-need'])
+  // An epoch restarts when ShellProvider remounts. Cross-mount recovery requires the server's session identity.
+  const recoveryKey = typeof shell.sessionBinding === 'string' && shell.sessionBinding.trim().length > 0 ? scope : null
   const allowed = !capabilityFailClosed(shell) && company !== null && hasCapability(shell, WORK_CAPABILITY.assignTask)
   const [opened, setOpened] = useState(false)
-  const [held, setHeld] = useState<FrozenNeed | null>(() => scope === null ? null : pending.get(scope) ?? null)
+  const [held, setHeld] = useState<FrozenNeed | null>(() => recoveryKey === null ? null : pending.get(recoveryKey) ?? null)
   const [title, setTitle] = useState(held?.body.title ?? ''), [details, setDetails] = useState(held?.body.details ?? '')
   const [due, setDue] = useState(''), [query, setQuery] = useState('')
   const [people, setPeople] = useState<readonly WorkPerson[]>([]), [recipient, setRecipient] = useState<string | null>(held?.body.assigneeUserId ?? null)
@@ -49,14 +57,16 @@ export function CariCreationNeed({ disabled = false, onUnresolvedChange }: {
   const send = async (snapshot: FrozenNeed) => {
     if (!allowed || disabled || inFlight.current || company === null || actor === null || scope === null) return
     const captured = boundary.capture(), capturedNamespace = namespace, capturedScope = scope
-    inFlight.current = true; setBusy(true); setMessage(null); setHeld(snapshot); pending.set(scope, snapshot)
+    inFlight.current = true; setBusy(true); setMessage(null); setHeld(snapshot)
+    if (recoveryKey !== null) pending.set(recoveryKey, snapshot)
     const outcome = await createCounterpartyNeed(company, actor, snapshot.key, snapshot.body)
     if (outcome.type === 'unknown' && outcome.reason === 'authority') boundary.report(outcome.status, captured)
     inFlight.current = false
     if (!mounted.current || live.current.scope !== capturedScope || live.current.namespace !== capturedNamespace || !live.current.allowed) return
     setBusy(false)
     if (outcome.type === 'unknown') { setMessage(T.needUnknown); return }
-    pending.delete(scope); setHeld(null)
+    if (recoveryKey !== null) pending.delete(recoveryKey)
+    setHeld(null)
     if (outcome.type === 'refused') { setMessage(T.needRefused); return }
     setCompleted(true); setMessage(outcome.replayed ? T.needReplayed : T.needCreated)
   }
