@@ -380,4 +380,16 @@ describe('F-027 / EK-18 #76-#77 Cari duplicate merge', () => {
     expect(puts(calls)).toHaveLength(0)
   })
 
+  it('does not promote cached successful impact after an unexpected refetch error', async () => {
+    let reads = 0
+    install(() => json(view()), () => { if (++reads === 1) return json(impact()); throw new Error('SENTETIK read failure') })
+    const { queryClient } = renderPanel(); const user = userEvent.setup()
+    await user.selectOptions(await screen.findByLabelText(T.candidateLabel), DUPLICATE)
+    await screen.findByRole('region', { name: I.heading }); await user.click(screen.getByLabelText(T.confirmLabel))
+    await act(async () => { await queryClient.refetchQueries({ queryKey: ['ns-test', 0, 'counterparty-merge-impact'] }) })
+    await screen.findByText(I.unavailable)
+    expect(screen.queryByRole('region', { name: I.heading })).toBeNull()
+    expect((screen.getByLabelText(T.confirmLabel) as HTMLInputElement).disabled).toBe(true)
+  })
+
 })
