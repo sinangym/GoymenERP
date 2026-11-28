@@ -23,13 +23,14 @@ public sealed partial class SalesDraftService : ISalesPriceFloorDecisionReadV1
             var source = await reader.ReadPriceFloorDecisionSourceAsync(draftId, Fence, cancellationToken);
             await Fence(cancellationToken);
             if (source is null) return new(SalesPriceFloorDecisionReadStateV1.NotFound, null);
+            if (source.Lines is null) return new(SalesPriceFloorDecisionReadStateV1.Unavailable, null);
+            source = source with { Lines = Array.AsReadOnly(source.Lines.ToArray()) };
             if (!ValidPriceFloorSource(source, scope.CompanyId, draftId)) return new(SalesPriceFloorDecisionReadStateV1.Unavailable, null);
             var pending = source.Lines.Where(x => SalesOrderDraft.IsBelowPriceFloor(x.Commercial)
                 && x.Commercial.FloorException?.ApprovedAtUtc is null).ToArray();
             // SAT-D1: every native requester participates in SoD, not just the draft's creator or first line.
             if (pending.Any(x => x.Commercial.FloorException!.RequestedBy == scope.ActorId))
                 return new(SalesPriceFloorDecisionReadStateV1.Denied, null);
-            var sourceDigest = SalesPriceFloorDecisionDigestsV1.SourceFactsDigest(source);
             await Fence(cancellationToken);
             var disclosure = await DiscloseAsync(scope, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
@@ -44,19 +45,7 @@ public sealed partial class SalesDraftService : ISalesPriceFloorDecisionReadV1
             cancellationToken.ThrowIfCancellationRequested();
             disclosure = released.Disclosure == SalesPriceDisclosure.Visible && disclosure == SalesPriceDisclosure.Visible
                 ? SalesPriceDisclosure.Visible : SalesPriceDisclosure.Withheld;
-            var detail = new SalesPriceFloorDecisionDetailV1(source.CompanyId, source.DraftId, source.DocumentNo,
-                source.Version.ToString(CultureInfo.InvariantCulture), source.Revision, source.State, source.ApprovalState,
-                source.PartyId, source.CompanyAccountId, source.CurrencyId, source.BusinessDate,
-                source.Lines.Select(x => new SalesPriceFloorDecisionLineV1(x.LineId, x.LineNo, x.ProductId, x.ProductVersion,
-                    x.ProductCode, x.ProductName, x.OrderUnitId, x.Quantity,
-                    x.Commercial.FloorException is { } f ? new(f.RequestedBy, f.RequestedAtUtc, f.ApprovedBy, f.ApprovedAtUtc, f.Reason) : null,
-                    disclosure == SalesPriceDisclosure.Visible ? Pricing(x.LineId, x.LineNo, x.Commercial) : null)).ToArray(),
-                disclosure, source.Version < long.MaxValue && source.State == "Draft"
-                    && source.ApprovalState is "Preparing" or "Rejected" && pending.Length > 0
-                    && pending.Length == source.Lines.Count(x => SalesOrderDraft.IsBelowPriceFloor(x.Commercial)),
-                sourceDigest, "");
-            return new(SalesPriceFloorDecisionReadStateV1.Found,
-                detail with { PreviewDigest = SalesPriceFloorDecisionDigestsV1.PreviewDigest(detail) });
+            return new(SalesPriceFloorDecisionReadStateV1.Found, ProjectPriceFloorDecision(source, disclosure));
         }
         catch (OperationCanceledException) { throw; }
         catch (SalesDraftServiceException failure) when (failure.Status is 401 or 403)
@@ -85,6 +74,36 @@ public sealed partial class SalesDraftService : ISalesPriceFloorDecisionReadV1
             await freshConsumerFence(token); token.ThrowIfCancellationRequested();
             scope = await RequireStillAsync(scope, permission, token); token.ThrowIfCancellationRequested();
         }
+    }
+
+    /// <summary>The existing selected-owner projection, also used for exact source/receipt binding; no IO or grant.</summary>
+    public static SalesPriceFloorDecisionDetailV1 ProjectPriceFloorDecision(SalesPriceFloorDecisionSourceV1 source, SalesPriceDisclosure disclosure)
+    {
+        var below = source.Lines.Where(x => SalesOrderDraft.IsBelowPriceFloor(x.Commercial)).ToArray();
+        var detail = new SalesPriceFloorDecisionDetailV1(source.CompanyId, source.DraftId, source.DocumentNo,
+            source.Version.ToString(CultureInfo.InvariantCulture), source.Revision, source.State, source.ApprovalState,
+            source.PartyId, source.CompanyAccountId, source.CurrencyId, source.BusinessDate,
+            Array.AsReadOnly(source.Lines.Select(x => new SalesPriceFloorDecisionLineV1(x.LineId, x.LineNo, x.ProductId, x.ProductVersion,
+                x.ProductCode, x.ProductName, x.OrderUnitId, x.Quantity,
+                x.Commercial.FloorException is { } f ? new(f.RequestedBy, f.RequestedAtUtc, f.ApprovedBy, f.ApprovedAtUtc, f.Reason) : null,
+                disclosure == SalesPriceDisclosure.Visible ? Pricing(x.LineId, x.LineNo, x.Commercial) : null)).ToArray()),
+            disclosure, source.Version < long.MaxValue && source.State == "Draft" && source.ApprovalState is "Preparing" or "Rejected"
+                && below.Length > 0 && below.All(x => x.Commercial.FloorException is { IsApproved: false }),
+            SalesPriceFloorDecisionDigestsV1.SourceFactsDigest(source), "") { Source = source };
+        return detail with { PreviewDigest = SalesPriceFloorDecisionDigestsV1.PreviewDigest(detail) };
+    }
+
+    public static bool MatchesPriceFloorDecisionDetail(SalesPriceFloorDecisionDetailV1? detail)
+    {
+        try
+        {
+            return detail?.Source is { } source && detail.PriceDisclosure is SalesPriceDisclosure.Visible or SalesPriceDisclosure.Withheld
+                && ValidPriceFloorSource(source, detail.CompanyId, detail.DraftId)
+                && System.Text.Json.JsonSerializer.Serialize(detail, SalesDraftJson.Options)
+                    == System.Text.Json.JsonSerializer.Serialize(ProjectPriceFloorDecision(source, detail.PriceDisclosure), SalesDraftJson.Options);
+        }
+        catch (Exception failure) when (failure is InvalidOperationException or ArgumentException or FormatException or OverflowException or SalesRuleException)
+        { return false; }
     }
 
     private static bool ValidPriceFloorSource(SalesPriceFloorDecisionSourceV1 source, Guid company, Guid id) =>

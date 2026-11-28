@@ -112,7 +112,7 @@ internal abstract class SalesWorkInboxSourceBaseV1(
         return true;
     }
 
-    private async Task<bool> AllowedAsync(WorkInboxSourceContextV1 context, string permission, CancellationToken cancellationToken)
+    protected async Task<bool> AllowedAsync(WorkInboxSourceContextV1 context, string permission, CancellationToken cancellationToken)
     {
         if (!SameContext(context))
         {
@@ -123,7 +123,7 @@ internal abstract class SalesWorkInboxSourceBaseV1(
         return scope is { IsGranted: true, IsCompanyWide: true } && SameContext(context);
     }
 
-    private bool SameContext(WorkInboxSourceContextV1 context) =>
+    protected bool SameContext(WorkInboxSourceContextV1 context) =>
         context.CompanyId != Guid.Empty
         && !string.IsNullOrWhiteSpace(context.UserId)
         && companyContext.IsResolved

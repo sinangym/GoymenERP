@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Sales.Application.Contracts;
@@ -99,11 +100,29 @@ public sealed partial class SalesDraftServiceTests
             f.Envelope, f.Hash, response ?? f.Response);
 
     // Synthetic immutable artifact codec fixture. Real same-TX artifacts are covered by the separate SQL source.
-    private static async Task<FloorReceiptFixtureV1> FloorReceiptFixture()
+    [Fact]
+    public async Task Floor_original_receipt_keeps_original_JSON_when_native_replay_refreshes_the_creators_current_persona_restriction()
     {
-        var (world, id) = await FloorPurposeWorld(); var draft = Assert.Single(world.Store.Drafts);
+        var f = await FloorReceiptFixture(creatorApproves: true); var storedJson = f.Attempt.ResultJson;
+        var first = Assert.IsType<SalesPriceFloorOriginalReceiptV1>(FloorRestore(f));
+        Assert.True(f.Response.Detail.IsOwnDraft); Assert.False(f.Response.Detail.IsOwnDecisionRestricted);
+        f.World.ActiveRoleCodes.Codes.Add(ErpPersonaRoleCodes.SalesSupport);
+        var replay = await f.World.Service().ApprovePriceFloorExceptionsAsync(f.Response.Detail.Draft.Id, f.Request,
+            Metadata("SENTETIK-floor-receipt", correlation: "persona-retry"));
+        Assert.True(replay.IsReplay); Assert.True(replay.Detail.IsOwnDraft); Assert.True(replay.Detail.IsOwnDecisionRestricted);
+        var receipt = Assert.IsType<SalesPriceFloorOriginalReceiptV1>(FloorRestore(f, replay));
+        Assert.Equal(first.OriginalResultDigest, receipt.OriginalResultDigest); Assert.Equal(first.OriginalDecisionDigest, receipt.OriginalDecisionDigest);
+        Assert.NotEqual(first.CurrentResponseDigest, receipt.CurrentResponseDigest);
+        Assert.Equal(SalesPriceFloorDecisionDigestsV1.CurrentResponseDigest(replay), receipt.CurrentResponseDigest);
+        Assert.Equal(storedJson, f.Attempt.ResultJson);
+        Assert.Null(FloorRestore(f, replay with { Detail = replay.Detail with { IsOwnDraft = false } }));
+    }
+
+    private static async Task<FloorReceiptFixtureV1> FloorReceiptFixture(bool creatorApproves = false, bool canonicalVersion = false)
+    {
+        var (world, id) = await FloorPurposeWorld(creatorApproves); var draft = Assert.Single(world.Store.Drafts);
         var expected = draft.Version; var before = FloorAuditPicture(draft);
-        var request = new SalesDraftPriceFloorExceptionApprovalRequest("0" + expected.ToString(CultureInfo.InvariantCulture),
+        var request = new SalesDraftPriceFloorExceptionApprovalRequest((canonicalVersion ? "" : "0") + expected.ToString(CultureInfo.InvariantCulture),
             draft.Lines.Select(x => new SalesDraftPriceFloorExceptionApprovalLineV1(x.Id, "  SENTETIK gerekçe  ")).ToArray());
         var response = await world.Service().ApprovePriceFloorExceptionsAsync(id, request, Metadata("SENTETIK-floor-receipt", correlation: "SENTETIK-floor-original"));
         var after = FloorAuditPicture(draft); var stored = world.Store.FloorPurposeStoredResult("SENTETIK-floor-receipt");

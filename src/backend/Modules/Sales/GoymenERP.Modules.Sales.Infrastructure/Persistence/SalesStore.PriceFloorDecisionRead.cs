@@ -31,9 +31,9 @@ public sealed partial class SalesStore : ISalesPriceFloorDecisionReadStoreV1
             throw new InvalidOperationException("Kayıtlı taban fiyat kararının tam satırları okunamadı.");
         return new(company, h.Id, h.DocumentNo, h.Version, h.Revision, ((SalesDraftState)h.State).ToString(),
             ((InternalApprovalState)h.ApprovalState).ToString(), h.PartyId, h.CompanyAccountId, h.CurrencyId, h.BusinessDate,
-            rows.Select(x => x.Line!).Select(x => new SalesPriceFloorDecisionSourceLineV1(x.LineId, x.LineNo,
+            Array.AsReadOnly(rows.Select(x => x.Line!).Select(x => new SalesPriceFloorDecisionSourceLineV1(x.LineId, x.LineNo,
                 x.ProductId, x.ProductVersion, x.ProductCode, x.ProductName, x.OrderUnitId, x.QuantityText,
-                SalesLinePricingJson.Restore(x.UnitPrice, x.PriceUnitId, x.DiscountPercent, x.PricingJson))).ToArray());
+                SalesLinePricingJson.Restore(x.UnitPrice, x.PriceUnitId, x.DiscountPercent, x.PricingJson))).ToArray()));
 
         async Task Fence()
         {

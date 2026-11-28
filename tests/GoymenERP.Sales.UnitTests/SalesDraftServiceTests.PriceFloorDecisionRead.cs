@@ -118,15 +118,36 @@ public sealed partial class SalesDraftServiceTests
         Assert.Equal(before, world.Authority.Calls); Assert.Equal(1, world.Store.FloorPurposeReads);
     }
 
-    private static async Task<(World World, Guid Id)> FloorPurposeWorld()
+    [Fact]
+    public async Task Selected_floor_detaches_external_lines_before_validation_and_uses_that_copy_after_the_final_consumer()
+    {
+        var (world, id) = await FloorPurposeWorld(); var original = await world.Store.ReadPriceFloorDecisionSourceAsync(id, _ => Task.CompletedTask);
+        Assert.NotNull(original); var first = Assert.Single(original.Lines); var mutable = original.Lines.ToList();
+        world.Store.FloorPurposeOverride = original with { Lines = mutable }; var callbacks = 0;
+        var answer = await world.Service().ReadPriceFloorDecisionAsync(id, _ =>
+        {
+            if (++callbacks == 5) { mutable.Clear(); mutable.Add(first with { Quantity = "999", Commercial = first.Commercial with
+                { FloorException = first.Commercial.FloorException! with { RequestedBy = world.User.Id } } }); }
+            return Task.CompletedTask;
+        });
+        Assert.Equal(SalesPriceFloorDecisionReadStateV1.Found, answer.State); var detail = Assert.IsType<SalesPriceFloorDecisionDetailV1>(answer.Detail);
+        Assert.Equal(first.Quantity, Assert.Single(detail.Lines).Quantity); Assert.Equal(first, Assert.Single(detail.Source!.Lines));
+        Assert.Equal(SalesPriceFloorDecisionDigestsV1.SourceFactsDigest(detail.Source), detail.SourceFactsDigest);
+        var guarded = Assert.IsAssignableFrom<IList<SalesPriceFloorDecisionSourceLineV1>>(detail.Source.Lines);
+        Assert.Throws<NotSupportedException>(() => guarded[0] = mutable[0]);
+        Assert.NotEqual(world.User.Id, detail.Lines[0].FloorException!.RequestedBy); Assert.Equal(5, callbacks);
+    }
+
+    private static async Task<(World World, Guid Id)> FloorPurposeWorld(bool creatorApproves = false)
     {
         var world = new World { PriceReferences = new FakePriceReferences { Price = 12.50m, Floor = 12m } }.AllowDiscountsUpTo(10m);
         world.Bindings = world.Bindings with { PriceFloorExceptionApprovePermission = SchedulePermission };
         var created = (await world.Service().CreateDraftAsync(Request(), Metadata("SENTETIK-floor-purpose-create"))).Detail;
+        if (creatorApproves) world.User.Id = "SENTETIK-different-commercial-requester";
         await world.Service().ReviseCommercialAsync(created.Draft.Id, Revision(created.Draft.Version,
             new SalesDraftLineCommercialV1(created.Lines[0].LineId, "11", KgUnit, null, new SalesDraftPriceReferenceRequestV1(PriceList, 1))),
             Metadata("SENTETIK-floor-purpose-price"));
-        world.User.Id = "SENTETIK-independent-floor-approver";
+        world.User.Id = creatorApproves ? Actor : "SENTETIK-independent-floor-approver";
         return (world, created.Draft.Id);
     }
 

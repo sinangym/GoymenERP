@@ -14,11 +14,12 @@ namespace GoymenERP.Modules.Sales.Infrastructure.WorkInbox;
 /// line (at most <see cref="WorkInboxRulesV1.MaxRulesPerItem"/>, by line number) with the snapshot's floor and net unit price
 /// and the shortfall (floor − net, the owner's exact calculator), in the price list's currency.
 /// </summary>
-internal sealed class SalesPriceFloorExceptionWorkInboxSourceV1(
+internal sealed partial class SalesPriceFloorExceptionWorkInboxSourceV1(
     ISalesWorkInboxStoreV1 store,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
-    IErpAuthorityRevalidationService authority)
+    IErpAuthorityRevalidationService authority,
+    ISalesPriceFloorDecisionReadV1? owner = null)
     : SalesWorkInboxSourceBaseV1(companyContext, currentUser, authority)
 {
     public const string KindName = "sales.price-floor-exception.v1";
@@ -55,35 +56,46 @@ internal sealed class SalesPriceFloorExceptionWorkInboxSourceV1(
                 continue;
             }
 
-            var documentNo = SalesWorkInboxItemsV1.RequireLabel(draft.DocumentNo);
-            var first = belowFloor
-                .OrderBy(line => line.Commercial.FloorException!.RequestedAtUtc)
-                .ThenBy(line => line.LineNo)
-                .First();
-            var firstException = first.Commercial.FloorException!;
-            var rules = belowFloor
-                .Take(WorkInboxRulesV1.MaxRulesPerItem)
-                .Select(line => Rule(line, disclosePrices))
-                .ToArray();
-            var references = SalesWorkInboxItemsV1.References(
-                new[] { SalesWorkInboxItemsV1.OrderReference(draft.Id, documentNo) }
-                    .Concat(belowFloor.Select(line => SalesWorkInboxItemsV1.Reference(SalesWorkInboxItemsV1.PriceListRole,
-                        line.Commercial.Reference?.PriceListName, line.Commercial.Reference?.PriceListId)))
-                    .Concat(belowFloor.Select(line => SalesWorkInboxItemsV1.Reference(SalesWorkInboxItemsV1.ProductRole,
-                        SalesWorkInboxItemsV1.ProductLabel(line.ProductCode, line.ProductName), line.ProductId))));
-            items.Add(new WorkInboxItemV1(
-                SalesWorkInboxSourceBaseV1.ModuleName,
-                KindName,
-                draft.Id,
-                documentNo,
-                firstException.RequestedAtUtc.ToUniversalTime(),
-                SalesWorkInboxItemsV1.OrderLink(draft.Id),
-                SalesWorkInboxItemsV1.RequireActor(firstException.RequestedBy),
-                rules,
-                references));
+            items.Add(Item(draft.Id, draft.DocumentNo, belowFloor, disclosePrices));
         }
 
         return SalesWorkInboxItemsV1.Page(items, take);
+    }
+
+    internal static WorkInboxItemV1 Item(Guid id, string label, IReadOnlyList<SalesWorkInboxDraftLineV1> belowFloor, bool disclosePrices)
+        => Item(id, label, belowFloor.Select(LineProof).ToArray(),
+            belowFloor.Take(WorkInboxRulesV1.MaxRulesPerItem).Select(line => Rule(line, disclosePrices)).ToArray());
+
+    internal static WorkSalesPriceFloorLineProofV1 LineProof(SalesWorkInboxDraftLineV1 line) => new(line.LineId, line.LineNo,
+        SalesWorkInboxItemsV1.RequireActor(line.Commercial.FloorException!.RequestedBy),
+        line.Commercial.FloorException.RequestedAtUtc.ToUniversalTime(), line.ProductId, line.ProductCode, line.ProductName,
+        line.Commercial.Reference!.PriceListId, line.Commercial.Reference.PriceListName);
+
+    internal static WorkInboxItemV1 Item(Guid id, string label, IReadOnlyList<WorkSalesPriceFloorLineProofV1> lines,
+        IReadOnlyList<WorkApprovalRuleResultV1> rules)
+    {
+        var documentNo = SalesWorkInboxItemsV1.RequireLabel(label);
+        var first = lines
+            .OrderBy(line => line.RequestedAtUtc)
+            .ThenBy(line => line.LineNo)
+            .First();
+        var references = SalesWorkInboxItemsV1.References(
+            new[] { SalesWorkInboxItemsV1.OrderReference(id, documentNo) }
+                .Concat(lines.Select(line => SalesWorkInboxItemsV1.Reference(SalesWorkInboxItemsV1.PriceListRole,
+                    line.PriceListName, line.PriceListId)))
+                .Concat(lines.Select(line => SalesWorkInboxItemsV1.Reference(SalesWorkInboxItemsV1.ProductRole,
+                    SalesWorkInboxItemsV1.ProductLabel(line.ProductCode, line.ProductName), line.ProductId))));
+        return new WorkInboxItemV1(
+            SalesWorkInboxSourceBaseV1.ModuleName,
+            KindName,
+            id,
+            documentNo,
+            first.RequestedAtUtc.ToUniversalTime(),
+            SalesWorkInboxItemsV1.OrderLink(id),
+            SalesWorkInboxItemsV1.RequireActor(first.RequestedBy),
+            rules,
+            references,
+            SalesWorkInboxItemsV1.Others(first.RequestedBy, lines.Select(line => line.RequestedBy).ToArray()));
     }
 
     private static WorkApprovalRuleResultV1 Rule(SalesWorkInboxDraftLineV1 line, bool disclosePrices)

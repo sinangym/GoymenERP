@@ -34,19 +34,28 @@ public sealed partial class SalesStore
     internal static SalesPriceFloorOriginalReceiptV1? RestoreOriginalPriceFloorReceipt(DraftAttemptRow attempt,
         IReadOnlyList<AuditEvent> events, SalesDraftWriteEnvelope envelope, string hash, SalesOrderDraftResponse response)
     {
-        if (attempt is null || events is not { Count: 1 } || events[0] is null || envelope is null || response?.Detail is null
+        if (envelope is null || string.IsNullOrWhiteSpace(envelope.ActorId) || string.IsNullOrWhiteSpace(envelope.IdempotencyKey)) return null;
+        return RestoreOriginalPriceFloorReceiptBound(attempt, events, envelope.ActorId.Trim(), envelope.PermissionCode,
+            IdempotencyKeyHash(envelope.IdempotencyKey), hash, response);
+    }
+
+    // History reads already own the exact stored selector. No raw idempotency key is invented from a digest.
+    private static SalesPriceFloorOriginalReceiptV1? RestoreOriginalPriceFloorReceiptBound(DraftAttemptRow attempt,
+        IReadOnlyList<AuditEvent> events, string actor, string permission, string keyHash, string hash, SalesOrderDraftResponse response)
+    {
+        if (attempt is null || events is not { Count: 1 } || events[0] is null || response?.Detail is null
             || attempt.DraftId is not { } id || id == Guid.Empty || attempt.CompanyId == Guid.Empty
             || attempt.CommandName != SalesDraftCommands.ApprovePriceFloorExceptionsV1 || attempt.Outcome != AttemptOutcomeRecorded
             || attempt.RefusalJson is not null || attempt.ResultJson is null || attempt.RequestHash != hash
-            || string.IsNullOrWhiteSpace(envelope.ActorId) || attempt.ActorId != envelope.ActorId.Trim()
-            || string.IsNullOrWhiteSpace(envelope.IdempotencyKey) || attempt.IdempotencyKeyHash != IdempotencyKeyHash(envelope.IdempotencyKey)
+            || string.IsNullOrWhiteSpace(actor) || attempt.ActorId != actor
+            || attempt.IdempotencyKeyHash != keyHash
             || string.IsNullOrWhiteSpace(attempt.CorrelationId) || response.OriginalCorrelationId != attempt.CorrelationId) return null;
         var audit = events[0];
         if (audit.Id == Guid.Empty || audit.SubjectKind != AuditEvent.CompanySubject || audit.CompanyId != attempt.CompanyId
             || audit.EntityType != DraftEntityType || audit.EntityId != id.ToString("D")
             || audit.EventType != "sales.order-draft.price-floor-exceptions-approved.v1" || audit.Operation != "ApprovePriceFloorExceptions"
             || audit.ActorType != AuditActorTypes.User || audit.ActorId != attempt.ActorId
-            || audit.PermissionCode != envelope.PermissionCode || audit.PermissionCode != SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove
+            || audit.PermissionCode != permission || audit.PermissionCode != SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove
             || audit.Outcome != AuditOutcomes.Succeeded || audit.CorrelationId != attempt.CorrelationId
             || audit.IdempotencyKeyHash != attempt.IdempotencyKeyHash || audit.SchemaVersion != 1
             || audit.IntegrityHash != AuditEventIntegrity.Compute(audit.ToIntegrityEnvelope())
@@ -59,8 +68,8 @@ public sealed partial class SalesStore
                 { Visible: { Draft: not null, Lines: not null }, Withheld: { Draft: not null, Lines: not null } }) return null;
             var stored = ReplayResult(attempt);
             if (stored is null || !FloorJsonEquals(attempt.ResultJson, JsonSerializer.Serialize(stored, Json))
-                || !FloorJsonEquals(JsonSerializer.Serialize(response.Detail, Json), JsonSerializer.Serialize(stored.Visible, Json))
-                    && !FloorJsonEquals(JsonSerializer.Serialize(response.Detail, Json), JsonSerializer.Serialize(stored.Withheld, Json))
+                || response.Detail.IsOwnDecisionRestricted && !response.Detail.IsOwnDraft
+                || !MatchesFloorObservedDetail(response.Detail, stored.Visible) && !MatchesFloorObservedDetail(response.Detail, stored.Withheld)
                 || stored.Visible.Draft.Version != (expected + 1).ToString(CultureInfo.InvariantCulture)
                 || stored.Visible.Draft.Id != id || stored.Visible.Draft.CompanyId != attempt.CompanyId
                 || stored.Visible.Lines is not { Count: > 0 and <= SalesOrderDraft.MaximumLines }
@@ -108,7 +117,7 @@ public sealed partial class SalesStore
             if (approved == 0) return null;
             var receipt = new SalesPriceFloorOriginalReceiptV1(attempt.CompanyId, id, attempt.CommandName, attempt.ActorId,
                 attempt.IdempotencyKeyHash, attempt.RequestHash, expected, expected + 1, attempt.CorrelationId,
-                attempt.RecordedAtUtc, audit.Id, audit.IntegrityHash, originals, stored,
+                attempt.RecordedAtUtc, audit.Id, audit.IntegrityHash, originals.AsReadOnly(), stored,
                 SalesPriceFloorDecisionDigestsV1.OriginalResultDigest(stored), "");
             return receipt with { OriginalDecisionDigest = SalesPriceFloorDecisionDigestsV1.OriginalDecisionDigest(receipt),
                 CurrentResponseDigest = SalesPriceFloorDecisionDigestsV1.CurrentResponseDigest(response) };
@@ -125,6 +134,10 @@ public sealed partial class SalesStore
             && FloorJsonEquals(attempt, JsonSerializer.Serialize(state, Json)) ? state : null;
     }
     private static bool FloorJsonEquals(string left, string right) => JsonNode.DeepEquals(JsonNode.Parse(left), JsonNode.Parse(right));
+    // Native replay refreshes ONLY this persona restriction. Original JSON/digest stays immutable; observed digest retains the actual flag.
+    private static bool MatchesFloorObservedDetail(SalesOrderDraftDetailView observed, SalesOrderDraftDetailView stored) =>
+        FloorJsonEquals(JsonSerializer.Serialize(observed with { IsOwnDecisionRestricted = stored.IsOwnDecisionRestricted }, Json),
+            JsonSerializer.Serialize(stored, Json));
     private sealed record FloorAuditState(int Revision, string State, JsonElement Approval, FloorAuditLine[] Lines);
     private sealed record FloorAuditLine(int LineNo, string? UnitPrice, Guid? PriceUnitId, string? DiscountPercent,
         PriceReferenceSnapshot? Reference, string? DiscountAmount, string? SurchargePercent, string? SurchargeAmount,

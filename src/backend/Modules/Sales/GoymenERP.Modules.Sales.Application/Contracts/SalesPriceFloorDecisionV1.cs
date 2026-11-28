@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using GoymenERP.Modules.Sales.Domain.Drafts;
 
 namespace GoymenERP.Modules.Sales.Application.Contracts;
@@ -10,13 +11,23 @@ public interface ISalesPriceFloorDecisionReadV1
 {
     Task<SalesPriceFloorDecisionReadResultV1> ReadPriceFloorDecisionAsync(Guid draftId,
         Func<CancellationToken, Task> freshConsumerFence, CancellationToken cancellationToken = default);
+    Task<SalesPriceFloorOriginalVersionReadResultV1> ReadPriceFloorOriginalVersionAsync(Guid draftId, string expectedVersion,
+        Func<CancellationToken, Task> freshConsumerFence, CancellationToken cancellationToken = default);
+}
+public sealed record SalesPriceFloorOriginalVersionReadResultV1(SalesPriceFloorDecisionReadStateV1 State,
+    [property: JsonIgnore] SalesPriceFloorOriginalReceiptV1? Receipt)
+{
+    [JsonIgnore] public long? CurrentVersion { get; init; }
 }
 
 /// <summary>Selected commercial facts only; no general draft, margin, Product or current price-list read.</summary>
 public sealed record SalesPriceFloorDecisionDetailV1(Guid CompanyId, Guid DraftId, string DocumentNo, string Version,
     int Revision, string State, string ApprovalState, Guid PartyId, Guid CompanyAccountId, Guid CurrencyId, DateOnly BusinessDate,
     IReadOnlyList<SalesPriceFloorDecisionLineV1> Lines, SalesPriceDisclosure PriceDisclosure, bool ApprovalSupported,
-    string SourceFactsDigest, string PreviewDigest);
+    string SourceFactsDigest, string PreviewDigest)
+{
+    [JsonIgnore] public SalesPriceFloorDecisionSourceV1? Source { get; init; }
+}
 public sealed record SalesPriceFloorDecisionLineV1(Guid LineId, int LineNo, Guid ProductId, string ProductVersion,
     string ProductCode, string ProductName, Guid OrderUnitId, string Quantity,
     SalesDraftPriceFloorExceptionV1? FloorException, SalesDraftLinePricingV1? Pricing);
@@ -26,6 +37,9 @@ public interface ISalesPriceFloorDecisionReadStoreV1
 {
     Task<SalesPriceFloorDecisionSourceV1?> ReadPriceFloorDecisionSourceAsync(Guid draftId,
         Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken = default);
+    Task<SalesPriceFloorOriginalVersionReadResultV1> ReadPriceFloorOriginalVersionAsync(Guid draftId, long expectedVersion,
+        string actorId, Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken = default) =>
+        Task.FromResult(new SalesPriceFloorOriginalVersionReadResultV1(SalesPriceFloorDecisionReadStateV1.Unavailable, null));
 }
 public sealed record SalesPriceFloorDecisionSourceV1(Guid CompanyId, Guid DraftId, string DocumentNo, long Version,
     int Revision, string State, string ApprovalState, Guid PartyId, Guid CompanyAccountId, Guid CurrencyId, DateOnly BusinessDate,
