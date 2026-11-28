@@ -38,6 +38,13 @@ public sealed class WorkSalesQuoteConversionDecisionPreviewV1Tests
         Assert.Equal(503,Assert.Throws<WorkDecisionException>(()=>WorkSalesQuoteConversionDecisionPreviewV1.FromNative(d)).Status);
     }
 
+    [Theory] [InlineData(true)] [InlineData(false)]
+    public void Null_owner_detail_or_quote_is_unavailable_before_native_digest(bool nullDetail)
+    {
+        SalesQuoteConversionDecisionDetailV1 malformed = nullDetail ? null! : Facts() with { Quote = null! };
+        Assert.Equal(503,Assert.Throws<WorkDecisionException>(()=>WorkSalesQuoteConversionDecisionPreviewV1.FromNative(malformed)).Status);
+    }
+
     [Fact]
     public void Human_projection_detaches_all_provider_owned_collection_views()
     {
