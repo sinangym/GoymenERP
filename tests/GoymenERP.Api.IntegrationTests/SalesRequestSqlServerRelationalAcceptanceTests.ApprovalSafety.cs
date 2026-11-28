@@ -376,6 +376,7 @@ public sealed partial class SalesRequestSqlServerRelationalAcceptanceTests
             sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", SalesDbContext.Schema))
             .AddInterceptors(new AuditSaveChangesInterceptor(collector, company));
         builder.AddInterceptors(interceptors);
+        foreach (var probe in interceptors.OfType<RequestCleanupReleaseProbe>()) probe.Configure(builder);
         var db = new SalesDbContext(builder.Options, company); var store = new SalesStore(db, company, collector, TimeProvider.System, officialCancellationAuditWriter: writer);
         var authority = new RequestSafetyAuthority(); var owners = new SyntheticOwners();
         var user = new RequestSafetyUser(run.Actor);

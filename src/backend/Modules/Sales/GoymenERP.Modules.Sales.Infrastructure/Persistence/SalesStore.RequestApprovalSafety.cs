@@ -96,6 +96,7 @@ public sealed partial class SalesStore : ISalesRequestApprovalStoreV1
                 try { dbContext.ChangeTracker.Clear(); } catch (Exception error) { cleanup.Add(error); }
                 try { officialCancellationAuditWriter!.DiscardPending(); } catch (Exception error) { cleanup.Add(error); }
                 if (cleanup.Count != 0 || disposing) throw new AggregateException("Satış talebi işlem temizliği başarısız; tekrar okuma güvenli değil.", [failure, .. cleanup]);
+                await RequestApprovalFenceAsync(cancellationToken);
                 if (!replayOnly && !committed && (transientRace || nativeRace)) throw new RequestApprovalLostRace(nativeRace);
                 if (failure is RequestApprovalPersistenceFailure) throw RequestApprovalUnavailable();
                 if (replayOnly && (transientRace || nativeRace)) throw RequestApprovalUnavailable();
