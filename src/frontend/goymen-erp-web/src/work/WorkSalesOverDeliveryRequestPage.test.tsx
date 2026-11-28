@@ -79,7 +79,11 @@ describe('quantity-only numbered over-delivery Work human and frozen native deci
  })
  it('clears rejection intent when only the current order changes while the numbered request version stays the same',async()=>{
   let gets=0;const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})
-  const calls=installFetch({capabilities:[cap],respond:url=>{if(!url.includes(ownerPath))return undefined;const v=fixture(COMPANY_A);return json(++gets===1?v:{...v,salesOverDeliveryRequest:{...v.salesOverDeliveryRequest!,order:{...v.salesOverDeliveryRequest!.order,version:'9007199254740996'}}})})
+  const calls=installFetch({capabilities:[cap],respond:url=>{
+   if(!url.includes(ownerPath))return undefined
+   const v=fixture(COMPANY_A)
+   return json(++gets===1?v:{...v,salesOverDeliveryRequest:{...v.salesOverDeliveryRequest!,order:{...v.salesOverDeliveryRequest!.order,version:'9007199254740996'}}})
+  }})
   mount(client);await screen.findByRole('region',{name:T.title});fireEvent.change(screen.getByRole('textbox',{name:W.reason}),{target:{value:'SENTETIK former intent'}});expect(screen.getByRole('button',{name:W.reject}).matches(':disabled')).toBe(false)
   await act(async()=>{await client.refetchQueries({predicate:q=>q.queryKey.includes('work-decision')})})
   await waitFor(()=>{expect((screen.getByRole('textbox',{name:W.reason}) as HTMLTextAreaElement).value).toBe('');expect(screen.getByRole('button',{name:W.reject}).matches(':disabled')).toBe(true)})
