@@ -106,8 +106,8 @@ public sealed partial class PurchasingHttpAcceptanceTests
     }
     private WebApplicationFactory<Program> UnorderedHost(UnorderedHttpOwner owner) => factory.WithWebHostBuilder(builder =>
         builder.ConfigureTestServices(services => { services.RemoveAll<IPurchaseUnorderedAcceptanceServiceV1>(); services.AddSingleton<IPurchaseUnorderedAcceptanceServiceV1>(owner); }));
-    private static string UnorderedBody() => $$"""
-        {"businessDate":"2026-11-28","reason":"SENTETIK beyan","occurrence":{"acceptanceId":"{{AcceptanceId:D}}","acceptanceLineId":"{{PurchaseOrderLineId:D}}","expectedVersion":"0","supplierPartyId":"{{Guid.NewGuid():D}}","companyAccountId":"{{Guid.NewGuid():D}}","expectedPartyVersion":"2","expectedAccountVersion":"3","subject":{"kind":"Goods","productId":"{{ProductId:D}}","productVersion":"7"},"unitId":"{{UnitId:D}}","unitProfile":{"profileId":"{{Guid.NewGuid():D}}","version":1},"acceptedQuantity":"2","occurredAtUtc":"2026-11-28T00:00:00+00:00","evidence":{"documentId":"{{Guid.NewGuid():D}}","documentVersion":1,"sha256":"{{new string('a',64)}}","sourceLineId":"SENTETIK-line"},"controlEvidence":[]}}
+    private static string UnorderedBody() => $$$"""
+        {"businessDate":"2026-11-28","reason":"SENTETIK beyan","occurrence":{"acceptanceId":"{{{AcceptanceId:D}}}","acceptanceLineId":"{{{PurchaseOrderLineId:D}}}","expectedVersion":"0","supplierPartyId":"{{{Guid.NewGuid():D}}}","companyAccountId":"{{{Guid.NewGuid():D}}}","expectedPartyVersion":"2","expectedAccountVersion":"3","subject":{"kind":"Goods","productId":"{{{ProductId:D}}}","productVersion":"7"},"unitId":"{{{UnitId:D}}}","unitProfile":{"profileId":"{{{Guid.NewGuid():D}}}","version":1},"acceptedQuantity":"2","occurredAtUtc":"2026-11-28T00:00:00+00:00","evidence":{"documentId":"{{{Guid.NewGuid():D}}}","documentVersion":1,"sha256":"{{{new string('a',64)}}}","sourceLineId":"SENTETIK-line"},"controlEvidence":[]}}
         """;
     private sealed class UnorderedHttpOwner : IPurchaseUnorderedAcceptanceServiceV1
     {
