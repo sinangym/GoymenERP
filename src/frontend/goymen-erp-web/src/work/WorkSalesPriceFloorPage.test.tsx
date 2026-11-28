@@ -2,6 +2,7 @@ import {afterEach,describe,it,expect,vi} from 'vitest'
 import {act,cleanup,fireEvent,render,screen,within,waitFor} from '@testing-library/react'
 import {RouterProvider,createMemoryRouter} from 'react-router'
 import {QueryClient} from '@tanstack/react-query'
+import userEvent from '@testing-library/user-event'
 import {AppShell} from '../shell/AppShell'
 import {ShellProvider} from '../shell/ShellProvider'
 import {workRoutes} from './workRoutes'
@@ -10,8 +11,9 @@ import {WorkSalesPriceFloorFacts} from './WorkSalesPriceFloorFacts'
 import {SALES_PRICE_FLOOR_WORK_TEXT as T} from './workSalesPriceFloorText'
 import {SALES_PRICE_FLOOR_WORK_KIND as kind,SALES_PRICE_FLOOR_WORK_CAPABILITY as cap} from './workSalesPriceFloorDecision'
 import {salesPriceFloorHuman as human,salesPriceFloorFixture as fixture,salesPriceFloorId as id} from './salesPriceFloorDecisionFixture'
-import {COMPANY_A,IDENTITY,installFetch,json,problem} from '../settings/testHarness'
-afterEach(()=>{cleanup();sessionStorage.clear();vi.unstubAllGlobals();vi.restoreAllMocks();Object.assign(IDENTITY,{authenticationSessionBinding:null})})
+import {COMPANY_A,COMPANY_B,IDENTITY,installFetch,json,problem} from '../settings/testHarness'
+const originalActor=IDENTITY.userId
+afterEach(()=>{cleanup();sessionStorage.clear();vi.unstubAllGlobals();vi.restoreAllMocks();Object.assign(IDENTITY,{authenticationSessionBinding:null,userId:originalActor})})
 const ownerPath=`/work/decisions/${kind}/${id}`
 function mount(client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})){
  const router=createMemoryRouter([{path:'/',element:<AppShell/>,children:workRoutes}],{initialEntries:[`/onaylarim/${kind}/${id}`]})
@@ -83,7 +85,16 @@ describe('Floor full human and frozen all-line Work lifecycle',()=>{
  it.each([403,404,503])('renders GET refusal/unavailable without human facts HTTP%s',async status=>{
   const calls=installFetch({capabilities:[cap],respond:url=>url.includes(ownerPath)?problem(status):undefined});mount();await waitFor(()=>expect(document.querySelector(`[data-state="${status===403?'forbidden':status===404?'not-found':'service-unavailable'}"]`)).not.toBeNull());expect(calls.filter(c=>c.url.includes(ownerPath)&&c.method==='GET')).toHaveLength(1);expect(screen.queryByRole('region',{name:T.title})).toBeNull();expect(calls.some(c=>c.method==='POST')).toBe(false)
  })
- it('does not recover an unknown attempt under a different authentication session',async()=>{
+ it.each(['company','actor'])('does not expose or replay another %s context pending attempt',async change=>{
+  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK Floor context'});let posts=0
+  const calls=installFetch({capabilities:[cap],respond:(url,init)=>{if(!url.includes(ownerPath))return undefined;if(init?.method==='POST'){posts++;return problem(503)}return json(fixture(new Headers(init?.headers).get('X-Company-Id')??COMPANY_A))}})
+  mount();await screen.findByRole('region',{name:T.title});reasons();fireEvent.click(screen.getByRole('button',{name:W.approve}));await screen.findByText(W.unknown)
+  if(change==='company')await userEvent.setup().selectOptions(screen.getByRole('combobox',{name:'Şirket'}),COMPANY_B)
+  else {cleanup();Object.assign(IDENTITY,{userId:'88888888-8888-4888-8888-888888888888'});mount()}
+  await screen.findByRole('region',{name:T.title});expect(screen.queryByRole('button',{name:W.retry})).toBeNull();expect(posts).toBe(1)
+  expect(calls.filter(c=>c.method==='POST')).toHaveLength(1)
+ })
+ it('does not recover an unknown attempt under a different authentication session' ,async()=>{
   Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK Floor old'});let posts=0
   installFetch({capabilities:[cap],respond:(url,init)=>{if(!url.includes(ownerPath))return undefined;if(init?.method==='POST'){posts++;return problem(503)}return json(fixture(COMPANY_A))}});mount();await screen.findByRole('region',{name:T.title});reasons();fireEvent.click(screen.getByRole('button',{name:W.approve}));await screen.findByText(W.unknown)
   cleanup();Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK Floor replacement'});mount();await screen.findByRole('region',{name:T.title});expect(screen.queryByRole('button',{name:W.retry})).toBeNull();expect(posts).toBe(1)
