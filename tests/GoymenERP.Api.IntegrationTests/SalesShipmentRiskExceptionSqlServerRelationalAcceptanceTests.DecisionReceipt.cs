@@ -112,5 +112,82 @@ public sealed partial class SalesShipmentRiskExceptionSqlServerRelationalAccepta
             Assert.Equal((1, 1, 2L), (await RiskAttemptCount(run, order), await RiskDecisionAuditCount(run, order), await RiskVersion(run, order))); AssertRiskClean(retry);
         }
     }
+    [SqlServerFact]
+    public async Task Risk_selected_and_historical_read_markers_refuse_other_owned_reentry_without_mutation_or_caller_cleanup()
+    {
+        await using var run = await Run.StartAsync();
+        foreach (var historical in new[] { false, true })
+        {
+            var order = await SeedOwnedRisk(run); await using var safe = RiskDecisionScope(run);
+            if (historical) await RiskDecide(safe, order, $"risk-reentry-original-{order:N}", true);
+            var id = await RiskExceptionId(run, order); var company = run.Company(CompanyA);
+            var store = new SalesStore(safe.Db, company, safe.Collector, new Clock(T0), officialCancellationAuditWriter: safe.Writer);
+            Assert.True(store.QuoteApprovalEntryIsClean); var callbacks = 0; var commands = 0;
+            var envelope = new SalesDraftWriteEnvelope(safe.User.Actor, SalesPermissionManifestV1.QuotesExpiredConversionApprove, [],
+                "SENTETIK-risk-reentrant", null, $"risk-reentrant-quote-{order:N}", "test");
+            async Task Probe(CancellationToken token)
+            {
+                callbacks++;
+                // Root composes the reciprocal risk-read exclusion in the existing owner guards.
+                Assert.False(store.QuoteApprovalEntryIsClean); Assert.False(store.RequestApprovalEntryIsClean);
+                Assert.False(store.OverDeliveryRequestApprovalEntryIsClean); Assert.False(store.DiscountApprovalEntryIsClean);
+                Assert.False(store.PriceFloorApprovalEntryIsClean); Assert.False(store.RiskExceptionDecisionEntryIsClean);
+                await Assert.ThrowsAsync<InvalidOperationException>(() => store.ReadRiskExceptionDecisionSourceAsync(id, _ => throw new InvalidOperationException("unreachable nested consumer"), token));
+                await Assert.ThrowsAsync<InvalidOperationException>(() => store.ReadRiskExceptionOriginalVersionAsync(id, 1, safe.User.Actor,
+                    _ => throw new InvalidOperationException("unreachable nested history consumer"), token));
+                await Assert.ThrowsAsync<SalesDraftStoreException>(() => store.RunQuoteApprovalAsync<SalesQuoteResponse>(envelope, new string('a', 64),
+                    SalesQuoteCommands.ApproveExpiredConversionV1, true, _ => { commands++; throw new InvalidOperationException("unreachable mutation"); },
+                    _ => Task.FromResult<SalesQuoteResponse?>(null), r => r.IsReplay, _ => Task.CompletedTask, token));
+                Assert.Null(safe.Db.Database.CurrentTransaction); Assert.False(safe.Writer.HasPendingDrafts);
+            }
+            if (historical)
+            {
+                var result = await store.ReadRiskExceptionOriginalVersionAsync(id, 1, safe.User.Actor, Probe, default);
+                Assert.Equal(SalesRiskExceptionDecisionReadStateV1.Found, result.State); Assert.NotNull(result.Receipt);
+                Assert.Equal(6, callbacks); // Before/after candidates, source pre/post, source return, after exact audit.
+            }
+            else { Assert.NotNull(await store.ReadRiskExceptionDecisionSourceAsync(id, Probe)); Assert.Equal(2, callbacks); }
+            Assert.Equal(0, commands); Assert.True(store.QuoteApprovalEntryIsClean); AssertRiskClean(safe);
+            Assert.Equal((historical ? 1 : 0, historical ? 1 : 0, historical ? 2L : 1L),
+                (await RiskAttemptCount(run, order), await RiskDecisionAuditCount(run, order), await RiskVersion(run, order)));
+
+            // Caller work is read, never adopted, cleared or discarded by a selected read.
+            var caller = new ShipmentRiskExceptionAttemptRow { CompanyId = CompanyA, OrderId = order, CommandName = SalesRiskExceptionCommands.RequestV1,
+                IdempotencyKeyHash = new string('F', 64), RequestHash = new string('c', 64), ActorId = safe.User.Actor,
+                Outcome = 1, ExceptionId = id, CorrelationId = "SENTETIK-caller", RecordedAtUtc = T0 };
+            safe.Db.ShipmentRiskExceptionAttempts.Add(caller); safe.Collector.Enqueue(RiskDecisionCallerAudit());
+            Assert.NotNull(await store.ReadRiskExceptionDecisionSourceAsync(id, _ => Task.CompletedTask));
+            Assert.Equal(Microsoft.EntityFrameworkCore.EntityState.Added, safe.Db.Entry(caller).State);
+            Assert.True(safe.Writer.HasPendingDrafts); Assert.Null(safe.Db.Database.CurrentTransaction);
+            Assert.Equal(historical ? 1 : 0, await RiskAttemptCount(run, order));
+        }
+        // The opposite direction also refuses before the risk consumer/SQL read, preserving the other owner's TX.
+        await using var owned = RiskDecisionScope(run); var ownedCompany = run.Company(CompanyA);
+        var ownedStore = new SalesStore(owned.Db, ownedCompany, owned.Collector, new Clock(T0), officialCancellationAuditWriter: owned.Writer);
+        var ownedEnvelope = new SalesDraftWriteEnvelope(owned.User.Actor, SalesPermissionManifestV1.QuotesExpiredConversionApprove, [],
+            "SENTETIK-owned-quote", null, "risk-read-inside-quote", "test");
+        var riskConsumers = 0; var executed = 0;
+        var refusal = await Assert.ThrowsAsync<SalesDraftStoreException>(() => ownedStore.RunQuoteApprovalAsync<SalesQuoteResponse>(ownedEnvelope, new string('b', 64),
+            SalesQuoteCommands.ApproveExpiredConversionV1, true, async token =>
+            {
+                executed++; var transaction = owned.Db.Database.CurrentTransaction; Assert.NotNull(transaction);
+                Task Consumer(CancellationToken _) { riskConsumers++; return Task.CompletedTask; }
+                await Assert.ThrowsAsync<InvalidOperationException>(() => ownedStore.ReadRiskExceptionDecisionSourceAsync(Guid.NewGuid(), Consumer, token));
+                await Assert.ThrowsAsync<InvalidOperationException>(() => ownedStore.ReadRiskExceptionOriginalVersionAsync(Guid.NewGuid(), 1, owned.User.Actor, Consumer, token));
+                Assert.Same(transaction, owned.Db.Database.CurrentTransaction); Assert.Equal(0, riskConsumers);
+                throw new InvalidOperationException("SENTETIK abort only the owned quote fixture");
+            }, _ => Task.FromResult<SalesQuoteResponse?>(null), r => r.IsReplay, _ => Task.CompletedTask, default));
+        Assert.Equal(SalesDraftProblemCodesV1.OwnerReferenceUnavailable, refusal.Code); Assert.Equal(1, executed); Assert.Equal(0, riskConsumers); AssertRiskClean(owned);
+        var quoteReadCallbacks = 0;
+        Assert.Null(await ownedStore.ReadQuoteConversionDecisionAsync(Guid.NewGuid(), async token =>
+        {
+            quoteReadCallbacks++;
+            await Assert.ThrowsAsync<InvalidOperationException>(() => ownedStore.ReadRiskExceptionDecisionSourceAsync(Guid.NewGuid(),
+                _ => { riskConsumers++; return Task.CompletedTask; }, token));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => ownedStore.ReadRiskExceptionOriginalVersionAsync(Guid.NewGuid(), 1, owned.User.Actor,
+                _ => { riskConsumers++; return Task.CompletedTask; }, token));
+        }));
+        Assert.Equal(2, quoteReadCallbacks); Assert.Equal(0, riskConsumers); AssertRiskClean(owned);
+    }
     private static Task<Guid> RiskExceptionId(Run run, Guid order) => run.ScalarAsync<Guid>("SELECT Id FROM sales.ShipmentRiskExceptions WHERE CompanyId=@company AND OrderId=@id AND ExceptionNo=1", ("@company", CompanyA), ("@id", order));
 }

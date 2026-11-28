@@ -10,19 +10,26 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 
 public sealed partial class SalesStore
 {
-    public async Task<SalesRiskExceptionOriginalDecisionReceiptV1?> ReadRiskExceptionDecisionReceiptAsync(SalesDraftWriteEnvelope envelope,
+    public Task<SalesRiskExceptionOriginalDecisionReceiptV1?> ReadRiskExceptionDecisionReceiptAsync(SalesDraftWriteEnvelope envelope,
         string hash, string command, SalesRiskExceptionCommandResult response, Func<CancellationToken, Task> freshFence, CancellationToken token)
     {
-        RequireRiskExceptionDecisionCommand(envelope, hash, command, writes: false); var company = RequireResolvedCompany();
+        RequireRiskExceptionDecisionCommand(envelope, hash, command, writes: false);
+        return WithRiskExceptionDecisionReadAsync(() => ReadRiskExceptionDecisionReceiptCoreAsync(envelope, hash, command, response, token),
+            freshFence, token, allowOwnedRiskReceipt: true);
+    }
+    private async Task<SalesRiskExceptionOriginalDecisionReceiptV1?> ReadRiskExceptionDecisionReceiptCoreAsync(SalesDraftWriteEnvelope envelope,
+        string hash, string command, SalesRiskExceptionCommandResult response, CancellationToken token)
+    {
+        var company = RequireResolvedCompany();
         var key = IdempotencyKeyHash(envelope.IdempotencyKey); await Fence();
         var attempts = await dbContext.ShipmentRiskExceptionAttempts.AsNoTracking().Where(x => x.CompanyId == company
             && x.CommandName == command && x.IdempotencyKeyHash == key).Take(2).ToArrayAsync(token);
         await Fence();
         if (attempts.Length != 1 || attempts[0].ExceptionId is not { } id) return null;
         var events = await RiskDecisionAuditCandidatesAsync(company, id, command, key, token); await Fence();
-        var current = await ReadRiskExceptionDecisionSourceAsync(id, freshFence, token); await Fence();
+        var current = await ReadRiskExceptionDecisionSourceCoreAsync(id, token); await Fence();
         return RestoreOriginalRiskDecisionReceipt(attempts[0], events, envelope.ActorId.Trim(), key, hash, command, response, current);
-        async Task Fence() { token.ThrowIfCancellationRequested(); RequireCompany(company); await freshFence(token); token.ThrowIfCancellationRequested(); RequireCompany(company); }
+        Task Fence() => RiskExceptionDecisionReadFenceAsync(token);
     }
     private Task<AuditEvent[]> RiskDecisionAuditCandidatesAsync(Guid company, Guid id, string command, string key, CancellationToken token)
     {
@@ -86,10 +93,14 @@ public sealed partial class SalesStore
         catch (JsonException) { return false; }
         catch (NotSupportedException) { return false; }
     }
-    public async Task<SalesRiskExceptionOriginalVersionReadResultV1> ReadRiskExceptionOriginalVersionAsync(Guid exceptionId, long expectedVersion,
-        string actorId, Func<CancellationToken, Task> freshFence, CancellationToken token)
+    public Task<SalesRiskExceptionOriginalVersionReadResultV1> ReadRiskExceptionOriginalVersionAsync(Guid exceptionId, long expectedVersion,
+        string actorId, Func<CancellationToken, Task> freshFence, CancellationToken token) =>
+        WithRiskExceptionDecisionReadAsync(() => ReadRiskExceptionOriginalVersionCoreAsync(exceptionId, expectedVersion, actorId, token), freshFence, token);
+
+    private async Task<SalesRiskExceptionOriginalVersionReadResultV1> ReadRiskExceptionOriginalVersionCoreAsync(Guid exceptionId, long expectedVersion,
+        string actorId, CancellationToken token)
     {
-        ArgumentNullException.ThrowIfNull(freshFence); var company = RequireResolvedCompany(); var entity = exceptionId.ToString("D"); await Fence();
+        var company = RequireResolvedCompany(); var entity = exceptionId.ToString("D"); await Fence();
         var candidates = await (from attempt in dbContext.ShipmentRiskExceptionAttempts.AsNoTracking()
                                 join audit in dbContext.Set<AuditEvent>().AsNoTracking()
                                     on new { CompanyId = (Guid?)attempt.CompanyId, Key = attempt.IdempotencyKeyHash } equals new { audit.CompanyId, Key = audit.IdempotencyKeyHash }
@@ -101,7 +112,7 @@ public sealed partial class SalesStore
                                     && (audit.EventType == "sales.order.risk-exception.approved.v1" || audit.EventType == "sales.order.risk-exception.rejected.v1")
                                 select attempt).Take(2).ToArrayAsync(token);
         await Fence();
-        var source = await ReadRiskExceptionDecisionSourceAsync(exceptionId, freshFence, token); await Fence();
+        var source = await ReadRiskExceptionDecisionSourceCoreAsync(exceptionId, token); await Fence();
         if (candidates.Length == 0) return new(SalesRiskExceptionDecisionReadStateV1.NotFound, null) { CurrentVersion = source?.Recorded.Version };
         if (candidates.Length != 1 || source is null) return new(SalesRiskExceptionDecisionReadStateV1.Unavailable, null);
         var a = candidates[0]; var events = await RiskDecisionAuditCandidatesAsync(company, exceptionId, a.CommandName, a.IdempotencyKeyHash, token); await Fence();
@@ -109,6 +120,6 @@ public sealed partial class SalesStore
         var receipt = RestoreOriginalRiskDecisionReceipt(a, events, actorId, a.IdempotencyKeyHash, a.RequestHash, a.CommandName, response, source);
         return receipt?.ExpectedVersion == expectedVersion.ToString(CultureInfo.InvariantCulture)
             ? new(SalesRiskExceptionDecisionReadStateV1.Found, receipt) : new(SalesRiskExceptionDecisionReadStateV1.Unavailable, null);
-        async Task Fence() { token.ThrowIfCancellationRequested(); RequireCompany(company); await freshFence(token); token.ThrowIfCancellationRequested(); RequireCompany(company); }
+        Task Fence() => RiskExceptionDecisionReadFenceAsync(token);
     }
 }
