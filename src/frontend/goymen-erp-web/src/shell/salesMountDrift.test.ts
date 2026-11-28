@@ -17,7 +17,7 @@ import { shellRoutes } from './router'
 import { workRoutes } from '../work/workRoutes'
 import { WORK_ROUTE } from '../work/workText'
 import { WORK_MANAGEMENT_ROUTE } from '../work/WorkManagementPage'
-import { CAPABILITY_NAV_LABEL, NAV_CAPABILITIES, NAV_GROUPS } from './navigation'
+import { NAV_CAPABILITIES, NAV_GROUPS } from './navigation'
 
 describe('shell ↔ Sales lane capability ids', () => {
   it('mounts the standalone official cancellation route without the invoice list or price capability', () => {
