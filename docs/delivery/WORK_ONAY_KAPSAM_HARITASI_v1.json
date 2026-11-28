@@ -784,13 +784,13 @@
             "host_supported": true,
             "owner_permission": "sales.returns.approve",
             "frontend_inbox_registered": true,
-            "frontend_published": false,
-            "frontend_capability": null,
-            "capability_declared": false,
-            "route": null,
-            "route_parity": null,
-            "inbox_capability": "sales.customer-returns.approve",
-            "inbox_capability_matches_work": null
+            "frontend_published": true,
+            "frontend_capability": "sales.customer-return.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/sales.customer-return.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "sales.customer-return.work-decision",
+            "inbox_capability_matches_work": true
           }
         ],
         "owner_commands": [
@@ -807,17 +807,17 @@
           "sales.returns.approve",
           "sales.orders.price.read"
         ],
-        "status": "BACKEND_WORK_HOST_FRONTEND_UNPUBLISHED",
+        "status": "PAIRED_SOURCE_LOCAL_NOT_RUNTIME_ACCEPTANCE",
         "source": "CHECKED_AT_EXACT_HEAD",
-        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "local_tests": "Return page23 and original3 regression files passed in the1158-case run; that cohort retains one independent period-opening failure. Backend1655 controlled pass recorded in partial_package_closure_checkpoint; actual SQL/normal HTTP/browser pending.",
         "actual_SQL": "NOT_RUN",
         "browser_HTTP": "NOT_RUN",
         "CI": "NO_CURRENT_HEAD_EVIDENCE",
         "K3": "NOT_PERFORMED",
         "map_runtime": "NOT_RUN",
-        "source_commit": "dd78bfe91209cdda419df11812134862f49e80e4",
+        "source_commit": "637a821a7be72ebd7a20c4ac098e5fbaae4cf9a2",
         "later_deltas": [],
-        "note": "Current/original owner and native decision Host composed; frontend queued; runtime0. Additional source safety finding remains under correction."
+        "note": "Paired native customer-return owner/Host/full human UI and purpose Inbox source. Existing ReturnsApprove AND price-read purpose; no new grant. Current source peer and local checks do not establish runtime acceptance."
       }
     },
     {
@@ -5926,7 +5926,7 @@
     "source_peers": "Bounded full native53 owner/source/WorkHost/UI and native54/55 safety peers, shared composition/inventory peer; publication peers found link/count/duplicate issues and source-closed finalc1. Some reviewers authored earlier native pieces; none of these are formal independent exact-head K3 acceptance.",
     "limits": "41packages/50references/64 flow rows unchanged; all64 semantics NOT_VERIFIED/runtime NOT_RUN/verified_runtime_flows0. Old CI does not transfer. ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3/business acceptance remain pending. Provider/grant/role/Critical/deployment/AI activation unchanged. Token telemetry unavailable; phase durations are measured local artifacts."
   },
-  "current_checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint",
+  "current_checkpoint_ref": "partial_package_closure_checkpoint",
   "invoice_and_inventory_cost_work_checkpoint": {
     "source_commit": "9386df64820c0e99137a6dada429e3185be96113",
     "status": "SOURCE_AND_BOUNDED_LOCAL_TESTS_ONLY",
@@ -6576,12 +6576,12 @@
       }
     ],
     "audit_sha256": "7b99cf7b328d015372dc2a31cd0afd74c8c40edebd9e72ae822f61d7ee529680",
-    "current_source_commit": "dd78bfe91209cdda419df11812134862f49e80e4",
+    "current_source_commit": "637a821a7be72ebd7a20c4ac098e5fbaae4cf9a2",
     "current_source_summary": {
       "backend_kinds": 64,
-      "frontend_published_kinds": 63,
+      "frontend_published_kinds": 64,
       "backend_supported_flows": 63,
-      "paired_flows": 62,
+      "paired_flows": 63,
       "no_host_flows": [
         62
       ],
@@ -6594,9 +6594,26 @@
       "native_single_step_no_pending_flows": [
         62
       ],
-      "backend_only_unpublished_flows": [
-        10
-      ]
+      "backend_only_unpublished_flows": []
+    },
+    "previous_current_source_summary_before_return_publication": {
+      "backend_kinds": 64,
+      "frontend_published_kinds": 64,
+      "backend_supported_flows": 63,
+      "paired_flows": 63,
+      "no_host_flows": [
+        62
+      ],
+      "frontend_staged_flows": [],
+      "inbox_capability_mismatches_source_corrected": [
+        21,
+        25
+      ],
+      "runtime_verified_flows": 0,
+      "native_single_step_no_pending_flows": [
+        62
+      ],
+      "backend_only_unpublished_flows": []
     }
   },
   "purpose_and_native_merge_checkpoint": {
@@ -7900,5 +7917,36 @@
         "Other owned Sales Work kinds can potentially return403 after native commit; current generic refused transport needs a bounded unknown-result review before closure."
       ]
     }
+  },
+  "partial_package_closure_checkpoint": {
+    "scope": "PARTIAL_PACKAGE_CLOSURE_NOT_INTEGRATED_ACCEPTANCE",
+    "source_commit": "7229a06b1",
+    "priority": "Close existing partial packages first: WP8 and first-use owner/API/UI gaps; start only independent work inside existing packages. One heavy runner; aggregate pins/SQL/CI/K3 at train close.",
+    "backend": {
+      "source_commit": "671c4ee40",
+      "artifact": "partial-package-fixture-compile-fixed-20261128/host",
+      "result": "1655/1655 passed; failed0/skipped0;89.3721433s. Includes new creation-need and scheduled-task controlled contracts; not actual SQL/normal HTTP/browser."
+    },
+    "API_build": {
+      "source_commit": "36ff9bc6e",
+      "result": "0 errors/0 warnings;211.4013798s"
+    },
+    "C5_model": {
+      "source_commit": "7229a06b1",
+      "artifact": "c5-scheduled-feedback-model-fixed-20261128/host",
+      "result": "68/68 passed; failed0/skipped0;75.6386198s. Actual SQL migration/rollback not run."
+    },
+    "frontend": {
+      "source_commit": "0dc58c44c",
+      "artifact": "return-nine-auth-targeted-recovery-20261128/frontend",
+      "result": "1158 total1157 passed/1 failed/0 pending. Three original Return/403 expectation failures corrected; period-opening unknown-remount retry failed. Not a green suite."
+    },
+    "frontend_diagnostic": {
+      "source_commit": "671c4ee40",
+      "artifact": "period-original-retry-diagnostic-20261128/frontend",
+      "result": "Two selected original-period retry cases passed;447 other cases excluded by explicit filter. Not full-suite acceptance or proof of root cause. Existing full-cohort failure retained."
+    },
+    "C5_migration": "20261128090056_AddAiScheduledTasks: EF generated snapshot; four additive ai tables; Downfirst52354 refuses any retained task/command/run/event. Source peer unread0/no open P0/P1/P2; not formal K3. Architecture/recovery/release pins pending aggregate close.",
+    "limits": "ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3/business acceptance remain pending. Runtime verified flows0. No grants/roles/Critical/providers/secrets/deployment/AI activation. No new package or reference catalog expansion."
   }
 }

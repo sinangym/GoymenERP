@@ -29,6 +29,37 @@
       "source": "tests/dotnet_bootstrap_integrity/test_validate_dotnet_bootstrap_integrity.py",
       "ci_source": ".github/workflows/ci.yml already executes this suite on ubuntu-latest; unchanged.",
       "fresh_hosted_result": "NOT_RUN; all mandatory cases still need terminal evidence at train close."
+    },
+    "partial_package_closure_checkpoint": {
+      "scope": "PARTIAL_PACKAGE_CLOSURE_NOT_INTEGRATED_ACCEPTANCE",
+      "source_commit": "7229a06b1",
+      "priority": "Close existing partial packages first: WP8 and first-use owner/API/UI gaps; start only independent work inside existing packages. One heavy runner; aggregate pins/SQL/CI/K3 at train close.",
+      "backend": {
+        "source_commit": "671c4ee40",
+        "artifact": "partial-package-fixture-compile-fixed-20261128/host",
+        "result": "1655/1655 passed; failed0/skipped0;89.3721433s. Includes new creation-need and scheduled-task controlled contracts; not actual SQL/normal HTTP/browser."
+      },
+      "API_build": {
+        "source_commit": "36ff9bc6e",
+        "result": "0 errors/0 warnings;211.4013798s"
+      },
+      "C5_model": {
+        "source_commit": "7229a06b1",
+        "artifact": "c5-scheduled-feedback-model-fixed-20261128/host",
+        "result": "68/68 passed; failed0/skipped0;75.6386198s. Actual SQL migration/rollback not run."
+      },
+      "frontend": {
+        "source_commit": "0dc58c44c",
+        "artifact": "return-nine-auth-targeted-recovery-20261128/frontend",
+        "result": "1158 total1157 passed/1 failed/0 pending. Three original Return/403 expectation failures corrected; period-opening unknown-remount retry failed. Not a green suite."
+      },
+      "frontend_diagnostic": {
+        "source_commit": "671c4ee40",
+        "artifact": "period-original-retry-diagnostic-20261128/frontend",
+        "result": "Two selected original-period retry cases passed;447 other cases excluded by explicit filter. Not full-suite acceptance or proof of root cause. Existing full-cohort failure retained."
+      },
+      "C5_migration": "20261128090056_AddAiScheduledTasks: EF generated snapshot; four additive ai tables; Downfirst52354 refuses any retained task/command/run/event. Source peer unread0/no open P0/P1/P2; not formal K3. Architecture/recovery/release pins pending aggregate close.",
+      "limits": "ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3/business acceptance remain pending. Runtime verified flows0. No grants/roles/Critical/providers/secrets/deployment/AI activation. No new package or reference catalog expansion."
     }
   },
   "packages": [
@@ -326,7 +357,7 @@
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Complete unauthorized creation-request and incoming-document/independent receipt entry contracts within this package; preserve native atomic optional-tax form and warning-only duplicate policy. Actual API/browser/SQL/train acceptance remains required.",
+      "next_action": "Finish existing creation-need frontend against the composed Work-backed endpoint; then incoming-document/independent receipt entry within this package. Preserve current native create, explicit recipient/deadline and original-key recovery; real API/browser/SQL/train acceptance pending.",
       "planned_owner": "Claude ekran; Codex mevcut owner sözleşmesi",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -392,9 +423,9 @@
           "Native create/account, EnterTaxIdentity, initial identity revision, audit writer and immutable receipt; optional tax composes these, without a second create service."
         ],
         "remaining": [
-          "Foreign identity and full duplicate/quick-selection business acceptance remain open; native pre-create warning and optional atomic tax UI source are implemented, with bounded local evidence only.",
-          "Unauthorized creation request contract/service",
-          "Real browser/API, SQL/full CI and independent review"
+          "Creation-need backend composed and controlled locally; paired UI source review/verification pending.",
+          "Incoming-document/independent receipt entry and foreign identity/duplicate business acceptance.",
+          "Actual SQL/normalHTTP/browser/fullCI/independent review."
         ],
         "behavior": "Unknown create attempt is preserved on close/reopen with the same key/body; parent submit is blocked while unresolved. Scope change aborts late eligibility reads. New business-party Customer/Supplier role defaults are visible/editable; no Identity role/grant is assigned. Optional initial VKN/TCKN uses the existing native owner probe and one atomic command. Possibly-committed403 retains original key/body only in ephemeral same actor/company/session/origin memory; current route grant and fresh acknowledged owner GET are required before explicit retry. Atomic abandoned remains frozen; no new key or raw browser storage/log/URL.",
         "browser": "NOT_RUN",
@@ -2718,7 +2749,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Finish Return10 paired frontend and remaining source safety findings; Cari62 remains native single-step without pending approval. Then actual SQL/HTTP/browser/aggregate pins/full CI/two independent exact-head K3. Source kinds do not prove 64 runtime flows.",
+      "next_action": "Close existing 64-kind source pairing through actual SQL/normal-host HTTP/browser and aggregate pins/full CI/two exact-head K3. Investigate retained period-opening retry cohort failure; do not rebuild already paired owners. Cari62 remains native single-step.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -3570,7 +3601,9 @@
           "existing Work post transport and SQL fixtures"
         ],
         "remaining": [
-          "Floor frontend/publication and Discount selected owner/source in separate writers. Mixed atomic participant/original receipt still pending. All64 runtime unverified; remaining source gaps3,4,5,6,10,11;62 remains native single step. ActualSQL/normalHTTP/browser/pins/fullCI/twoK3 pending."
+          "Source pairing64 backend/64 frontend kinds covers63 pending flows; Cari62 is native single-step. All64 runtime acceptance remains unverified.",
+          "Period-opening unknown-remount cohort failure retained; selected2-case diagnostic is not a full pass.",
+          "Actual SQL/normalHTTP/browser/aggregate pins/fullCI/two independent K3/business acceptance."
         ],
         "sql": "NOT_RUN",
         "browser": "NOT_RUN",
@@ -5222,7 +5255,7 @@
           "delivery_scope": "Flow51 catalog and Flow52 posting mapping owner/source/DTO/WorkHost/full human UI are paired in source:47 backend/47 frontend/0 staged. Flow53 native whole-approval safety integrated; owner read follow-up is frozen in its separate author branch, not yet integrated. Source pairing is not runtime acceptance.",
           "runtime_acceptance": "NOT_RUN"
         },
-        "current_checkpoint_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#quote_work_host_and_mixed_preparation_checkpoint",
+        "current_checkpoint_ref": "coordination.partial_package_closure_checkpoint",
         "native_cost_work_checkpoint": {
           "source_commit": "c1a3809ad3fab2235f75fc5e91f671e3b557b938",
           "evidence_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#native_cost_work_checkpoint",
@@ -5793,7 +5826,10 @@
           "native_request_approval_prerequisite": "14d92c566 protects the existing native Sales request transaction/actual Audit writer/caller state/fresh authority; native selfapproval exception and linked-order reject restriction unchanged.2494Sales unitPASS at6f0.12SQL sourceFacts registered, actualSQL NOT_RUN. Bounded source peer found post-cleanup nonrecorded-refusal release fence gap; author fix/regression pending. No Work owner receipt/Host publication claimed.",
           "native_access_grant_prerequisite": "2abb4c72f protects native Identity Approve/Reject with same native applock/ReadCommitted/Commands/outbox/actual Audit writer. DI interface+concrete require guarded core; no actual role/grant/Critical changes.907unitPASS at9386.6SQL sourceFacts registered, actualSQL NOT_RUN. Genuine selected owner read/original receipt/Work publication still missing.",
           "party_merge_preview": "KIM-D59 answered.696e73c64 adds existing-permission read-only selected-pair effect preview: actual parties/all holding accounts/record changes, no inferred Finance counts or side effects.415Counterparty unitPASS at9386 includes12new cases.3SQL sourceFacts registered, actualSQL NOT_RUN. Existing native PUT/hash/replay unchanged; UI/Work native entry and atomic viewed-membership-to-decision fence still pending."
-        }
+        },
+        "previous_remaining_before_return_publication": [
+          "Floor frontend/publication and Discount selected owner/source in separate writers. Mixed atomic participant/original receipt still pending. All64 runtime unverified; remaining source gaps3,4,5,6,10,11;62 remains native single step. ActualSQL/normalHTTP/browser/pins/fullCI/twoK3 pending."
+        ]
       },
       "delivery_tracking": {
         "kodlandi": "PARTIAL_SOURCE",
@@ -6593,7 +6629,7 @@
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Finish scoped UI validation and normal-host HTTP acceptance; then implement approved scheduled-task lifecycle/effect boundaries without inferring management or data policies.",
+      "next_action": "Complete actual authority/Settings/Work adapters and closed DI/API task lifecycle inside this package; no invented budgets/limits or activation. Generated scheduled schema/model local checks are recorded; run actual SQL and aggregate train gates at closure.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -6633,12 +6669,10 @@
           "WorkCollaborationServiceTests existing harness"
         ],
         "remaining": [
-          "Normal-host8HTTP transport cases and actual browser",
-          "Scheduled-task lifecycle, explicit four-effect policy and role/business scope",
-          "Current-owner proof for event-only items",
-          "SQL/train CI/twoK3"
+          "Actual authority/Settings/Work adapters and closed DI/API scheduling lifecycle; no automatic activation or configured business limits.",
+          "Existing morning summary normal HTTP/browser and actual SQL/train acceptance."
         ],
-        "migration": null,
+        "migration": "20261128090056_AddAiScheduledTasks; EF generated; Downfirst52354 protects all four tables; actual SQL/pins/CI/K3 pending.",
         "new_permissions": [],
         "activation": "Existing schedulers/AI/provider/grants unchanged and OFF by default.",
         "source_commits": [

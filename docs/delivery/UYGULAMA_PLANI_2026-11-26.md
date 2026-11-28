@@ -395,3 +395,12 @@ Tarihsel224 namespace derleme hatası ve b432942PASS;3d996 tamAPI üç CS0122 ha
 
 
 **28 Kasım — iskonto eşlenmiş arayüz ve yerel doğrulama:** Kaynakta59 backend/59 arayüz türü,58 kapsam akışında eşlenmiş kaynak;64 akışın işletme kabulü hâlâ doğrulanmadı. İskonto arayüzünde3156 test geçti; sonraki birleşik kaynakta satış2883, satınalma1549 ve kontrollü Host kanıtları JSON eşinde exact-head olarak saklanır, ayrı koşular toplanmaz. Sevk aşımının seçili kayıt/özgün makbuz kaynağı, risk istisnası yerel karar güvenliği ve karma alış Draft hizmet bağlama adımı eklendi; kalan Host/arayüz/revizyon bağlantıları ve gerçek SQL/tarayıcı/CI/K3 bekliyor.41 paket/50 referans korunur.
+
+### 28 Kasım — kısmi paket kapanış önceliği
+
+41 paket/50 referans korunur; yeni paket açılmadı. Güncel kanıt ve kalan işler makine eşinde
+`coordination.partial_package_closure_checkpoint` alanındadır. WP8 kaynak eşliği 64 backend/64 frontend türüdür;
+cari birleştirme ayrı bekleyen onay üretmeyen native işlemdir. Bu sayım 64 akışın işletme kabulü değildir.
+Kontrollü backend 1.655/1.655, AI model/komut kohortu 68/68 geçti (farklı kayıtlı kaynak sürümleri).
+Frontend 1.158 koşusunda 1 hata korunur; iki seçili tanılama geçişi tam koşunun yerine sayılmaz.
+C5 migration/snapshot üretildi; gerçek SQL, normal HTTP/tarayıcı, birleşik pinler, CI ve iki bağımsız K3 bekliyor.
