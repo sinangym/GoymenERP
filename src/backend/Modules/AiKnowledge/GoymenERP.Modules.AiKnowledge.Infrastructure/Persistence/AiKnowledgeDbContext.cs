@@ -82,6 +82,7 @@ public sealed partial class AiKnowledgeDbContext(
         attempt.HasQueryFilter(row => row.CompanyId == companyContext.CompanyId);
 
         ConfigureCommands(modelBuilder);
+        ConfigureScheduledTasks(modelBuilder);
         ConfigureAnswerReceipts(modelBuilder);
         ConfigureFeedback(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
@@ -125,7 +126,7 @@ public sealed partial class AiKnowledgeDbContext(
                 AiAnswerReceiptIdentityRow row => row.CompanyId,
                 AiFeedbackEventRow row => row.CompanyId,
                 AiFeedbackIdentityRow row => row.CompanyId,
-                _ => throw new InvalidOperationException("Unknown AI knowledge record."),
+                _ => ScheduledTaskWriteCompany(entry),
             };
             if (!companyContext.IsResolved || companyId != companyContext.CompanyId)
                 throw new InvalidOperationException("AI knowledge records require the active company context.");
