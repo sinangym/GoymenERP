@@ -114,6 +114,8 @@ public sealed class SalesShellCapabilityProviderTests
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersSourcePlanWrite}", "sales.drafts.detail"),
                 // UI-20 (shell contract 1.8): the S-01 quote screens and their two controls — revision/loss on the quote write
                 // name, conversion on the quote write name AND the order create name (the two names the command measures).
+                ("sales.over-delivery-request.work-decision", "/onaylarim/sales.over-delivery-request.v1/:approvalId",
+                    SalesPermissionManifestV1.OrdersOverDeliveryApprove, null),
                 ("sales.price-floor-exception.work-decision", "/onaylarim/sales.price-floor-exception.v1/:approvalId",
                     SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove, null),
                 ("sales.quote-conversion-request.work-decision", "/onaylarim/sales.quote-conversion-request.v1/:approvalId",
