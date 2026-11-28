@@ -59,19 +59,26 @@ public sealed partial class PurchasingStore
             || original.Children.Count != memberships.Length || memberships.Length == 0
             || memberships.Any(x => !original.Membership.Any(m => MixedStoredMemberMatches(x, m))))
             throw new PurchasingServiceException(503, "service_unavailable");
-        // Exact (company, child, native version) pairs, not a current-state read or a broad revision scan.
-        var row = Expression.Parameter(typeof(PurchaseServiceOrderRevisionRow), "revision");
-        Expression predicate = Expression.Constant(false);
-        foreach (var child in original.Children)
-            foreach (var version in new[] { child.OriginalBefore.Version, child.After.Version })
-            {
-                var pair = Expression.AndAlso(Expression.Equal(Expression.Property(row, nameof(PurchaseServiceOrderRevisionRow.CompanyId)), Expression.Constant(company)),
-                    Expression.AndAlso(Expression.Equal(Expression.Property(row, nameof(PurchaseServiceOrderRevisionRow.OrderId)), Expression.Constant(child.OriginalBefore.OrderId)),
-                        Expression.Equal(Expression.Property(row, nameof(PurchaseServiceOrderRevisionRow.Version)), Expression.Constant(version))));
-                predicate = Expression.OrElse(predicate, pair);
-            }
-        var exact = Expression.Lambda<Func<PurchaseServiceOrderRevisionRow, bool>>(predicate, row);
-        var revisions = await ReadMixedOwnerAsync(() => dbContext.ServiceOrderRevisions.AsNoTracking().Where(exact).ToArrayAsync(token), fence, token);
+        // Technical query batch only, never an admission/business membership limit. Each batch has
+        // at most 128 exact pairs / 384 scalar expression constants, independent of total membership.
+        // All batches remain in the same owned/read-only scope and retain every original revision.
+        var revisions = new List<PurchaseServiceOrderRevisionRow>();
+        foreach (var children in original.Children.Chunk(64))
+        {
+            var row = Expression.Parameter(typeof(PurchaseServiceOrderRevisionRow), "revision");
+            Expression predicate = Expression.Constant(false);
+            foreach (var child in children)
+                foreach (var version in new[] { child.OriginalBefore.Version, child.After.Version })
+                {
+                    var pair = Expression.AndAlso(Expression.Equal(Expression.Property(row, nameof(PurchaseServiceOrderRevisionRow.CompanyId)), Expression.Constant(company)),
+                        Expression.AndAlso(Expression.Equal(Expression.Property(row, nameof(PurchaseServiceOrderRevisionRow.OrderId)), Expression.Constant(child.OriginalBefore.OrderId)),
+                            Expression.Equal(Expression.Property(row, nameof(PurchaseServiceOrderRevisionRow.Version)), Expression.Constant(version))));
+                    predicate = Expression.OrElse(predicate, pair);
+                }
+            var exact = Expression.Lambda<Func<PurchaseServiceOrderRevisionRow, bool>>(predicate, row);
+            revisions.AddRange(await ReadMixedOwnerAsync(() => dbContext.ServiceOrderRevisions.AsNoTracking()
+                .Where(exact).ToArrayAsync(token), fence, token));
+        }
         var childIds = original.Children.Select(x => x.OriginalBefore.OrderId.ToString("D")).ToArray();
         var childEvents = await ReadMixedOwnerAsync(() => dbContext.Set<AuditEvent>().AsNoTracking().Where(x => x.CompanyId == company
             && x.EntityType == "Purchasing.ServiceOrder" && childIds.Contains(x.EntityId) && x.IdempotencyKeyHash == key
