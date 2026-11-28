@@ -1,14 +1,14 @@
 import {afterEach,describe,it,expect,vi} from 'vitest'
 import {decodeDraftLinePricing} from '../sales/linePricing'
 import {decodeWorkSalesPriceFloorPreview,SALES_PRICE_FLOOR_WORK_KIND as kind,isSalesPriceFloorWorkCommand,salesPriceFloorWorkCommand} from './workSalesPriceFloorDecision'
-import {decodeWorkDecisionPreview,isWorkDecisionRequest,isWorkPackageEffectiveDate,sendWorkDecision,fetchWorkDecision,WORK_DECISION_KINDS} from './workDecisionApi'
+import {decodeWorkDecisionPreview,exactNativeClrAmount,isWorkDecisionRequest,isWorkPackageEffectiveDate,sendWorkDecision,fetchWorkDecision,WORK_DECISION_KINDS} from './workDecisionApi'
 import {salesPriceFloorFixture as fixture,salesPriceFloorHuman as human,salesPriceFloorId as id} from './salesPriceFloorDecisionFixture'
 const company='aaaaaaaa-0000-4000-8000-000000000001'
 afterEach(()=>{vi.unstubAllGlobals();vi.restoreAllMocks()})
 const clone=<T,>(v:T):T=>structuredClone(v)
 describe('Floor exact Work contract with unchanged native pricing decoder',()=>{
  it.each([true,false])('accepts exact14/10 and raw decimal/version text without price co-grant visible=%s',visible=>{
-  const f=fixture(company,visible),h=decodeWorkSalesPriceFloorPreview(f.salesPriceFloor,company,id,isWorkPackageEffectiveDate)
+  const f=fixture(company,visible),h=decodeWorkSalesPriceFloorPreview(f.salesPriceFloor,company,id,isWorkPackageEffectiveDate,v=>exactNativeClrAmount(v,false))
   expect(h).toEqual(f.salesPriceFloor);expect(decodeWorkDecisionPreview(f,company,kind,id)).toEqual(f)
   expect(h?.lines[0]?.quantity).toBe('0001.2500');expect(h?.version).toBe('9007199254740993');expect(h?.lines[0]?.productVersion).toBe('9007199254740993')
   if(visible)expect(h?.lines[0]?.pricing?.unitPrice).toBe('90.5000');else expect(h?.lines.every(l=>l.pricing===null)).toBe(true)
@@ -19,6 +19,37 @@ describe('Floor exact Work contract with unchanged native pricing decoder',()=>{
   const p=clone(human(company).lines[0]!.pricing)!;const {discountCheck:omitted,...legacy}=p;expect(omitted).toBeNull()
   expect(decodeDraftLinePricing({version:'9',lines:[legacy],margin:{disclosure:'Withheld',costBasis:null,kind:null,lines:null}})).not.toBeNull()
   const f=fixture(company);Object.assign(f.salesPriceFloor.lines[0]!,{pricing:legacy});expect(decodeWorkDecisionPreview(f,company,kind,id)).toBeNull()
+ })
+ // Native CLR representation only; these tests do not calculate a price or choose monetary scale.
+ const amountFields:readonly (readonly [string,(f:ReturnType<typeof fixture>,value:string)=>void])[]=[
+  ['quantity',(f,value)=>Object.assign(f.salesPriceFloor.lines[0]!,{quantity:value})],
+  ...(['unitPrice','discountPercent','discountAmount','surchargePercent','surchargeAmount','netUnitPrice'] as const).map(field=>
+   [field,(f:ReturnType<typeof fixture>,value:string)=>Object.assign(f.salesPriceFloor.lines[0]!.pricing!,{[field]:value})] as const),
+  ...(['unitPrice','floorUnitPrice','lowerQuantity','upperQuantity'] as const).map(field=>
+   ['reference '+field,(f:ReturnType<typeof fixture>,value:string)=>Object.assign(f.salesPriceFloor.lines[0]!.pricing!.priceReference!,{[field]:value})] as const),
+  ...(['listUnitPrice','limitPercent'] as const).map(field=>
+   ['discount '+field,(f:ReturnType<typeof fixture>,value:string)=>Object.assign(f.salesPriceFloor.lines[0]!.pricing!,{discountCheck:{checkedBy:'SENTETIK-writer',checkedAtUtc:'2026-11-28T09:00:00.0000001Z',listUnitPrice:'100',limitPercent:'10',requiresApproval:true,approvedBy:null,approvedAtUtc:null,reason:null,[field]:value}})] as const),
+  ...(['threshold','actual','deviation'] as const).map(field=>
+   ['rule '+field,(f:ReturnType<typeof fixture>,value:string)=>Object.assign(f.rules[0]!,{[field]:value})] as const),
+ ]
+ it.each(amountFields)('rejects nonrepresentable native CLR text in %s',(field,change)=>{
+  for(const value of ['79228162514264337593543950336','0.00000000000000000000000000001','1.23456789012345678901234567891']){
+   const f=clone(fixture(company));change(f,value)
+   expect(decodeWorkDecisionPreview(f,company,kind,id),field+': '+value).toBeNull()
+  }
+ })
+ it.each(['79228162514264337593543950335','0.0000000000000000000000000001','0001.2500','79228162514264337593543950335.0000','0.0000000000000000000000000001000','0.0000000000000000000000000000000'])('preserves raw native CLR boundary/representational zeros %s',value=>{
+  const f=fixture(company),p=f.salesPriceFloor.lines[0]!.pricing!
+  Object.assign(p,{unitPrice:value,netUnitPrice:value});Object.assign(p.priceReference!,{unitPrice:value,floorUnitPrice:value})
+  Object.assign(p,{discountCheck:{checkedBy:'SENTETIK-writer',checkedAtUtc:'2026-11-28T09:00:00.0000001Z',listUnitPrice:value,limitPercent:'10',requiresApproval:true,approvedBy:null,approvedAtUtc:null,reason:null}})
+  Object.assign(f.rules[0]!,{threshold:value,actual:value,deviation:value})
+  const raw=JSON.stringify(f);expect(decodeWorkDecisionPreview(f,company,kind,id)).toEqual(f);expect(JSON.stringify(f)).toBe(raw)
+ })
+ it('requires the supplied exact native amount validator without changing the legacy lexical decoder',()=>{
+  const f=fixture(company),p=f.salesPriceFloor.lines[0]!.pricing!
+  Object.assign(p,{unitPrice:'79228162514264337593543950336',netUnitPrice:'79228162514264337593543950336'})
+  expect(decodeDraftLinePricing({version:'9',lines:[p],margin:{disclosure:'Withheld',costBasis:null,kind:null,lines:null}})).not.toBeNull()
+  expect(decodeWorkSalesPriceFloorPreview(f.salesPriceFloor,company,id,isWorkPackageEffectiveDate,v=>exactNativeClrAmount(v,false))).toBeNull()
  })
  const faults:readonly [string,(f:ReturnType<typeof fixture>)=>void][]=[
   ['root private',f=>Object.assign(f,{salesPriceFloorProof:{}})],['human private',f=>Object.assign(f.salesPriceFloor,{sourceFactsDigest:'a'.repeat(64)})],

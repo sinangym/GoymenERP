@@ -365,7 +365,7 @@ export function decodeWorkDecisionPreview(value: unknown, company: string, kind:
       && hasExactKeys(rule, ['ruleCode', 'threshold', 'actual', 'deviation', 'unit']) && text(rule.ruleCode)
       && [rule.threshold, rule.actual, rule.deviation, rule.unit].every(nullableText))) return null
   if (kind === IDENTITY_ACCESS_GRANT_WORK_KIND && !validIdentityAccessGrantPreview(value,company,id,isWorkPackageEffectiveDate)) return null
-  if (kind === SALES_PRICE_FLOOR_WORK_KIND && !validSalesPriceFloorPreview(value,company,id,isWorkPackageEffectiveDate)) return null
+  if (kind === SALES_PRICE_FLOOR_WORK_KIND && !validSalesPriceFloorPreview(value,company,id,isWorkPackageEffectiveDate,v=>exactNativeClrAmount(v,false))) return null
   if (kind === SALES_QUOTE_CONVERSION_WORK_KIND && !validSalesQuoteConversionPreview(value,company,id,isWorkPackageEffectiveDate)) return null
   if (kind === SALES_REQUEST_WORK_KIND && !validSalesRequestPreview(value,company,id,isWorkPackageEffectiveDate)) return null
   if (kind === ORGANIZATION_COMPANY_TAX_ID_WORK_KIND && !validOrganizationCompanyTaxIdPreview(value,company,id)) return null

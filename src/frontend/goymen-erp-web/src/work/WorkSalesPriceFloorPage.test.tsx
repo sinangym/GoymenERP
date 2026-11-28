@@ -82,6 +82,13 @@ describe('Floor full human and frozen all-line Work lifecycle',()=>{
  it('requires new line confirmation after native409 and refreshes only the fresh refused attempt',async()=>{
   let gets=0;const calls=installFetch({capabilities:[cap],respond:(url,init)=>url.includes(ownerPath)?init?.method==='POST'?problem(409):json(fixture(COMPANY_A,true,++gets===1?'9':'11')):undefined});mount();await screen.findByRole('region',{name:T.title});reasons();fireEvent.click(screen.getByRole('button',{name:W.approve}));await screen.findByText(/409/);await waitFor(()=>expect(gets).toBe(2));expect((screen.getByRole('textbox',{name:T.lineReason(1)}) as HTMLTextAreaElement).value).toBe('');expect(screen.getByRole('button',{name:W.approve}).matches(':disabled')).toBe(true);expect(calls.filter(c=>c.method==='POST')).toHaveLength(1)
  })
+ it.each(['79228162514264337593543950336','0.00000000000000000000000000001'])('keeps malformed native CLR GET %s out of the human panel and approval controls',async value=>{
+  const bad=fixture(COMPANY_A);Object.assign(bad.salesPriceFloor.lines[0]!.pricing!,{unitPrice:value,netUnitPrice:value})
+  const calls=installFetch({capabilities:[cap],respond:url=>url.includes(ownerPath)?json(bad):undefined});mount()
+  await waitFor(()=>expect(document.querySelector('[data-state="malformed-response"]')).not.toBeNull())
+  expect(screen.queryByRole('region',{name:T.title})).toBeNull();expect(screen.queryByRole('button',{name:W.approve})).toBeNull();expect(screen.queryByRole('textbox')).toBeNull()
+  expect(calls.filter(c=>c.url.includes(ownerPath)&&c.method==='GET')).toHaveLength(1);expect(calls.some(c=>c.method==='POST')).toBe(false)
+ })
  it.each([403,404,503])('renders GET refusal/unavailable without human facts HTTP%s',async status=>{
   const calls=installFetch({capabilities:[cap],respond:url=>url.includes(ownerPath)?problem(status):undefined});mount();await waitFor(()=>expect(document.querySelector(`[data-state="${status===403?'forbidden':status===404?'not-found':'service-unavailable'}"]`)).not.toBeNull());expect(calls.filter(c=>c.url.includes(ownerPath)&&c.method==='GET')).toHaveLength(1);expect(screen.queryByRole('region',{name:T.title})).toBeNull();expect(calls.some(c=>c.method==='POST')).toBe(false)
  })
