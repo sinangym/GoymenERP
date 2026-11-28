@@ -881,6 +881,15 @@
           ],
           "source_changes": "Risk selected owner now reaches native Approve/Reject through Work Host with genuine original receipt. Remainder same scoped native transaction safety and reciprocal marker composition; selected source/Host/UI pending. Mixed supplier revision stages both owners in one transaction, genuine historical receipts and narrow linked Draft price setter; native legacy behavior retained.",
           "limits": "SQL sources compiled only, not executed. Risk frontend and mixed API/DI still unpublished. Mixed acceptance/receipt-adjustment history still pending. ActualSQL/normalHTTP/browser/pins/fullCI/two independent exact-head K3/business acceptance NOT_RUN."
+        },
+        "api_composition_attempt": {
+          "source_commit": "fcf759dbd8dc5147ff8f506df442d3cc2245fdfe",
+          "phase": "mixed-api-composition-20261128",
+          "total": 133,
+          "passed": 1,
+          "failed": 132,
+          "skipped": 0,
+          "cause": "All132 failures are accepted-owner-source shell pin drift at normal host startup; no HTTP/DI acceptance claimed. Failure artifacts retained. Aggregate pins scheduled once at train closure."
         }
       },
       "delivery_tracking": {
@@ -2424,7 +2433,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Finish Risk paired UI/publication, remainder selected source/Host/UI, customer-return10 and contract-discount11. Cari62 stays approved native single-step. All runtime acceptance gates remain pending.",
+      "next_action": "Compose remainder selected owner/source and Host/UI; finish customer-return10 and contract-discount11. Cari62 stays native single-step. Contract safety default-off until complete protocol tests and configured composition. All runtime gates remain pending.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2543,7 +2552,7 @@
         "activation": "No grants/flags/provider changes"
       },
       "execution": {
-        "source_commit": "7029f23afa7767de82af561a4bd1dd6f05ff607f",
+        "source_commit": "11d997cfa1bb9805e853dacf2b346367dd56c933",
         "implemented_kinds": [
           "organization.company-tax-id-change.v1",
           "accounting.invoiced-shipment-cost.v1",
@@ -2820,6 +2829,87 @@
             ],
             "source_changes": "Risk selected owner now reaches native Approve/Reject through Work Host with genuine original receipt. Remainder same scoped native transaction safety and reciprocal marker composition; selected source/Host/UI pending. Mixed supplier revision stages both owners in one transaction, genuine historical receipts and narrow linked Draft price setter; native legacy behavior retained.",
             "limits": "SQL sources compiled only, not executed. Risk frontend and mixed API/DI still unpublished. Mixed acceptance/receipt-adjustment history still pending. ActualSQL/normalHTTP/browser/pins/fullCI/two independent exact-head K3/business acceptance NOT_RUN."
+          },
+          "risk_paired_and_contract_native": {
+            "source_commit": "11d997cfa1bb9805e853dacf2b346367dd56c933",
+            "scope": "BOUNDED_LOCAL_NOT_RUNTIME_ACCEPTANCE",
+            "sales": {
+              "exit": 0,
+              "seconds": 64.0949622,
+              "freeGiB": 3.970165252685547,
+              "head": "11d997cfa1bb9805e853dacf2b346367dd56c933",
+              "artifact": "risk-paired-contract-native-integrated-20261128/sales",
+              "total": 2959,
+              "passed": 2959,
+              "failed": 0,
+              "skipped": 0
+            },
+            "api_refresh": {
+              "exit": 0,
+              "seconds": 26.0681842,
+              "freeGiB": 3.3962364196777344,
+              "head": "11d997cfa1bb9805e853dacf2b346367dd56c933",
+              "artifact": "risk-paired-contract-native-integrated-20261128/api_refresh"
+            },
+            "controlled_host": {
+              "exit": 0,
+              "seconds": 79.1269802,
+              "freeGiB": 3.7506065368652344,
+              "head": "11d997cfa1bb9805e853dacf2b346367dd56c933",
+              "artifact": "risk-paired-contract-native-integrated-20261128/host",
+              "total": 1335,
+              "passed": 1335,
+              "failed": 0,
+              "skipped": 0
+            },
+            "tsc": {
+              "head": "11d997cfa1bb9805e853dacf2b346367dd56c933",
+              "freeGiB": 4.1251068115234375,
+              "seconds": 63.18221,
+              "exit": 0,
+              "artifact": "risk-paired-frontend-20261128/tsc"
+            },
+            "lint": {
+              "head": "11d997cfa1bb9805e853dacf2b346367dd56c933",
+              "freeGiB": 4.021648406982422,
+              "seconds": 0.4710912,
+              "exit": 0,
+              "artifact": "risk-paired-frontend-20261128/lint"
+            },
+            "frontend": {
+              "head": "11d997cfa1bb9805e853dacf2b346367dd56c933",
+              "freeGiB": 4.007144927978516,
+              "seconds": 304.4313213,
+              "exit": 1,
+              "artifact": "risk-paired-frontend-20261128/frontend",
+              "total": 3343,
+              "passed": 3342,
+              "failed": 1,
+              "skipped": 0,
+              "retained_failure": "Existing WorkDecisionPage Manufacturing closed-preview unknown-result retry did not reach done; no assertion/timeout change."
+            },
+            "manufacturing_replay_diagnostic": {
+              "seconds": 62.5094939,
+              "freeGiB": 4.028167724609375,
+              "exit": 0,
+              "head": "11d997cfa1bb9805e853dacf2b346367dd56c933",
+              "artifact": "risk-paired-manufacturing-replay-diagnostic-20261128/frontend",
+              "total": 449,
+              "passed": 449,
+              "failed": 0,
+              "skipped": 0,
+              "note": "Isolated full-file diagnostic only; does not replace or clear broad-suite failure. Cause unestablished; no production/test correction claimed."
+            },
+            "limits": "ActualSQL, normalHTTP, browser, aggregate pins, fullCI, two independent exact-head K3 and business acceptance NOT_RUN. Runtime flow count remains0. Contract native safety remains default-off pending protocol/SQL source coverage and configured composition.",
+            "mixed_http_attempt": {
+              "source_commit": "fcf759dbd8dc5147ff8f506df442d3cc2245fdfe",
+              "phase": "mixed-api-composition-20261128",
+              "total": 133,
+              "passed": 1,
+              "failed": 132,
+              "skipped": 0,
+              "cause": "All132 failures are accepted-owner-source shell pin drift at normal host startup; no HTTP/DI acceptance claimed. Failure artifacts retained. Aggregate pins scheduled once at train closure."
+            }
           }
         },
         "reuse": [
