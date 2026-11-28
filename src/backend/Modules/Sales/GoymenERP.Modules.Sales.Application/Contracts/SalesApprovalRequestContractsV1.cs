@@ -100,6 +100,7 @@ public sealed record SalesApprovalRequestListResponse(IReadOnlyList<SalesApprova
 public sealed record SalesApprovalRequestCommandResult(SalesApprovalRequestView Request, bool IsReplay, string CorrelationId)
 {
     [System.Text.Json.Serialization.JsonIgnore] public SalesQuoteOriginalDecisionReceiptV1? OriginalDecisionReceipt { get; init; }
+    [System.Text.Json.Serialization.JsonIgnore] public SalesOverDeliveryRequestOriginalReceiptV1? OriginalOverDeliveryReceipt { get; init; }
 }
 
 /// <summary>The wire names of <see cref="SalesApprovalRequestView.Status"/> and <see cref="SalesApprovalRequestView.Kind"/>.</summary>

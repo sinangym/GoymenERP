@@ -151,6 +151,7 @@ public sealed partial class SalesStore : ISalesApprovalRequestStore
         }
 
         var item = SalesApprovalRequestRows.Restore(row);
+        RequireSelectedOverDeliveryTarget(item);
         await RequireSelectedQuoteTargetAsync(subjectId, requestNo, item.SubjectRevision, cancellationToken);
         var before = ApprovalRequestAuditState(item);
         var versionBefore = item.Version;
@@ -209,6 +210,7 @@ public sealed partial class SalesStore : ISalesApprovalRequestStore
         }
 
         var request = SalesApprovalRequestRows.Restore(requestRow);
+        RequireSelectedOverDeliveryTarget(request);
         var draft = (await OverDeliveryRequestApprovalReadAsync(() => RestoreAsync([draftRow], cancellationToken), cancellationToken)).Single();
         var input = await beforeWrite(draft, request, cancellationToken)
             ?? throw new InvalidOperationException("Fazla teslim talebinin onayı, yeniden okunan yargı olmadan kaydedilmez.");

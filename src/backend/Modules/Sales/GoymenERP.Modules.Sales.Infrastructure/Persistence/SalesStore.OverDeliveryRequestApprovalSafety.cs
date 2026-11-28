@@ -9,13 +9,14 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 public sealed partial class SalesStore : ISalesOverDeliveryRequestApprovalStoreV1
 {
     private OwnedOverDeliveryRequestApproval? ownedOverDeliveryRequestApproval;
-    public bool OverDeliveryRequestApprovalEntryIsClean => officialCancellationAuditWriter is not null && ownedOverDeliveryRequestApproval is null && ownedQuoteApproval is null && quoteDecisionReadFence is null
+    public bool OverDeliveryRequestApprovalEntryIsClean => officialCancellationAuditWriter is not null && ownedOverDeliveryRequestApproval is null && overDeliveryRequestDecisionReadFence is null && ownedQuoteApproval is null && quoteDecisionReadFence is null
         && ownedRequestApproval is null && ownedPriceFloorApproval is null && ownedDiscountApproval is null && dbContext.Database.IsRelational() && System.Transactions.Transaction.Current is null
         && dbContext.Database.CurrentTransaction is null && !dbContext.ChangeTracker.HasChanges() && !officialCancellationAuditWriter.HasPendingDrafts;
 
     public async Task<SalesApprovalRequestCommandResult> RunOverDeliveryRequestApprovalAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
         bool cleanBeforeAuthority, Func<CancellationToken, Task<SalesApprovalRequestCommandResult>> execute, Func<CancellationToken, Task<SalesApprovalRequestCommandResult?>> readOriginalKey,
-        Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken)
+        Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken,
+        SalesDraftStateCommandRequest? nativeRequest = null, SalesOverDeliveryRequestDecisionCommandV1? decision = null)
     {
         RequireEnvelope(envelope); RequireHash(requestHash);
         if (commandName is not (SalesApprovalRequestCommands.ApproveOverDeliveryV1 or SalesApprovalRequestCommands.RejectOverDeliveryV1))
@@ -37,7 +38,7 @@ public sealed partial class SalesStore : ISalesOverDeliveryRequestApprovalStoreV
             var cleanBefore = OverDeliveryRequestApprovalEntryIsClean;
             await freshFence(cancellationToken); cancellationToken.ThrowIfCancellationRequested();
             if (!cleanBeforeAuthority || !cleanBefore || !OverDeliveryRequestApprovalEntryIsClean) throw OverDeliveryRequestApprovalUnavailable();
-            var state = new OwnedOverDeliveryRequestApproval(RequireResolvedCompany(), envelope, requestHash, commandName, freshFence, replayOnly);
+            var state = new OwnedOverDeliveryRequestApproval(RequireResolvedCompany(), envelope, requestHash, commandName, freshFence, replayOnly) { NativeRequest = nativeRequest, Decision = decision };
             IDbContextTransaction? transaction = null;
             var committed = false; var disposing = false;
             ownedOverDeliveryRequestApproval = state;
@@ -54,6 +55,8 @@ public sealed partial class SalesStore : ISalesOverDeliveryRequestApprovalStoreV
                 catch (SalesDraftServiceException refusal) when (refusal.IsReplay
                     || state.Saved && state.Terminal is { } recorded && recorded.Status == refusal.Status && recorded.Code == refusal.Code)
                 { terminal = refusal; }
+                if (terminal is null && result is not null && nativeRequest is not null)
+                    result = await AttachOverDeliveryRequestReceiptAsync(result, state, cancellationToken);
                 await OverDeliveryRequestApprovalFenceAsync(cancellationToken); RequireFlushed();
                 if (terminal is null && result is not null && !result.IsReplay && !state.Saved)
                     throw new InvalidOperationException("Native over-delivery request decision has no saved attempt.");
@@ -116,6 +119,7 @@ public sealed partial class SalesStore : ISalesOverDeliveryRequestApprovalStoreV
     {
         if (ownedOverDeliveryRequestApproval is not { } state)
         {
+            if (overDeliveryRequestDecisionReadFence is not null) await overDeliveryRequestDecisionReadFence(token);
             return;
         }
         token.ThrowIfCancellationRequested(); RequireCompany(state.CompanyId);
@@ -164,7 +168,7 @@ public sealed partial class SalesStore : ISalesOverDeliveryRequestApprovalStoreV
         new(SalesDraftProblemCodesV1.OwnerReferenceUnavailable, "Fazla teslim güvenli karar sınırı kullanılamıyor.");
     private sealed record OwnedOverDeliveryRequestApproval(Guid CompanyId, SalesDraftWriteEnvelope Envelope, string Hash, string Command,
         Func<CancellationToken, Task> FreshFence, bool ReplayOnly)
-    { internal bool Saved; internal SalesDraftTerminalRefusal? Terminal; }
+    { internal bool Saved; internal SalesDraftTerminalRefusal? Terminal; internal SalesDraftStateCommandRequest? NativeRequest; internal SalesOverDeliveryRequestDecisionCommandV1? Decision; }
     private sealed class OverDeliveryRequestApprovalLostRace(bool nativeConcurrentChange) : Exception
     { internal bool NativeConcurrentChange { get; } = nativeConcurrentChange; }
     private sealed class OverDeliveryRequestApprovalNoWinner : Exception;

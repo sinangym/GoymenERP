@@ -8,5 +8,6 @@ public interface ISalesOverDeliveryRequestApprovalStoreV1
         string requestHash, string commandName, bool cleanBeforeAuthority,
         Func<CancellationToken, Task<SalesApprovalRequestCommandResult>> execute,
         Func<CancellationToken, Task<SalesApprovalRequestCommandResult?>> readOriginalKey,
-        Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken);
+        Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken,
+        SalesDraftStateCommandRequest? nativeRequest = null, SalesOverDeliveryRequestDecisionCommandV1? decision = null);
 }

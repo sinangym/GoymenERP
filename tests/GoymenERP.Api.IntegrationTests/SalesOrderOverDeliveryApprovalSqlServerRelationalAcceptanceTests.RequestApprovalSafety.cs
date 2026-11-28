@@ -55,8 +55,9 @@ public sealed partial class SalesOrderOverDeliveryApprovalSqlServerRelationalAcc
                 safe.Authority.AfterAwait = () =>
                 {
                     if (safe.Writer.HasPendingDrafts) pendingSeen = true;
-                    // Native Save post-fence1; whole-command post-execute2; final precommit3. No receipt IO in this increment.
-                    var lateSave = save.Saved && ++savedFences == (phase == "precommit" ? 3 : 1);
+                    // Actual post-Save1; receipt attempt/request-audit/document reads pre/post2..7; approval order-audit8..9.
+                    // Then whole-command post-execute and precommit: approval11/rejection9. Each injected phase retains rollback assertions.
+                    var lateSave = save.Saved && ++savedFences == (phase == "precommit" ? approve ? 11 : 9 : 1);
                     if (phase == "after-audit" ? pendingSeen && !safe.Writer.HasPendingDrafts && !save.Saved : lateSave)
                     { fired = true; safe.Authority.Granted = false; }
                     return Task.CompletedTask;

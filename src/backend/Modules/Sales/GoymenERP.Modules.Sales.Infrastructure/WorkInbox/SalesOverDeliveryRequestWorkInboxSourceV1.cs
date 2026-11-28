@@ -14,11 +14,12 @@ namespace GoymenERP.Modules.Sales.Infrastructure.WorkInbox;
 /// actual = the requested shipped total, deviation = their difference, in the order unit (left empty: Sales stores the unit
 /// identity, not its code).
 /// </summary>
-internal sealed class SalesOverDeliveryRequestWorkInboxSourceV1(
+internal sealed partial class SalesOverDeliveryRequestWorkInboxSourceV1(
     ISalesWorkInboxApprovalStoreV1 store,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
-    IErpAuthorityRevalidationService authority)
+    IErpAuthorityRevalidationService authority,
+    ISalesOverDeliveryRequestDecisionReadV1? owner = null)
     : SalesWorkInboxSourceBaseV1(companyContext, currentUser, authority)
 {
     public const string KindName = "sales.over-delivery-request.v1";

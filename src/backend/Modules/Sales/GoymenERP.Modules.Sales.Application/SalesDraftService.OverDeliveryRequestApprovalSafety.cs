@@ -10,7 +10,7 @@ public sealed partial class SalesDraftService
     { overDeliveryRequestApprovalSafety = true; return this; }
 
     private async Task<SalesApprovalRequestCommandResult> RunOverDeliveryRequestApprovalAsync(Guid id, int no,
-        SalesDraftStateCommandRequest request, SalesCommandMetadata metadata, bool approve, CancellationToken token)
+        SalesDraftStateCommandRequest request, SalesCommandMetadata metadata, bool approve, CancellationToken token, SalesOverDeliveryRequestDecisionCommandV1? decision = null)
     {
         ArgumentNullException.ThrowIfNull(request); ArgumentNullException.ThrowIfNull(metadata);
         token.ThrowIfCancellationRequested();
@@ -34,7 +34,7 @@ public sealed partial class SalesDraftService
                 {
                     var replay = await FindApprovalReplayAsync(scope, permission, envelope, hash, command, ct);
                     return replay is null ? null : await ApprovalReplayedAsync(scope, permission, replay, ct);
-                }, async ct => { scope = await RequireStillAsync(scope, permission, ct); ct.ThrowIfCancellationRequested(); }, token);
+                }, async ct => { scope = await RequireStillAsync(scope, permission, ct); ct.ThrowIfCancellationRequested(); }, token, request, decision);
         }
         catch (SalesDraftStoreException refusal) { throw Store(refusal); }
     }
