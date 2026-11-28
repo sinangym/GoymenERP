@@ -8,6 +8,41 @@ namespace GoymenERP.Purchasing.UnitTests;
 public sealed partial class PurchaseIncomingInvoiceWorkflowTests
 {
     [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task Both_native_versions_capture_control_evidence_before_the_first_authority_await(bool v2)
+    {
+        var world = new World(); var legacy = UnorderedRecordRequest();
+        var originalEvidence = legacy.Evidence with { DocumentId = Guid.NewGuid() };
+        var controls = new List<PurchaseAcceptanceDocumentEvidenceV1> { originalEvidence };
+        legacy = legacy with { ControlEvidence = controls };
+        var original = legacy with { ControlEvidence = Array.AsReadOnly(new[] { originalEvidence }) };
+        var masters = new UnorderedMasterPorts(original); var documents = new OccurrenceDocuments();
+        var store = new UnorderedMemoryStore(); var authorityCalls = 0;
+        world.Authority.AfterMeasure = _ =>
+        {
+            if (++authorityCalls == 1) controls[0] = originalEvidence with { DocumentId = Guid.NewGuid() };
+        };
+        var service = new PurchaseUnorderedAcceptanceServiceV1(world.Company, world.User, world.Authority, new Correlation(),
+            store, new Clock(), OccurrenceComposite(world, masters, documents));
+        var metadata = Metadata("nopo-call-time-evidence");
+        var occurrence = new RecordPurchaseUnorderedAcceptanceV2(legacy, new(2026, 10, 9), " raw ");
+        var first = v2 ? await service.RecordOccurrenceAsync(occurrence, metadata) : await service.RecordAsync(legacy, metadata);
+        Assert.NotEqual(originalEvidence, Assert.Single(controls));
+        Assert.Equal(originalEvidence, Assert.Single(first.Record.Source.ControlEvidence));
+        Assert.NotSame(controls, first.Record.Source.ControlEvidence);
+        var expectedHash = v2 ? PurchaseUnorderedAcceptanceOwnerContractV1.RequestHash(occurrence with { Occurrence = original })
+            : PurchaseUnorderedAcceptanceOwnerContractV1.RequestHash(original);
+        Assert.Equal(expectedHash, PurchaseUnorderedAcceptanceOwnerContractV1.RequestHash(first.Record));
+        if (v2) Assert.Equal(new[] { legacy.Evidence, originalEvidence }, documents.Calls);
+        else Assert.Equal(originalEvidence, Assert.Single(masters.Evidence.Facts!.ControlEvidence));
+        var originalCorrelation = first.OriginalCorrelationId; var preparedCalls = masters.Calls.Count;
+        var replay = v2 ? await service.RecordOccurrenceAsync(occurrence with { Occurrence = original }, metadata)
+            : await service.RecordAsync(original, metadata);
+        Assert.True(replay.IsReplay); Assert.Equal(originalCorrelation, replay.OriginalCorrelationId);
+        Assert.Equal(first.Record, replay.Record); Assert.Equal(preparedCalls, masters.Calls.Count);
+    }
+
+    [Theory]
     [InlineData(null)] [InlineData("")] [InlineData("  Fiilî kabul\nsonra kontrol  ")]
     public async Task Explicit_occurrence_day_and_optional_raw_reason_are_recorded_without_a_preexisting_acceptance(string? reason)
     {

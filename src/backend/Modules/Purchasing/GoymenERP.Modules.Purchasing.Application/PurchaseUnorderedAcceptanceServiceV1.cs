@@ -27,8 +27,8 @@ public sealed class PurchaseUnorderedAcceptanceServiceV1(ICompanyContext company
         PurchaseUnorderedAcceptanceDeclarationV2? declaration, PurchasingCommandMetadata metadata, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request); ArgumentNullException.ThrowIfNull(metadata);
-        var scope = await RequireAsync(cancellationToken);
         var frozen = PurchaseUnorderedAcceptanceOwnerContractV1.Freeze(request);
+        var scope = await RequireAsync(cancellationToken);
         if (!PurchaseUnorderedAcceptanceOwnerContractV1.Valid(frozen)) throw Failure(400);
         var envelope = new PurchasingWriteEnvelope(scope.Actor, PurchasingPermissionManifestV1.GoodsReceiptsRecord,
             scope.Roles, metadata.CorrelationId, metadata.CausationId, metadata.IdempotencyKey, correlation.SourceChannel,
