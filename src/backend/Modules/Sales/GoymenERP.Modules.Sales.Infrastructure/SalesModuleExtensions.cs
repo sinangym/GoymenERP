@@ -176,7 +176,9 @@ public static class SalesModuleExtensions
         // API-40 (SAT-D288…SAT-D294): the customer return invoice over the Sales store and the invoice store. The Finance reversal
         // port is the Finance owner's and is NOT composed here: without it the finalisation is 503 before any read (SAT-D294).
         services.AddScoped<ISalesCustomerReturnStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
-        services.AddScoped<ISalesCustomerReturnService>(CreateCustomerReturnService);
+        services.AddScoped<SalesCustomerReturnService>(CreateCustomerReturnService);
+        services.AddScoped<ISalesCustomerReturnService>(serviceProvider => serviceProvider.GetRequiredService<SalesCustomerReturnService>());
+        services.AddScoped<ISalesCustomerReturnDecisionReadV1>(serviceProvider => serviceProvider.GetRequiredService<SalesCustomerReturnService>());
         // S-11 (SAT-D28, NS-13, SAT-D346): the sales contract over the Sales store. The discount limit source is the Settings
         // owner's and is NOT composed here: without it no limit is defined and every discount goes to approval (SAT-D346).
         services.AddScoped<ISalesContractStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());

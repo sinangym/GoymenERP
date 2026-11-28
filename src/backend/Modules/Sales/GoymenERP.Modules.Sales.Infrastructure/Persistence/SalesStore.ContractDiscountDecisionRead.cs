@@ -16,7 +16,7 @@ public sealed partial class SalesStore : ISalesContractDiscountDecisionReadStore
         CancellationToken token, bool allowOwnedContractReceipt = false)
     {
         ArgumentNullException.ThrowIfNull(freshFence); token.ThrowIfCancellationRequested(); var company = RequireResolvedCompany();
-        if (contractDiscountDecisionReadFence is not null || riskExceptionDecisionReadFence is not null || quoteDecisionReadFence is not null
+        if (contractDiscountDecisionReadFence is not null || customerReturnDecisionReadFence is not null || riskExceptionDecisionReadFence is not null || quoteDecisionReadFence is not null
             || overDeliveryRequestDecisionReadFence is not null || ownedRequestApproval is not null || ownedQuoteApproval is not null
             || ownedPriceFloorApproval is not null || ownedDiscountApproval is not null || ownedOverDeliveryRequestApproval is not null
             || ownedRiskExceptionDecision is not null || ownedRemainderDecision is not null || remainderDecisionReadFence is not null || ownedCustomerReturnDecision is not null

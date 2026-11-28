@@ -27,7 +27,7 @@ public sealed partial class SalesStore : ISalesCustomerReturnDecisionReadStoreV1
             || ownedContractDiscountDecision is not null || ownedRemainderDecision is not null || ownedPriceFloorApproval is not null
             || ownedDiscountApproval is not null || ownedOverDeliveryRequestApproval is not null || ownedRiskExceptionDecision is not null
             || ownedRequestApproval is not null || ownedQuoteApproval is not null || overDeliveryRequestDecisionReadFence is not null
-            || riskExceptionDecisionReadFence is not null || remainderDecisionReadFence is not null || quoteDecisionReadFence is not null)
+            || riskExceptionDecisionReadFence is not null || remainderDecisionReadFence is not null || quoteDecisionReadFence is not null || contractDiscountDecisionReadFence is not null)
             throw new InvalidOperationException("Müşteri iadesi karar okuması başka sahip işlemiyle karışamaz.");
         var company = RequireResolvedCompany();
         customerReturnDecisionReadFence = async ct => { ct.ThrowIfCancellationRequested(); RequireCompany(company); await fence(ct); ct.ThrowIfCancellationRequested(); RequireCompany(company); };

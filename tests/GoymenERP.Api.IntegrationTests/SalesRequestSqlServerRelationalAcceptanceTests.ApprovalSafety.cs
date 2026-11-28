@@ -103,6 +103,9 @@ public sealed partial class SalesRequestSqlServerRelationalAcceptanceTests
         var contracts = p.GetRequiredService<SalesContractService>();
         Assert.Same(contracts, p.GetRequiredService<ISalesContractService>());
         Assert.Same(contracts, p.GetRequiredService<ISalesContractDiscountDecisionReadV1>());
+        var customerReturns = p.GetRequiredService<SalesCustomerReturnService>();
+        Assert.Same(customerReturns, p.GetRequiredService<ISalesCustomerReturnService>());
+        Assert.Same(customerReturns, p.GetRequiredService<ISalesCustomerReturnDecisionReadV1>());
         var store = p.GetRequiredService<SalesStore>(); Assert.Same(store, p.GetRequiredService<ISalesRequestStore>());
         Assert.Same(store, p.GetRequiredService<ISalesRiskExceptionStore>());
         Assert.Same(p.GetRequiredService<ISalesRiskExceptionService>(), p.GetRequiredService<ISalesRiskExceptionDecisionReadV1>());
