@@ -36,9 +36,23 @@ describe('C9 content-free feedback contract',()=>{
   expect((await sendAiFeedback(company,id,request,'same-key')).type).toBe('unknown')
   fetch.mockClear();expect((await sendAiFeedback(company,id+'\n',request,'same-key')).type).toBe('unknown');expect(fetch).not.toHaveBeenCalled()
  })
- it.each([403,404,409,503])('keeps native status %i separate from an applied receipt and does not retry',async status=>{
+ it.each([401,403,404,409,503])('keeps native status %i separate from an applied receipt and does not retry',async status=>{
   const fetch=vi.fn(async()=>new Response('{}',{status}));vi.stubGlobal('fetch',fetch)
-  expect((await sendAiFeedback(company,id,request,'key')).type).toBe(status===503?'unknown':'refused');expect(fetch).toHaveBeenCalledTimes(1)
+  expect((await sendAiFeedback(company,id,request,'key')).type).toBe(status===403||status===503?'unknown':'refused');expect(fetch).toHaveBeenCalledTimes(1)
+ })
+ it('reports first403 while retaining an unknown command and replays exactly the original body/key',async()=>{
+  let posts=0
+  const fetch=vi.fn(async(_input:RequestInfo|URL,_init?:RequestInit)=>++posts===1?new Response('{}',{status:403}):new Response(JSON.stringify({...receipt,replayed:true}),{status:200,headers:{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'}}))
+  vi.stubGlobal('fetch',fetch);const report=vi.fn()
+  expect(await sendAiFeedback(company,id,request,'frozen-key',report)).toEqual({type:'unknown',reason:'unexpected'})
+  expect(report).toHaveBeenCalledExactlyOnceWith(403)
+  expect((await sendAiFeedback(company,id,request,'frozen-key',report)).type).toBe('applied')
+  expect(fetch.mock.calls).toHaveLength(2)
+  expect(fetch.mock.calls[0]![1]).toEqual(fetch.mock.calls[1]![1])
+  expect(JSON.parse(fetch.mock.calls[1]![1]!.body as string)).toEqual(request)
+  fetch.mockResolvedValue(new Response('{}',{status:401}));report.mockClear()
+  expect((await sendAiFeedback(company,id,request,'another-key',report)).type).toBe('refused')
+  expect(report).not.toHaveBeenCalled()
  })
  it('uses the actual answer path/company and rejects foreign GET identity',async()=>{
   const fetch=vi.fn(async()=>new Response(JSON.stringify({...view,answerId:company}),{status:200}));vi.stubGlobal('fetch',fetch)

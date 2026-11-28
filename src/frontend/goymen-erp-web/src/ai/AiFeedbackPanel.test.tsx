@@ -52,9 +52,9 @@ it.each([{company:COMPANY_B,answer:id,capabilities:[AI_PANEL_CAPABILITY]},{compa
  const calls=installFetch({capabilities,respond:url=>url.includes(path)?json(view):undefined});mount(company,answer)
  await waitFor(()=>expect(calls.some(call=>call.url.endsWith('/shell/capabilities'))).toBe(true));expect(calls.some(call=>call.url.includes('/ai/answers/'))).toBe(false)
 })
-it('drops a pending feedback UI across a new authentication session',async()=>{
+it.each([503,403])('drops a pending feedback UI across a new authentication session after %i',async status=>{
  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-feedback-old'})
- const calls=installFetch({capabilities:[AI_PANEL_CAPABILITY],respond:(url,init)=>url.includes(path)?init?.method==='POST'?problem(503):json(view):undefined})
+ const calls=installFetch({capabilities:[AI_PANEL_CAPABILITY],respond:(url,init)=>url.includes(path)?init?.method==='POST'?problem(status):json(view):undefined})
  mount();await screen.findByLabelText(T.kind);fireEvent.change(screen.getByLabelText(T.kind),{target:{value:'Accepted'}});fireEvent.click(screen.getByRole('button',{name:T.save}));await screen.findByText(T.unknown)
  cleanup();Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-feedback-new'});mount();await screen.findByLabelText(T.kind)
  expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(call=>call.url.includes(path)&&call.method==='POST')).toHaveLength(1)
@@ -72,19 +72,39 @@ it('allows an explicitly reasoned revert only while the latest owner state is Ac
  fireEvent.change(screen.getByLabelText(T.reason),{target:{value:'other'}});fireEvent.click(screen.getByRole('button',{name:T.save}));await screen.findByText(T.done,{exact:false})
  expect(calls.filter(call=>call.url.includes(path)&&call.method==='POST')[0]!.body).toEqual({expectedVersion:'1',kind:'Reverted',reasonCode:'other'})
 })
-it('clears the feedback surface after a fresh 403 authority loss',async()=>{
- const capabilities=[AI_PANEL_CAPABILITY]
- const calls=installFetch({capabilities,respond:(url,init)=>{if(!url.includes(path))return undefined;if(init?.method==='POST'){capabilities.splice(0);return problem(403)}return json(view)}});mount()
- await screen.findByLabelText(T.kind);fireEvent.change(screen.getByLabelText(T.kind),{target:{value:'Accepted'}});fireEvent.click(screen.getByRole('button',{name:T.save}))
- await waitFor(()=>expect(screen.queryByRole('region',{name:T.heading})).toBeNull());expect(calls.filter(call=>call.url.includes(path)&&call.method==='POST')).toHaveLength(1)
+it('reports first403 authority loss yet reconciles the original frozen feedback after same-session remount',async()=>{
+ Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-feedback-403'})
+ const capabilities=[AI_PANEL_CAPABILITY];let posts=0
+ const calls=installFetch({capabilities,respond:(url,init)=>{
+  if(!url.includes(path))return undefined
+  if(init?.method==='POST'){
+   if(++posts===1){capabilities.splice(0);return problem(403)}
+   return json({...receipt,replayed:true},200,{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original'})
+  }
+  return json(posts===0?view:{...view,version:'3',kind:'Rejected',reasonCode:'other'})
+ }})
+ mount();await screen.findByLabelText(T.kind);await userEvent.setup().selectOptions(screen.getByLabelText(T.kind),'Accepted');await userEvent.setup().click(screen.getByRole('button',{name:T.save}))
+ await waitFor(()=>expect(screen.queryByRole('region',{name:T.heading})).toBeNull())
+ expect(calls.filter(call=>call.url.includes(path)&&call.method==='POST')).toHaveLength(1)
+ cleanup();capabilities.push(AI_PANEL_CAPABILITY);mount();await screen.findByText(T.unknown)
+ await screen.findByText(`${T.current}: ${T.kinds.Rejected} · ${T.version}: 3`)
+ expect((screen.getByLabelText(T.kind) as HTMLSelectElement).value).toBe('Accepted')
+ const reads=calls.filter(call=>call.url.includes(path)&&call.method==='GET').length
+ await userEvent.setup().click(screen.getByRole('button',{name:T.retry}))
+ await screen.findByText(`${T.done} ${T.receipt}: 1`)
+ const sent=calls.filter(call=>call.url.includes(path)&&call.method==='POST')
+ expect(sent).toHaveLength(2);expect(sent[1]!.body).toEqual({expectedVersion:'0',kind:'Accepted',reasonCode:null})
+ expect(sent[0]!.body).toEqual(sent[1]!.body);expect(sent[0]!.headers['Idempotency-Key']).toBe(sent[1]!.headers['Idempotency-Key'])
+ // A refresh is allowed only after the immutable original receipt has reconciled the write.
+ expect(calls.slice(0,calls.indexOf(sent[1]!)).filter(call=>call.url.includes(path)&&call.method==='GET')).toHaveLength(reads)
 })
-it('does not release a late receipt into another committed company',async()=>{
+it.each([200,403])('does not release a late %i into another committed company',async status=>{
  let release!:(response:Response)=>void
  installFetch({capabilities:[AI_PANEL_CAPABILITY],respond:(url,init)=>url.includes(path)?init?.method==='POST'?new Promise<Response>(resolve=>{release=resolve}):json(view):undefined});mount()
  await screen.findByLabelText(T.kind);fireEvent.change(screen.getByLabelText(T.kind),{target:{value:'Accepted'}});fireEvent.click(screen.getByRole('button',{name:T.save}))
  await userEvent.setup().selectOptions(screen.getByRole('combobox',{name:'Şirket'}),COMPANY_B)
  await waitFor(()=>expect(screen.queryByRole('region',{name:T.heading})).toBeNull())
- await act(async()=>{release(json(receipt));await Promise.resolve()});expect(screen.queryByText(T.done,{exact:false})).toBeNull()
+ await act(async()=>{release(status===200?json(receipt):problem(403));await Promise.resolve()});expect(screen.queryByText(T.done,{exact:false})).toBeNull()
 })
 
 it('starts a fresh generation read on route return even while another observer retains the old in-flight feedback query',async()=>{
