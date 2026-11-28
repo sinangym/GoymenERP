@@ -29,6 +29,7 @@ describe('Floor exact Work contract with unchanged native pricing decoder',()=>{
   ['line duplicate',f=>Object.assign(f.salesPriceFloor,{lines:[f.salesPriceFloor.lines[0]!,f.salesPriceFloor.lines[0]!]})],['null line',f=>Object.assign(f.salesPriceFloor,{lines:[null]})],
   ['product numeric version',f=>Object.assign(f.salesPriceFloor.lines[0]!,{productVersion:9007199254740993})],['product version LF',f=>Object.assign(f.salesPriceFloor.lines[0]!,{productVersion:'1\n'})],
   ['quantity LF',f=>Object.assign(f.salesPriceFloor.lines[0]!,{quantity:'1\n'})],['quantity zero',f=>Object.assign(f.salesPriceFloor.lines[0]!,{quantity:'0.000'})],
+  ['floor without reference',f=>Object.assign(f.salesPriceFloor.lines[0]!.pricing!,{priceReference:null})],['floor without unit',f=>Object.assign(f.salesPriceFloor.lines[0]!.pricing!,{priceUnitId:null})],
   ['price LF',f=>Object.assign(f.salesPriceFloor.lines[0]!.pricing!,{unitPrice:'90.5\n'})],['floor CR',f=>Object.assign(f.salesPriceFloor.lines[0]!.pricing!.priceReference!,{floorUnitPrice:'95\r'})],
   ['lower LF',f=>Object.assign(f.salesPriceFloor.lines[0]!.pricing!.priceReference!,{lowerQuantity:'0\n'})],['upper CR',f=>Object.assign(f.salesPriceFloor.lines[0]!.pricing!.priceReference!,{upperQuantity:'2\r'})],
   ['referenceInt32',f=>Object.assign(f.salesPriceFloor.lines[0]!.pricing!.priceReference!,{versionNo:2147483648})],['invalid calendar',f=>{Object.assign(f.salesPriceFloor,{businessDate:'2026-02-30'})}],

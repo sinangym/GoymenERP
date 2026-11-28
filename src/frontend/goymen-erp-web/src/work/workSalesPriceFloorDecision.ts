@@ -28,6 +28,7 @@ function pricing(v:unknown,line:Record<string,unknown>,date:(v:unknown)=>boolean
  if(!record(v)||!hasExactKeys(v,['lineId','lineNo','unitPrice','priceUnitId','priceSource','priceReference','discountPercent','discountAmount','surchargePercent','surchargeAmount','netUnitPrice','floorException','discountCheck'])
   ||!same(v.lineId,line.lineId as string)||v.lineNo!==line.lineNo||v.priceUnitId!==null&&!guid(v.priceUnitId)
   ||!['unitPrice','discountPercent','discountAmount','surchargePercent','surchargeAmount','netUnitPrice'].every(k=>nullableDecimal(v[k]))
+  ||line.floorException!==null&&(v.unitPrice===null||v.priceUnitId===null||v.netUnitPrice===null||!record(v.priceReference)||v.priceReference.floorUnitPrice===null)
   ||v.floorException!==null&&!exception(v.floorException,date)||!sameException(v.floorException,line.floorException))return null
  if(v.priceReference!==null){const r=v.priceReference;if(!record(r)||!guid(r.priceListId)||!guid(r.priceUnitId)||!int32(r.versionNo)||!date(r.validFrom)||r.validThrough!==null&&!date(r.validThrough)
   ||!['unitPrice','floorUnitPrice','lowerQuantity','upperQuantity'].every(k=>nullableDecimal(r[k])))return null}
