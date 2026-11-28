@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { CariCreatePage } from './CariCreatePage'
 import { CariTaxIdentityPanel } from './CariTaxIdentityPanel'
+import { CariCreationNeed } from './CariCreationNeed'
 import { API_BASE } from './clientContract'
 import type { CounterpartyMutationResult } from './mutationContract'
 import { QUICK_CARI_TEXT as T } from './quickCreateText'
@@ -30,13 +31,14 @@ function QuickCreate({ initialRoles, disabled = false, onCreated, onUnresolvedCh
   const [record, setRecord] = useState<CounterpartyMutationResult | null>(null)
   const [taxOpened, setTaxOpened] = useState(false)
   const [createUnresolved, setCreateUnresolved] = useState(false), [taxUnresolved, setTaxUnresolved] = useState(false)
+  const [needUnresolved, setNeedUnresolved] = useState(false)
   const [message, setMessage] = useState<string | null>(null), [completed, setCompleted] = useState(false)
   const opener = useRef<HTMLButtonElement>(null), panel = useRef<HTMLDivElement>(null)
   const eligibility = useRef<AbortController | null>(null)
   useEffect(() => () => eligibility.current?.abort(), [])
   useEffect(() => { if (!allowed) eligibility.current?.abort() }, [allowed])
   useEffect(() => { if (visible) panel.current?.focus() }, [visible])
-  useEffect(() => { onUnresolvedChange?.(createUnresolved || taxUnresolved || message === T.checking) }, [createUnresolved, taxUnresolved, message, onUnresolvedChange])
+  useEffect(() => { onUnresolvedChange?.(createUnresolved || taxUnresolved || needUnresolved || message === T.checking) }, [createUnresolved, taxUnresolved, needUnresolved, message, onUnresolvedChange])
   const close = () => { setVisible(false); if (completed && !taxOpened) setOpened(false); opener.current?.focus() }
   const checkOwner = async (record: CounterpartyMutationResult) => {
     if (!allowed) return
@@ -58,7 +60,7 @@ function QuickCreate({ initialRoles, disabled = false, onCreated, onUnresolvedCh
     else if (!event.shiftKey && (document.activeElement === last || document.activeElement === panel.current)) { event.preventDefault(); first.focus() }
   }
   return <>
-    {allowed || opened ? <button type="button" ref={opener} disabled={disabled} onClick={() => { setOpened(true); setVisible(true); if (!opened) { setMessage(null); setCompleted(false); setRecord(null); setTaxOpened(false); setTaxUnresolved(false) } }}>{opened ? T.resume : T.open}</button> : <p>{T.denied}</p>}
+    {allowed || opened ? <button type="button" ref={opener} disabled={disabled} onClick={() => { setOpened(true); setVisible(true); if (!opened) { setMessage(null); setCompleted(false); setRecord(null); setTaxOpened(false); setTaxUnresolved(false) } }}>{opened ? T.resume : T.open}</button> : <><p>{T.denied}</p><CariCreationNeed disabled={disabled} onUnresolvedChange={setNeedUnresolved} /></>}
     {opened ? createPortal(<div hidden={!visible} className={`${modal.backdrop} ${styles.backdrop}`} onSubmit={event => event.stopPropagation()}>
       <div role="dialog" aria-modal="true" aria-label={T.title} className={`${modal.panel} ${styles.panel}`} ref={panel} tabIndex={-1} onKeyDown={keyDown}>
         <p>{T.note}</p><button type="button" onClick={close}>{T.close}</button>
