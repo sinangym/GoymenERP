@@ -77,10 +77,21 @@ describe('Floor full human and frozen all-line Work lifecycle',()=>{
  it('invalidates all entered reasons when a fresh current human snapshot changes',async()=>{
   let gets=0;const client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})
   const calls=installFetch({capabilities:[cap],respond:url=>url.includes(ownerPath)?json(fixture(COMPANY_A,true,++gets===1?'9':'11')):undefined});mount(client);await screen.findByRole('region',{name:T.title});reasons();expect(screen.getByRole('button',{name:W.approve}).matches(':disabled')).toBe(false)
-  await act(async()=>{await client.refetchQueries({predicate:q=>q.queryKey.includes('work-decision')})});expect((screen.getByRole('textbox',{name:T.lineReason(1)}) as HTMLTextAreaElement).value).toBe('');expect(screen.getByRole('button',{name:W.approve}).matches(':disabled')).toBe(true);expect(calls.some(c=>c.method==='POST')).toBe(false);client.clear()
+  await act(async()=>{await client.refetchQueries({predicate:q=>q.queryKey.includes('work-decision')})})
+  // The refetch promise settles before the QueryObserver's scheduled React notification.
+  await waitFor(()=>{
+   expect(within(screen.getByRole('region',{name:T.title})).getByText('11',{exact:true})).toBeTruthy()
+   for(const n of [1,2])expect((screen.getByRole('textbox',{name:T.lineReason(n)}) as HTMLTextAreaElement).value).toBe('')
+   expect(screen.getByRole('button',{name:W.approve}).matches(':disabled')).toBe(true)
+  });expect(calls.filter(c=>c.url.includes(ownerPath)&&c.method==='GET')).toHaveLength(2);expect(calls.some(c=>c.method==='POST')).toBe(false);client.clear()
  })
  it('requires new line confirmation after native409 and refreshes only the fresh refused attempt',async()=>{
-  let gets=0;const calls=installFetch({capabilities:[cap],respond:(url,init)=>url.includes(ownerPath)?init?.method==='POST'?problem(409):json(fixture(COMPANY_A,true,++gets===1?'9':'11')):undefined});mount();await screen.findByRole('region',{name:T.title});reasons();fireEvent.click(screen.getByRole('button',{name:W.approve}));await screen.findByText(/409/);await waitFor(()=>expect(gets).toBe(2));expect((screen.getByRole('textbox',{name:T.lineReason(1)}) as HTMLTextAreaElement).value).toBe('');expect(screen.getByRole('button',{name:W.approve}).matches(':disabled')).toBe(true);expect(calls.filter(c=>c.method==='POST')).toHaveLength(1)
+  let gets=0;const calls=installFetch({capabilities:[cap],respond:(url,init)=>url.includes(ownerPath)?init?.method==='POST'?problem(409):json(fixture(COMPANY_A,true,++gets===1?'9':'11')):undefined});mount();await screen.findByRole('region',{name:T.title});reasons();fireEvent.click(screen.getByRole('button',{name:W.approve}));expect((await screen.findByRole('alert')).textContent).toBe(`${W.refused} (409)`)
+  await waitFor(()=>{
+   expect(gets).toBe(2);expect(within(screen.getByRole('region',{name:T.title})).getByText('11',{exact:true})).toBeTruthy()
+   for(const n of [1,2])expect((screen.getByRole('textbox',{name:T.lineReason(n)}) as HTMLTextAreaElement).value).toBe('')
+   expect(screen.getByRole('button',{name:W.approve}).matches(':disabled')).toBe(true)
+  });expect(calls.filter(c=>c.method==='POST')).toHaveLength(1)
  })
  it.each(['79228162514264337593543950336','0.00000000000000000000000000001'])('keeps malformed native CLR GET %s out of the human panel and approval controls',async value=>{
   const bad=fixture(COMPANY_A);Object.assign(bad.salesPriceFloor.lines[0]!.pricing!,{unitPrice:value,netUnitPrice:value})
@@ -89,8 +100,9 @@ describe('Floor full human and frozen all-line Work lifecycle',()=>{
   expect(screen.queryByRole('region',{name:T.title})).toBeNull();expect(screen.queryByRole('button',{name:W.approve})).toBeNull();expect(screen.queryByRole('textbox')).toBeNull()
   expect(calls.filter(c=>c.url.includes(ownerPath)&&c.method==='GET')).toHaveLength(1);expect(calls.some(c=>c.method==='POST')).toBe(false)
  })
+ // A business 403 invalidates shell capabilities; the real route then uses its neutral non-disclosure block.
  it.each([403,404,503])('renders GET refusal/unavailable without human facts HTTP%s',async status=>{
-  const calls=installFetch({capabilities:[cap],respond:url=>url.includes(ownerPath)?problem(status):undefined});mount();await waitFor(()=>expect(document.querySelector(`[data-state="${status===403?'forbidden':status===404?'not-found':'service-unavailable'}"]`)).not.toBeNull());expect(calls.filter(c=>c.url.includes(ownerPath)&&c.method==='GET')).toHaveLength(1);expect(screen.queryByRole('region',{name:T.title})).toBeNull();expect(calls.some(c=>c.method==='POST')).toBe(false)
+  const calls=installFetch({capabilities:[cap],respond:url=>url.includes(ownerPath)?problem(status):undefined});mount();await waitFor(()=>expect(document.querySelector(`[data-state="${status===403||status===404?'not-found':'service-unavailable'}"]`)).not.toBeNull());expect(calls.filter(c=>c.url.includes(ownerPath)&&c.method==='GET')).toHaveLength(1);expect(screen.queryByRole('region',{name:T.title})).toBeNull();expect(screen.queryByRole('button',{name:W.approve})).toBeNull();expect(screen.queryByRole('textbox')).toBeNull();expect(calls.some(c=>c.method==='POST')).toBe(false)
  })
  it.each(['company','actor'])('does not expose or replay another %s context pending attempt',async change=>{
   Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK Floor context'});let posts=0
