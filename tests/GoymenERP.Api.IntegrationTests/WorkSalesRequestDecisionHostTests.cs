@@ -191,6 +191,20 @@ public sealed class WorkSalesRequestDecisionHostTests
     }
 
     private static WorkDecisionRequestV1 Request(bool approve) => new("1", approve, approve ? null : Reason);
+    [Theory] [InlineData(false)] [InlineData(true)]
+    public async Task Foreign_identity_private_carrier_is_refused_before_sales_human_release_or_dispatch(bool decide)
+    {
+        var r = new Rig();
+        r.Source.Change = s => s with { IdentityAccessGrantProof = new(Company, Id, Maker, Actor, Guid.NewGuid(), true,
+            At, null, "SENTETIK role", "SENTETIK target", "Pending", "1", new('A', 64), new('B', 64), new('C', 64)) };
+        var error = await Assert.ThrowsAsync<WorkDecisionException>(async () =>
+        {
+            if (decide) await r.Decide(Request(true)); else await r.Preview();
+        });
+        Assert.Equal(503, error.Status);
+        Assert.Equal(1, r.Native.Reads); // Only the selected source read; no second human view.
+        Assert.Equal(0, r.Native.Calls); Assert.Equal(0, r.Native.Effects); Assert.Empty(r.Native.Commands);
+    }
     private sealed class Rig
     {
         internal readonly MutableCompany Company = new(); internal readonly MutableUser User = new(); internal readonly Authority Authority = new(); internal readonly Delegations Delegations = new();

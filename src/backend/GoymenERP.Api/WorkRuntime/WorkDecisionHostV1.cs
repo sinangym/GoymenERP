@@ -332,6 +332,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             || snapshot.Item.Rules is null || snapshot.Item.Rules.Count > WorkInboxRulesV1.MaxRulesPerItem
             || snapshot.Item.Rules.Any(rule => !WorkInboxRulesV1.IsValidRule(source.Module, rule))
             || !ValidSalesRequestProof(kind, snapshot)
+            // Identity's selected source is not yet a supported Host purpose. Never ignore its private carrier on another kind.
+            || snapshot.IdentityAccessGrantProof is not null
             || !ValidCompanyTaxIdProof(kind, snapshot)
             || !ValidInventoryStockScrapProof(kind, snapshot)
             || !ValidInventoryStockCountProof(kind, snapshot)
