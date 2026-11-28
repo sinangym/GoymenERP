@@ -393,6 +393,8 @@ public sealed record SalesOrderDraftResponse(
 {
     [JsonIgnore]
     public SalesPriceFloorOriginalReceiptV1? OriginalFloorApprovalReceipt { get; init; }
+    [JsonIgnore]
+    public SalesDiscountOriginalReceiptV1? OriginalDiscountApprovalReceipt { get; init; }
 }
 
 public sealed record SalesOrderDraftListResponse(

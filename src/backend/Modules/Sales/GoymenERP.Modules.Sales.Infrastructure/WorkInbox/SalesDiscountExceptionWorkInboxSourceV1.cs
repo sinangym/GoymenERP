@@ -21,11 +21,12 @@ namespace GoymenERP.Modules.Sales.Infrastructure.WorkInbox;
 /// <item><see cref="WithoutListPriceRule"/>: no list price to measure against (SAT-D43); no numbers.</item>
 /// </list>
 /// </summary>
-internal sealed class SalesDiscountExceptionWorkInboxSourceV1(
+internal sealed partial class SalesDiscountExceptionWorkInboxSourceV1(
     ISalesWorkInboxStoreV1 store,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
-    IErpAuthorityRevalidationService authority)
+    IErpAuthorityRevalidationService authority,
+    ISalesDiscountDecisionReadV1? owner = null)
     : SalesWorkInboxSourceBaseV1(companyContext, currentUser, authority)
 {
     public const string KindName = "sales.discount-exception.v1";
@@ -70,35 +71,35 @@ internal sealed class SalesDiscountExceptionWorkInboxSourceV1(
                 continue;
             }
 
-            var documentNo = SalesWorkInboxItemsV1.RequireLabel(draft.DocumentNo);
-            var first = overLimit
-                .OrderBy(line => line.Commercial.DiscountCheck!.CheckedAtUtc)
-                .ThenBy(line => line.LineNo)
-                .First();
-            var firstCheck = first.Commercial.DiscountCheck!;
-            var rules = overLimit
-                .Take(WorkInboxRulesV1.MaxRulesPerItem)
-                .Select(line => Rule(line.Commercial.DiscountCheck!, disclosePrices))
-                .ToArray();
-            var references = SalesWorkInboxItemsV1.References(
-                new[] { SalesWorkInboxItemsV1.OrderReference(draft.Id, documentNo) }
-                    .Concat(overLimit.Select(line => SalesWorkInboxItemsV1.Reference(SalesWorkInboxItemsV1.PriceListRole,
-                        line.Commercial.Reference?.PriceListName, line.Commercial.Reference?.PriceListId)))
-                    .Concat(overLimit.Select(line => SalesWorkInboxItemsV1.Reference(SalesWorkInboxItemsV1.ProductRole,
-                        SalesWorkInboxItemsV1.ProductLabel(line.ProductCode, line.ProductName), line.ProductId))));
-            items.Add(new WorkInboxItemV1(
-                SalesWorkInboxSourceBaseV1.ModuleName,
-                KindName,
-                draft.Id,
-                documentNo,
-                firstCheck.CheckedAtUtc.ToUniversalTime(),
-                SalesWorkInboxItemsV1.OrderLink(draft.Id),
-                SalesWorkInboxItemsV1.RequireActor(firstCheck.CheckedBy),
-                rules,
-                references));
+            items.Add(Item(draft.Id, draft.DocumentNo, overLimit, disclosePrices));
         }
 
         return SalesWorkInboxItemsV1.Page(items, take);
+    }
+
+    internal static WorkSalesDiscountLineProofV1 LineProof(SalesWorkInboxDraftLineV1 line) => new(line.LineId, line.LineNo,
+        SalesWorkInboxItemsV1.RequireActor(line.Commercial.DiscountCheck!.CheckedBy), line.Commercial.DiscountCheck.CheckedAtUtc.ToUniversalTime(),
+        line.ProductId, line.ProductCode, line.ProductName, line.Commercial.Reference?.PriceListId, line.Commercial.Reference?.PriceListName,
+        line.Commercial.DiscountCheck.LimitPercent is not null);
+
+    internal static WorkInboxItemV1 Item(Guid id, string label, IReadOnlyList<SalesWorkInboxDraftLineV1> lines, bool prices) =>
+        Item(id, label, lines.Select(LineProof).ToArray(), lines.Take(WorkInboxRulesV1.MaxRulesPerItem).Select(x => Rule(x.Commercial.DiscountCheck!, prices)).ToArray());
+
+    internal static WorkInboxItemV1 Item(Guid id, string label, IReadOnlyList<WorkSalesDiscountLineProofV1> lines,
+        IReadOnlyList<WorkApprovalRuleResultV1> rules)
+    {
+        var documentNo = SalesWorkInboxItemsV1.RequireLabel(label);
+        var first = lines.OrderBy(x => x.CheckedAtUtc).ThenBy(x => x.LineNo).First();
+        var listed = lines.Where(x => x.PriceListId is not null).OrderBy(x => x.CheckedAtUtc).ThenBy(x => x.LineNo).ToArray();
+        var maker = listed.FirstOrDefault()?.CheckedBy;
+        var references = SalesWorkInboxItemsV1.References(new[] { SalesWorkInboxItemsV1.OrderReference(id, documentNo) }
+            .Concat(lines.Select(x => SalesWorkInboxItemsV1.Reference(SalesWorkInboxItemsV1.PriceListRole, x.PriceListName, x.PriceListId)))
+            .Concat(lines.Select(x => SalesWorkInboxItemsV1.Reference(SalesWorkInboxItemsV1.ProductRole,
+                SalesWorkInboxItemsV1.ProductLabel(x.ProductCode, x.ProductName), x.ProductId))));
+        // SAT-D37 excludes every listed writer. SAT-D45 intentionally excludes no unlisted-only writer.
+        return new(SalesWorkInboxSourceBaseV1.ModuleName, KindName, id, documentNo, first.CheckedAtUtc.ToUniversalTime(),
+            SalesWorkInboxItemsV1.OrderLink(id), maker, rules, references,
+            maker is null ? null : SalesWorkInboxItemsV1.Others(maker, listed.Select(x => x.CheckedBy).ToArray()));
     }
 
     private static WorkApprovalRuleResultV1 Rule(DiscountLimitCheckSnapshot check, bool disclosePrices)

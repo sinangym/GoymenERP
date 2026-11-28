@@ -79,10 +79,11 @@ public sealed partial class SalesDiscountExceptionSqlServerRelationalAcceptanceT
                     if (safe.Writer.HasPendingDrafts) pendingSeen = true;
                     if (permission == SalesPermissionManifestV1.OrdersDiscountExceptionApprove)
                     {
-                        // Actual Audit flush precedes Sales Save. Post-Save fence 1, completed native answer 2,
-                        // actual precommit 3. Native price disclosure is not an approval fence; no receipt port is added.
+                        // Actual Audit flush precedes Sales Save. Post-Save fence 1; receipt fences 2/3/4 are
+                        // beforeAttempt/afterAttempt/afterAudit. Completed native answer 5; actual precommit 6.
+                        // Native price disclosure is not an approval fence.
                         var hit = phase == "after-audit" ? pendingSeen && !safe.Writer.HasPendingDrafts && !probe.Saved
-                            : probe.Saved && ++savedFences == (phase == "precommit" ? 3 : 1);
+                            : probe.Saved && ++savedFences == (phase == "precommit" ? 6 : 1);
                         if (hit) { fired = true; safe.Authority.Granted = false; }
                     }
                     return Task.CompletedTask;

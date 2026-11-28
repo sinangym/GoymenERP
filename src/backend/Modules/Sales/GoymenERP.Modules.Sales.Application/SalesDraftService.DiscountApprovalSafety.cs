@@ -53,6 +53,9 @@ public sealed partial class SalesDraftService
                     { UnitPrice = null, PriceUnitId = null, DiscountPercent = null, PriceDisclosure = SalesPriceDisclosure.Withheld }).ToArray() };
                 result = result with { Detail = hidden with { IsOwnDecisionRestricted = hidden.IsOwnDraft && scope.IsSalesSupport } };
             }
+            if (result.OriginalDiscountApprovalReceipt is { } receipt)
+                result = result with { OriginalDiscountApprovalReceipt = receipt with
+                { CurrentResponseDigest = SalesDiscountDecisionDigestsV1.CurrentResponseDigest(result) } };
             return result;
         }
         catch (SalesDraftStoreException exception) { throw Store(exception); }
