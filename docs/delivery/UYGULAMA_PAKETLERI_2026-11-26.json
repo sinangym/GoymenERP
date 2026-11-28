@@ -674,7 +674,7 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Compose guarded API/DI and then partial goods/service acceptance/invoicing and receipt-adjustment historical paths. Retain fail-closed unsupported paths; require actualSQL/browser/CI/K3 before first-use acceptance.",
+      "next_action": "Finish coordinated native linked price revision/reapproval with immutable held sibling evidence under ALS-D9/D18; then actualSQL/HTTP/browser/CI/K3/business acceptance.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -890,6 +890,61 @@
           "failed": 132,
           "skipped": 0,
           "cause": "All132 failures are accepted-owner-source shell pin drift at normal host startup; no HTTP/DI acceptance claimed. Failure artifacts retained. Aggregate pins scheduled once at train closure."
+        },
+        "downstream_participant_history": {
+          "source_commit": "d3d7fbfde4732dc4b8b3c27ce94724202be99bd4",
+          "scope": "BOUNDED_LOCAL_NOT_RUNTIME_ACCEPTANCE",
+          "sales": {
+            "freeGiB": 3.803424835205078,
+            "head": "d3d7fbfde4732dc4b8b3c27ce94724202be99bd4",
+            "exit": 0,
+            "seconds": 59.4299368,
+            "artifact": "remainder-contract-mixed-participant-alias-fixed-20261128/sales",
+            "total": 3016,
+            "passed": 3016,
+            "failed": 0,
+            "skipped": 0
+          },
+          "purchasing": {
+            "freeGiB": 3.7794761657714844,
+            "head": "d3d7fbfde4732dc4b8b3c27ce94724202be99bd4",
+            "exit": 0,
+            "seconds": 26.2057684,
+            "artifact": "remainder-contract-mixed-participant-alias-fixed-20261128/purchasing",
+            "total": 1579,
+            "passed": 1579,
+            "failed": 0,
+            "skipped": 0
+          },
+          "api_refresh": {
+            "freeGiB": 3.7324485778808594,
+            "head": "d3d7fbfde4732dc4b8b3c27ce94724202be99bd4",
+            "exit": 0,
+            "seconds": 24.5340925,
+            "artifact": "remainder-contract-mixed-participant-alias-fixed-20261128/api_refresh"
+          },
+          "host": {
+            "freeGiB": 3.700092315673828,
+            "head": "d3d7fbfde4732dc4b8b3c27ce94724202be99bd4",
+            "exit": 0,
+            "seconds": 77.8829823,
+            "artifact": "remainder-contract-mixed-participant-alias-fixed-20261128/host",
+            "total": 1335,
+            "passed": 1335,
+            "failed": 0,
+            "skipped": 0
+          },
+          "source_scope": "Mixed downstream goods acceptance/adjustment restores immutable membership, genuine original approvals and supplier history in existing participant transaction. Remainder current/original owner reads, exact line identity and same-scoped alias;39 shared/native query fences and reciprocal read/owned exclusion. Contract native core unchanged, typed owned safety composed in existing service factory.",
+          "retained_compile_failure": {
+            "phase": "remainder-owner-mixed-participant-integrated-20261128",
+            "head": "539fd98c1",
+            "cause": "CS0121 target-typed new overloaded Item; explicit WorkSalesRemainderChangeProofV1 construction in12298643e. Tests not executed at failed head."
+          },
+          "retained_purchasing_compile_failure": {
+            "phase": "remainder-contract-mixed-participant-integrated-20261128",
+            "cause": "CS1537 local Quantity alias duplicated existing global alias; test-only duplicate removal at d3d7fbfde. Sales3016 passed at priorhead; Purchasing/API/Host not executed then."
+          },
+          "limits": "3 Mixed downstream,4 Remainder owner/source and14 Contract SQL source facts registered/compiled, not executed. Remainder/Contract Work Host/UI incomplete. ActualSQL/normalHTTP/browser/aggregatepins/fullCI/two independent exact-head K3/business acceptance NOT_RUN. Prior broad frontend3342pass1fail retained; isolated449pass does not clear it."
         }
       },
       "delivery_tracking": {
@@ -2433,7 +2488,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Compose remainder selected owner/source and Host/UI; finish customer-return10 and contract-discount11. Cari62 stays native single-step. Contract safety default-off until complete protocol tests and configured composition. All runtime gates remain pending.",
+      "next_action": "Complete remainder6/customer-return10/contract-discount11 Work Host and paired UI. Cari62 remains native single-step. Preserve all pending SQL/browser/pin/CI/K3 gates and retained broad frontend failure.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2552,7 +2607,7 @@
         "activation": "No grants/flags/provider changes"
       },
       "execution": {
-        "source_commit": "11d997cfa1bb9805e853dacf2b346367dd56c933",
+        "source_commit": "d3d7fbfde4732dc4b8b3c27ce94724202be99bd4",
         "implemented_kinds": [
           "organization.company-tax-id-change.v1",
           "accounting.invoiced-shipment-cost.v1",
@@ -2910,6 +2965,61 @@
               "skipped": 0,
               "cause": "All132 failures are accepted-owner-source shell pin drift at normal host startup; no HTTP/DI acceptance claimed. Failure artifacts retained. Aggregate pins scheduled once at train closure."
             }
+          },
+          "remainder_contract_mixed_participant": {
+            "source_commit": "d3d7fbfde4732dc4b8b3c27ce94724202be99bd4",
+            "scope": "BOUNDED_LOCAL_NOT_RUNTIME_ACCEPTANCE",
+            "sales": {
+              "freeGiB": 3.803424835205078,
+              "head": "d3d7fbfde4732dc4b8b3c27ce94724202be99bd4",
+              "exit": 0,
+              "seconds": 59.4299368,
+              "artifact": "remainder-contract-mixed-participant-alias-fixed-20261128/sales",
+              "total": 3016,
+              "passed": 3016,
+              "failed": 0,
+              "skipped": 0
+            },
+            "purchasing": {
+              "freeGiB": 3.7794761657714844,
+              "head": "d3d7fbfde4732dc4b8b3c27ce94724202be99bd4",
+              "exit": 0,
+              "seconds": 26.2057684,
+              "artifact": "remainder-contract-mixed-participant-alias-fixed-20261128/purchasing",
+              "total": 1579,
+              "passed": 1579,
+              "failed": 0,
+              "skipped": 0
+            },
+            "api_refresh": {
+              "freeGiB": 3.7324485778808594,
+              "head": "d3d7fbfde4732dc4b8b3c27ce94724202be99bd4",
+              "exit": 0,
+              "seconds": 24.5340925,
+              "artifact": "remainder-contract-mixed-participant-alias-fixed-20261128/api_refresh"
+            },
+            "host": {
+              "freeGiB": 3.700092315673828,
+              "head": "d3d7fbfde4732dc4b8b3c27ce94724202be99bd4",
+              "exit": 0,
+              "seconds": 77.8829823,
+              "artifact": "remainder-contract-mixed-participant-alias-fixed-20261128/host",
+              "total": 1335,
+              "passed": 1335,
+              "failed": 0,
+              "skipped": 0
+            },
+            "source_scope": "Mixed downstream goods acceptance/adjustment restores immutable membership, genuine original approvals and supplier history in existing participant transaction. Remainder current/original owner reads, exact line identity and same-scoped alias;39 shared/native query fences and reciprocal read/owned exclusion. Contract native core unchanged, typed owned safety composed in existing service factory.",
+            "retained_compile_failure": {
+              "phase": "remainder-owner-mixed-participant-integrated-20261128",
+              "head": "539fd98c1",
+              "cause": "CS0121 target-typed new overloaded Item; explicit WorkSalesRemainderChangeProofV1 construction in12298643e. Tests not executed at failed head."
+            },
+            "retained_purchasing_compile_failure": {
+              "phase": "remainder-contract-mixed-participant-integrated-20261128",
+              "cause": "CS1537 local Quantity alias duplicated existing global alias; test-only duplicate removal at d3d7fbfde. Sales3016 passed at priorhead; Purchasing/API/Host not executed then."
+            },
+            "limits": "3 Mixed downstream,4 Remainder owner/source and14 Contract SQL source facts registered/compiled, not executed. Remainder/Contract Work Host/UI incomplete. ActualSQL/normalHTTP/browser/aggregatepins/fullCI/two independent exact-head K3/business acceptance NOT_RUN. Prior broad frontend3342pass1fail retained; isolated449pass does not clear it."
           }
         },
         "reuse": [

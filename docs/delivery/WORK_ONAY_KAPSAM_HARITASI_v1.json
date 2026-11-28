@@ -481,6 +481,11 @@
             "head": "7029f23afa7767de82af561a4bd1dd6f05ff607f",
             "note": "Default-off native remainder decision safety composed on actual scoped service with shared read/save/refusal boundaries. Selected source/Host/UI not yet implemented.",
             "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint/risk_host_remainder_and_mixed_revision"
+          },
+          {
+            "head": "d3d7fbfde4732dc4b8b3c27ce94724202be99bd4",
+            "note": "Selected current/original owner and version-aware Work source composed; exact line identity and native persona exception retained. Host/UI pending.",
+            "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint/remainder_contract_mixed_participant"
           }
         ]
       }
@@ -854,7 +859,13 @@
         "K3": "NOT_PERFORMED",
         "map_runtime": "NOT_RUN",
         "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
-        "later_deltas": []
+        "later_deltas": [
+          {
+            "head": "d3d7fbfde4732dc4b8b3c27ce94724202be99bd4",
+            "note": "Native unchanged Contract decision core now uses existing typed owned transaction safety through the configured service. Owner/source/Host/UI pending.",
+            "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint/remainder_contract_mixed_participant"
+          }
+        ]
       }
     },
     {
@@ -7501,6 +7512,61 @@
         "skipped": 0,
         "cause": "All132 failures are accepted-owner-source shell pin drift at normal host startup; no HTTP/DI acceptance claimed. Failure artifacts retained. Aggregate pins scheduled once at train closure."
       }
+    },
+    "remainder_contract_mixed_participant": {
+      "source_commit": "d3d7fbfde4732dc4b8b3c27ce94724202be99bd4",
+      "scope": "BOUNDED_LOCAL_NOT_RUNTIME_ACCEPTANCE",
+      "sales": {
+        "freeGiB": 3.803424835205078,
+        "head": "d3d7fbfde4732dc4b8b3c27ce94724202be99bd4",
+        "exit": 0,
+        "seconds": 59.4299368,
+        "artifact": "remainder-contract-mixed-participant-alias-fixed-20261128/sales",
+        "total": 3016,
+        "passed": 3016,
+        "failed": 0,
+        "skipped": 0
+      },
+      "purchasing": {
+        "freeGiB": 3.7794761657714844,
+        "head": "d3d7fbfde4732dc4b8b3c27ce94724202be99bd4",
+        "exit": 0,
+        "seconds": 26.2057684,
+        "artifact": "remainder-contract-mixed-participant-alias-fixed-20261128/purchasing",
+        "total": 1579,
+        "passed": 1579,
+        "failed": 0,
+        "skipped": 0
+      },
+      "api_refresh": {
+        "freeGiB": 3.7324485778808594,
+        "head": "d3d7fbfde4732dc4b8b3c27ce94724202be99bd4",
+        "exit": 0,
+        "seconds": 24.5340925,
+        "artifact": "remainder-contract-mixed-participant-alias-fixed-20261128/api_refresh"
+      },
+      "host": {
+        "freeGiB": 3.700092315673828,
+        "head": "d3d7fbfde4732dc4b8b3c27ce94724202be99bd4",
+        "exit": 0,
+        "seconds": 77.8829823,
+        "artifact": "remainder-contract-mixed-participant-alias-fixed-20261128/host",
+        "total": 1335,
+        "passed": 1335,
+        "failed": 0,
+        "skipped": 0
+      },
+      "source_scope": "Mixed downstream goods acceptance/adjustment restores immutable membership, genuine original approvals and supplier history in existing participant transaction. Remainder current/original owner reads, exact line identity and same-scoped alias;39 shared/native query fences and reciprocal read/owned exclusion. Contract native core unchanged, typed owned safety composed in existing service factory.",
+      "retained_compile_failure": {
+        "phase": "remainder-owner-mixed-participant-integrated-20261128",
+        "head": "539fd98c1",
+        "cause": "CS0121 target-typed new overloaded Item; explicit WorkSalesRemainderChangeProofV1 construction in12298643e. Tests not executed at failed head."
+      },
+      "retained_purchasing_compile_failure": {
+        "phase": "remainder-contract-mixed-participant-integrated-20261128",
+        "cause": "CS1537 local Quantity alias duplicated existing global alias; test-only duplicate removal at d3d7fbfde. Sales3016 passed at priorhead; Purchasing/API/Host not executed then."
+      },
+      "limits": "3 Mixed downstream,4 Remainder owner/source and14 Contract SQL source facts registered/compiled, not executed. Remainder/Contract Work Host/UI incomplete. ActualSQL/normalHTTP/browser/aggregatepins/fullCI/two independent exact-head K3/business acceptance NOT_RUN. Prior broad frontend3342pass1fail retained; isolated449pass does not clear it."
     }
   }
 }
