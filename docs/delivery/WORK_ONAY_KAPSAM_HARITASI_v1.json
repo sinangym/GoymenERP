@@ -290,7 +290,7 @@
             "kind": "sales.over-delivery-request.v1",
             "source": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesOverDeliveryRequestWorkInboxSourceV1.cs:17",
             "source_decision_read": true,
-            "host_supported": false,
+            "host_supported": true,
             "owner_permission": "sales.orders.over-delivery.approve",
             "frontend_inbox_registered": true,
             "frontend_published": false,
@@ -315,7 +315,7 @@
         "native_permissions": [
           "sales.orders.over-delivery.approve"
         ],
-        "status": "LEGACY_INBOX_NATIVE_COMMAND_NO_WORK_HOST",
+        "status": "BACKEND_WORK_HOST_FRONTEND_UNPUBLISHED",
         "source": "CHECKED_AT_EXACT_HEAD",
         "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
         "actual_SQL": "NOT_RUN",
@@ -334,6 +334,11 @@
             "head": "f873e03f42c1735ae19d08f4fe8c07ec145f6b61",
             "note": "Selected numbered owner/source and genuine original receipts implemented; Host/frontend remain unpublished.",
             "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint/discount_paired_publication_and_native_boundaries"
+          },
+          {
+            "head": "ac09c4e124094f241901261e98f90797259a93bd",
+            "note": "Numbered selected request Work Host paired with actual original receipt; frontend not yet published and all runtime semantics remain unverified.",
+            "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint/numbered_over_delivery_work_host"
           }
         ]
       }
@@ -6504,14 +6509,13 @@
       }
     ],
     "audit_sha256": "7b99cf7b328d015372dc2a31cd0afd74c8c40edebd9e72ae822f61d7ee529680",
-    "current_source_commit": "f873e03f42c1735ae19d08f4fe8c07ec145f6b61",
+    "current_source_commit": "ac09c4e124094f241901261e98f90797259a93bd",
     "current_source_summary": {
-      "backend_kinds": 59,
+      "backend_kinds": 60,
       "frontend_published_kinds": 59,
-      "backend_supported_flows": 58,
+      "backend_supported_flows": 59,
       "paired_flows": 58,
       "no_host_flows": [
-        4,
         5,
         6,
         10,
@@ -6527,7 +6531,9 @@
       "native_single_step_no_pending_flows": [
         62
       ],
-      "backend_only_unpublished_flows": []
+      "backend_only_unpublished_flows": [
+        4
+      ]
     }
   },
   "purpose_and_native_merge_checkpoint": {
@@ -7208,6 +7214,43 @@
       "new_SQL_sources": "4 selected over-delivery receipt +12 risk safety +8 mixed membership Facts registered and compiled; actual SQL NOT_RUN.",
       "preserved_runner_error": "discount-paired-integrated frontend runner stopped before execution because a nonexistent test file was listed. Already successful .NET/TSC/lint were not repeated; corrected existing file path ran3156 frontend tests in a separate retained phase.",
       "limits": "Normal-host aggregate registry pin failure remains open; actualSQL/normalHTTP/browser/fullCI/two independent exact-head K3/business acceptance NOT_RUN. No role/grant/Critical/provider/AI activation."
+    },
+    "numbered_over_delivery_work_host": {
+      "source_commit": "ac09c4e124094f241901261e98f90797259a93bd",
+      "scope": "CONTROLLED_SOURCE_HOST_REGRESSION_NOT_SQL_HTTP_BROWSER_CI_K3",
+      "host_source": "015303d68 imports7735596 preserving Discount/Floor and existing owner proof gates; same configured scoped selected owner. Root2d8 adds foreign Discount-body refusal case.",
+      "api_only_refresh": {
+        "freeGiB": 3.7912521362304688,
+        "exit": 0,
+        "head": "2d8cdc2ab2a0d51835eb8ddeb1ee2f90a4e6c3df",
+        "seconds": 21.7516714,
+        "artifact": "over-delivery-selected-host-20261128/api_refresh"
+      },
+      "controlled_host": {
+        "seconds": 67.660737,
+        "freeGiB": 3.9249610900878906,
+        "exit": 0,
+        "head": "ac09c4e124094f241901261e98f90797259a93bd",
+        "artifact": "over-delivery-selected-host-fixture-20261128/host",
+        "total": 1223,
+        "passed": 1223,
+        "failed": 0,
+        "skipped": 0
+      },
+      "preserved_first_host_run": {
+        "freeGiB": 3.7020416259765625,
+        "exit": 1,
+        "head": "2d8cdc2ab2a0d51835eb8ddeb1ee2f90a4e6c3df",
+        "seconds": 70.5913957,
+        "artifact": "over-delivery-selected-host-20261128/host",
+        "total": 1222,
+        "passed": 1221,
+        "failed": 1,
+        "skipped": 0
+      },
+      "fixture_correction": "ac09 retains malformed-source503 assertion and strict native-only default; only the metadata-corruption scenario explicitly grants the extra tested permission. Adds exact403/noSource/noOwnerIO case. Production authority/gate order unchanged; no assertion deletion or widening.",
+      "frontend": "NOT_PUBLISHED; separate owner-bound UI leaf in progress.",
+      "limits": "New SQL Facts compiled only. Normal-host aggregate pins, actualSQL/HTTP/browser/fullCI/two independent exact-head K3/business acceptance remain pending. No role/grant/flag/provider activation."
     }
   }
 }

@@ -2364,7 +2364,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Complete numbered over-delivery Host/UI and risk selected owner/source/Host/UI; remaining native Work flows6/10/11. Preserve Cari62 native single-step. All64 runtime unverified; actualSQL/normalHTTP/browser/pins/fullCI/twoK3/business acceptance pending.",
+      "next_action": "Finish numbered over-delivery frontend/publication; risk selected owner/source/Host/UI and remaining Work flows6/10/11. Cari62 remains native single-step. All64 runtime semantics unverified; actualSQL/HTTP/browser/pins/fullCI/twoK3/business acceptance pending.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2483,7 +2483,7 @@
         "activation": "No grants/flags/provider changes"
       },
       "execution": {
-        "source_commit": "f873e03f42c1735ae19d08f4fe8c07ec145f6b61",
+        "source_commit": "ac09c4e124094f241901261e98f90797259a93bd",
         "implemented_kinds": [
           "organization.company-tax-id-change.v1",
           "accounting.invoiced-shipment-cost.v1",
@@ -2543,7 +2543,8 @@
           "sales.quote-conversion-request.v1",
           "identity.access-grant-request.v1",
           "sales.price-floor-exception.v1",
-          "sales.discount-exception.v1"
+          "sales.discount-exception.v1",
+          "sales.over-delivery-request.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -2612,7 +2613,8 @@
           },
           "quote_floor_discount_mixed_followup": "See existing current checkpoint ref/integrated_floor_quote_discount_mixed_followup for exact heads/durations/counters and retained failures; no aggregate acceptance claim.",
           "floor_discount_over_delivery": "See WORK_ONAY_KAPSAM_HARITASI_v1.json#quote_work_host_and_mixed_preparation_checkpoint/floor_discount_and_over_delivery_followup; separate exact heads, source scopes and retained failures, not aggregate acceptance.",
-          "discount_pair_and_native_boundaries": "See64-flow map checkpoint discount_paired_publication_and_native_boundaries; retained exact heads and failures, not aggregate runtime acceptance."
+          "discount_pair_and_native_boundaries": "See64-flow map checkpoint discount_paired_publication_and_native_boundaries; retained exact heads and failures, not aggregate runtime acceptance.",
+          "numbered_over_delivery_work_host": "1223 controlled WorkSales/WorkDecisionHost/IdentityDTO/PurchasingRequest cases PASS0skip at ac09; separate API refresh at2d8. First1222-case result1221PASS1FAIL retained; exact source metadata fixture isolated without production change. ActualSQL/runtime acceptance NOT_RUN."
         },
         "reuse": [
           "existing FinanceCashAccountService commands and durable receipts",
