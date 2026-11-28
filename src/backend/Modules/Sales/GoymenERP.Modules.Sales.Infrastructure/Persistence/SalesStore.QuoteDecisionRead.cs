@@ -14,7 +14,7 @@ public sealed partial class SalesStore : ISalesQuoteDecisionReadStoreV1
         ArgumentNullException.ThrowIfNull(freshFence);
         cancellationToken.ThrowIfCancellationRequested();
         var company = RequireResolvedCompany();
-        if (quoteDecisionReadFence is not null || overDeliveryRequestDecisionReadFence is not null || riskExceptionDecisionReadFence is not null || ownedOverDeliveryRequestApproval is not null || ownedRemainderDecision is not null || ownedContractDiscountDecision is not null || ownedRiskExceptionDecision is not null || ownedQuoteApproval is not null || ownedRequestApproval is not null || ownedPriceFloorApproval is not null || ownedDiscountApproval is not null) throw new InvalidOperationException("Selected read is not reentrant.");
+        if (quoteDecisionReadFence is not null || overDeliveryRequestDecisionReadFence is not null || riskExceptionDecisionReadFence is not null || remainderDecisionReadFence is not null || ownedOverDeliveryRequestApproval is not null || ownedRemainderDecision is not null || ownedContractDiscountDecision is not null || ownedRiskExceptionDecision is not null || ownedQuoteApproval is not null || ownedRequestApproval is not null || ownedPriceFloorApproval is not null || ownedDiscountApproval is not null) throw new InvalidOperationException("Selected read is not reentrant.");
         quoteDecisionReadFence = Fence;
         try
         {

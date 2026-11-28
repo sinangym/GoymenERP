@@ -11,7 +11,7 @@ public sealed partial class SalesStore : ISalesRemainderDecisionSafetyStoreV1
     private OwnedRemainderDecision? ownedRemainderDecision;
 
     public bool RemainderDecisionEntryIsClean => officialCancellationAuditWriter is not null
-        && ownedRemainderDecision is null && ownedPriceFloorApproval is null && ownedDiscountApproval is null && ownedOverDeliveryRequestApproval is null && ownedRiskExceptionDecision is null && ownedContractDiscountDecision is null && overDeliveryRequestDecisionReadFence is null && riskExceptionDecisionReadFence is null && ownedRequestApproval is null && ownedQuoteApproval is null && quoteDecisionReadFence is null && dbContext.Database.IsRelational()
+        && ownedRemainderDecision is null && ownedPriceFloorApproval is null && ownedDiscountApproval is null && ownedOverDeliveryRequestApproval is null && ownedRiskExceptionDecision is null && ownedContractDiscountDecision is null && overDeliveryRequestDecisionReadFence is null && riskExceptionDecisionReadFence is null && remainderDecisionReadFence is null && ownedRequestApproval is null && ownedQuoteApproval is null && quoteDecisionReadFence is null && dbContext.Database.IsRelational()
         && System.Transactions.Transaction.Current is null && dbContext.Database.CurrentTransaction is null
         && !dbContext.ChangeTracker.HasChanges() && !officialCancellationAuditWriter.HasPendingDrafts;
 
@@ -126,6 +126,8 @@ public sealed partial class SalesStore : ISalesRemainderDecisionSafetyStoreV1
 
     private void RequireRemainderDecisionCommand(SalesDraftWriteEnvelope envelope, string hash, string command, bool writes)
     {
+        if (writes && remainderDecisionReadFence is not null)
+            throw new InvalidOperationException("Selected remainder read cannot dispatch a mutation.");
         if (ownedRemainderDecision is not { } state) return;
         if (state.Command != command || state.Hash != hash || state.Envelope.PermissionCode != envelope.PermissionCode || state.Envelope.ActorId != envelope.ActorId
             || state.Envelope.CorrelationId != envelope.CorrelationId

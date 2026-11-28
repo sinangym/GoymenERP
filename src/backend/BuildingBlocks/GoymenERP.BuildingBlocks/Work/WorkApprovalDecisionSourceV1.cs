@@ -75,6 +75,7 @@ public sealed record WorkApprovalDecisionSnapshotV1(Guid CompanyId, WorkInboxIte
     [JsonIgnore] public WorkSalesDiscountProofV1? SalesDiscountProof { get; init; }
     [JsonIgnore] public WorkSalesOverDeliveryRequestProofV1? SalesOverDeliveryRequestProof { get; init; }
     [JsonIgnore] public WorkSalesRiskExceptionProofV1? SalesRiskExceptionProof { get; init; }
+    [JsonIgnore] public WorkSalesRemainderChangeProofV1? SalesRemainderChangeProof { get; init; }
     [JsonIgnore] public WorkIdentityAccessGrantProofV1? IdentityAccessGrantProof { get; init; }
 }
 

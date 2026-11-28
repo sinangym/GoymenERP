@@ -19,7 +19,7 @@ public sealed partial class SalesStore : ISalesRiskExceptionDecisionReadStoreV1
     {
         ArgumentNullException.ThrowIfNull(freshFence); token.ThrowIfCancellationRequested();
         var company = RequireResolvedCompany();
-        if (riskExceptionDecisionReadFence is not null || quoteDecisionReadFence is not null || overDeliveryRequestDecisionReadFence is not null
+        if (riskExceptionDecisionReadFence is not null || remainderDecisionReadFence is not null || quoteDecisionReadFence is not null || overDeliveryRequestDecisionReadFence is not null
             || ownedRequestApproval is not null || ownedQuoteApproval is not null || ownedPriceFloorApproval is not null
             || ownedDiscountApproval is not null || ownedOverDeliveryRequestApproval is not null || ownedRemainderDecision is not null || ownedContractDiscountDecision is not null
             || ownedRiskExceptionDecision is not null && !allowOwnedRiskReceipt)
