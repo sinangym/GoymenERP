@@ -94,3 +94,9 @@ it('replaces the Discount inbox capability with its standalone purpose without d
  expect(WORK_INBOX_CAPABILITIES).not.toContain('sales.orders.discount-exception.approve')
  expect(WORK_INBOX_KINDS).toHaveLength(69);expect(SALES_INBOX_KINDS).toHaveLength(11)
 })
+
+it('replaces the native Risk control with exactly one standalone price-free purpose inbox row',()=>{
+ expect(WORK_INBOX_KINDS.filter(x=>x.kind==='sales.risk-exception.v1')).toEqual([{kind:'sales.risk-exception.v1',module:'sales',capability:SALES_WORK_DECISION_CAPABILITY.riskException}])
+ expect(WORK_INBOX_CAPABILITIES).toContain(SALES_WORK_DECISION_CAPABILITY.riskException);expect(WORK_INBOX_CAPABILITIES).not.toContain('sales.orders.risk-exception.approve')
+ expect(WORK_INBOX_KINDS).toHaveLength(69);expect(SALES_INBOX_KINDS).toHaveLength(11)
+})

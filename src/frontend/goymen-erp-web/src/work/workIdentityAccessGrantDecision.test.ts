@@ -8,7 +8,7 @@ const decode=(v:unknown)=>decodeWorkDecisionPreview(v,COMPANY_A,kind,id)
 const body=(approve=true)=>({expectedVersion:'9007199254740993',approve,reason:approve?null:'incorrect_request',delegationId:null,identityAccessGrant:{expectedImpactDigest:token}})
 describe('Work access grant exact native human and seen-impact binding',()=>{
  it('pairs exactly one purpose and preserves all native12 request fields, full permissions, sub-ms native window and Int64 text',()=>{
-  expect(WORK_DECISION_KINDS.filter(v=>v===kind)).toEqual([kind]);expect(WORK_DECISION_KINDS).toHaveLength(60)
+  expect(WORK_DECISION_KINDS.filter(v=>v===kind)).toEqual([kind]);expect(WORK_DECISION_KINDS).toHaveLength(61)
   const value=fixture(COMPANY_A),decoded=decode(value);expect(decoded).toEqual(value);expect(decoded?.identityAccessGrant?.request.version).toBe('9007199254740993')
   expect(Object.keys(value.identityAccessGrant.request)).toHaveLength(12);expect(Object.keys(value.identityAccessGrant)).toHaveLength(7)
  })

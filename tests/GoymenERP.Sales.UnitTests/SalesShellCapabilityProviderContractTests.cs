@@ -33,6 +33,11 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.True(request.ImplementationAvailable);
         Assert.Equal(("sales-request-work-decision","/onaylarim/sales.request.v1/:approvalId","W-SALES-REQUEST-01"),
             (request.RouteId,request.RoutePath,request.ScreenId));
+        var risk=Assert.Single(declarations,item=>item.CapabilityId==SalesShellCapabilityProvider.RiskExceptionWorkDecisionCapabilityId);
+        Assert.Equal([SalesPermissionManifestV1.OrdersRiskExceptionApprove],risk.RequiredPermissions);
+        Assert.Null(risk.ParentCapabilityId);Assert.True(risk.ImplementationAvailable);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide,risk.ScopeRequirement);
+        Assert.Equal(("sales-risk-exception-work-decision","/onaylarim/sales.risk-exception.v1/:approvalId","W-SALES-RISK-EXCEPTION-01"),(risk.RouteId,risk.RoutePath,risk.ScreenId));
         var over=Assert.Single(declarations,item=>item.CapabilityId==SalesShellCapabilityProvider.OverDeliveryRequestWorkDecisionCapabilityId);
         Assert.Equal([SalesPermissionManifestV1.OrdersOverDeliveryApprove],over.RequiredPermissions);
         Assert.Null(over.ParentCapabilityId);Assert.True(over.ImplementationAvailable);
@@ -55,7 +60,7 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide,quote.ScopeRequirement);
         Assert.Equal(("sales-quote-conversion-request-work-decision","/onaylarim/sales.quote-conversion-request.v1/:approvalId","W-SALES-QUOTE-CONVERSION-REQUEST-01"),
             (quote.RouteId,quote.RoutePath,quote.ScreenId));
-        Assert.All(new[]{over,discount,floor,order,invoice,subcontract,request,quote},item=>Assert.Equal(ShellCapabilityContextRequirement.SingleCompany,item.ContextRequirement));
+        Assert.All(new[]{risk,over,discount,floor,order,invoice,subcontract,request,quote},item=>Assert.Equal(ShellCapabilityContextRequirement.SingleCompany,item.ContextRequirement));
     }
     private const string FrontendCapabilities = "src/frontend/goymen-erp-web/src/sales/capabilities.ts";
 
@@ -100,9 +105,9 @@ public sealed class SalesShellCapabilityProviderContractTests
         // API-40 / UI-70b / SAT-D288..SAT-D294 (1.25, merged after API-07 1.24): registers the four return names (manifest v30), the S-10
         // return list, create and detail screens and the detail's submission, approval and finalisation controls.
         // API-33 / API-36 (1.27): the four invoice controls of the S-09 list (write, approve, match, finalize); no new name.
-        // WP8 1.34 adds the numbered over-delivery purpose on its native approval alone; 1.33 adds the Discount purpose on its native approval alone; 1.32 adds the Floor purpose without a price-read co-grant; 1.31 adds the quote conversion purpose with its native disclosure; 1.30 adds the price-free request purpose; 1.29 adds the subcontract native decision purpose alongside the two earlier routes without a browsing read permission or a new grant.
-        Assert.Equal(("SALES", "1.34"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(51, declarations.Count);
+        // WP8 1.35 adds the price-free Risk purpose on its native approval alone; 1.34 adds the numbered over-delivery purpose on its native approval alone; 1.33 adds the Discount purpose on its native approval alone; 1.32 adds the Floor purpose without a price-read co-grant; 1.31 adds the quote conversion purpose with its native disclosure; 1.30 adds the price-free request purpose; 1.29 adds the subcontract native decision purpose alongside the two earlier routes without a browsing read permission or a new grant.
+        Assert.Equal(("SALES", "1.35"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(52, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);

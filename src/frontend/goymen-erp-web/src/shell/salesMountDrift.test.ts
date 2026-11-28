@@ -28,7 +28,7 @@ describe('shell ↔ Sales lane capability ids', () => {
     expect(NAV_GROUPS.find((group) => group.id === 'sales')?.entries).toContain(CAPABILITY.salesOfficialInvoiceCancellation)
   })
 
-  it.each(['overDeliveryRequest', 'discount', 'quoteConversion', 'request', 'order', 'invoice', 'subcontractInvoice'] as const)('mounts the Sales %s purpose route exactly once ahead of the legacy generic detail', key => {
+  it.each(['riskException', 'overDeliveryRequest', 'discount', 'quoteConversion', 'request', 'order', 'invoice', 'subcontractInvoice'] as const)('mounts the Sales %s purpose route exactly once ahead of the legacy generic detail', key => {
     const capability = SALES_WORK_DECISION_CAPABILITY[key]
     const path = SALES_WORK_DECISION_ROUTE[key]
     expect(Object.values(CAPABILITY)).toContain(capability)
@@ -198,4 +198,10 @@ it('publishes the numbered over-delivery request purpose without granting native
  expect(NAV_CAPABILITIES).not.toContain(CAPABILITY.salesOverDeliveryRequestWorkDecision)
  expect(matchRoutes(shellRoutes,'/onaylarim/sales.over-delivery-request.v1/cccccccc-0000-4000-8000-0000000000f1')?.at(-1)?.route.path).toBe('onaylarim/sales.over-delivery-request.v1/:approvalId')
  expect(matchRoutes(shellRoutes,'/satis/siparisler/cccccccc-0000-4000-8000-0000000000f1')?.at(-1)?.route.path).toBe('satis/siparisler/:draftId')
+})
+
+it('keeps the native risk control/order route separate from the standalone price-free Risk purpose',()=>{
+ expect(SALES_WORK_DECISION_CAPABILITY.riskException).toBe('sales.risk-exception.work-decision');expect(SALES_WORK_DECISION_ROUTE.riskException).toBe('/onaylarim/sales.risk-exception.v1/:approvalId')
+ expect(matchRoutes(shellRoutes,'/satis/siparisler/cccccccc-0000-4000-8000-0000000000f1')?.at(-1)?.route.path).toBe('satis/siparisler/:draftId')
+ expect(NAV_CAPABILITIES).not.toContain(SALES_WORK_DECISION_CAPABILITY.riskException)
 })

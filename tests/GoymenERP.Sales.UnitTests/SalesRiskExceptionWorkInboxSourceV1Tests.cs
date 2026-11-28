@@ -22,12 +22,13 @@ public sealed class SalesRiskExceptionWorkInboxSourceV1Tests
         var item = result.Items[0];
         Assert.Equal(Exception(1, T0).Id, item.ItemId);
         Assert.Equal("SO-SNT-0001 #1", item.DocumentLabel);
-        Assert.Equal($"/satis/siparisler/{Order:D}", item.Link);
+        Assert.Equal($"/onaylarim/{SalesRiskExceptionWorkInboxSourceV1.KindName}/{item.ItemId:D}", item.Link);
         Assert.Equal(T0.ToUniversalTime(), item.WaitingSinceUtc);
         Assert.Equal(new WorkApprovalRuleResultV1(SalesRiskExceptionWorkInboxSourceV1.RiskExceptionRule, null, null, null, null),
             Assert.Single(item.Rules));
         var reference = Assert.Single(item.References);
         Assert.Equal(("sales-order-draft", "SO-SNT-0001", (Guid?)Order), (reference.Role, reference.Label, reference.RecordId));
+        Assert.Equal($"/satis/siparisler/{Order:D}", reference.Link);
         AssertContractShape(source, result);
     }
 

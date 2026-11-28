@@ -10,7 +10,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.WorkInbox;
 /// W1-A: the pending single-shipment risk exceptions of orders (API-07, SAT-D153…D162) for the Work inbox. One item per
 /// exception: the approval (<c>ApproveSalesOrderRiskExceptionV1</c>, route <c>/{orderId}/risk-exceptions/{no}/approval</c>)
 /// decides one exception, and one order can hold several pending exceptions (one per shipment, SAT-D154), so the item id is the
-/// exception's own id and the order is the first reference and the link. An exception is listed exactly when the approval
+/// exception's own id; the Work purpose is the link and the order remains its first reference. An exception is listed exactly when the approval
 /// accepts it: Requested, of an order that is still a draft (not cancelled or closed) and approved or with an approved
 /// revision. The exception stores no risk snapshot (limit, exposure): the rule carries no numbers — the order's risk check is
 /// recomputed on the order screen by the owner's calculator.
@@ -58,7 +58,7 @@ internal sealed partial class SalesRiskExceptionWorkInboxSourceV1(
                 exception.Id,
                 label,
                 exception.RequestedAtUtc.ToUniversalTime(),
-                SalesWorkInboxItemsV1.OrderLink(exception.OrderId),
+                $"/onaylarim/{KindName}/{exception.Id:D}",
                 SalesWorkInboxItemsV1.RequireActor(exception.RequestedBy),
                 [new WorkApprovalRuleResultV1(RiskExceptionRule, null, null, null, null)],
                 [SalesWorkInboxItemsV1.OrderReference(exception.OrderId, documentNo)]));

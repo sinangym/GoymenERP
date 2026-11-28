@@ -141,6 +141,8 @@ public sealed class SalesShellCapabilityProviderTests
                 ("sales.requests.create", "/satis/talepler/yeni", SalesPermissionManifestV1.RequestsWrite, null),
                 ("sales.requests.detail", "/satis/talepler/:requestId", SalesPermissionManifestV1.RequestsRead, null),
                 ("sales.requests.list", "/satis/talepler", SalesPermissionManifestV1.RequestsRead, null),
+                ("sales.risk-exception.work-decision", "/onaylarim/sales.risk-exception.v1/:approvalId",
+                    SalesPermissionManifestV1.OrdersRiskExceptionApprove, null),
                 ("sales.subcontract-invoice.work-decision", "/onaylarim/sales.subcontract-invoice.v1/:approvalId",
                     $"{SalesPermissionManifestV1.InvoicesApprove}+{SalesPermissionManifestV1.OrdersPriceRead}", null),
             ],

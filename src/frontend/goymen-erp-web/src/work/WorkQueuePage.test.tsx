@@ -241,3 +241,24 @@ it('does not open or read the Work inbox under only the native Discount control'
  await renderAt('/onaylarim/kuyruk');await waitFor(()=>expect(stateBlock('not-found')).not.toBeNull())
  expect(inboxCalls()).toEqual([]);expect(queueCalls()).toEqual([]);expect(screen.queryByTestId('work-inbox-list')).toBeNull()
 })
+
+it('opens the single inbox under only Risk purpose authority with the native order reference retained',async()=>{
+ const kind='sales.risk-exception.v1',cap='sales.risk-exception.work-decision'
+ const item={...importItem,module:'sales',kind,itemId:FIRST,documentLabel:'SENTETIK SO-R5',link:`/onaylarim/${kind}/${FIRST}`,
+  awaitingPermission:'sales.orders.risk-exception.approve',ruleVersion:`work.approval-rule:${kind}:0`,
+  explanation:{rules:[{ruleCode:'sales.shipment-risk-exception',threshold:null,actual:null,deviation:null,unit:null}],
+   references:[{role:'sales-order-draft',label:'SENTETIK SO-R5',recordId:FIRST,link:`/satis/siparisler/${FIRST}`}]}}
+ const {inboxCalls,queueCalls}=installFetch([cap],()=>json(inbox({items:[item],sources:[source('sales',kind,'sales.orders.risk-exception.approve')]})))
+ await renderAt('/onaylarim/kuyruk');await screen.findByTestId('work-inbox-list');expect(cards()).toHaveLength(1)
+ const card=cards()[0]!;expect(card.getAttribute('data-kind')).toBe(kind)
+ expect(within(card).getByRole('link',{name:WORK_INBOX_TEXT.openOwnerLabel('Risk istisnası',item.documentLabel)}).getAttribute('href')).toBe(item.link)
+ await userEvent.setup().click(within(card).getByRole('button',{name:WORK_INBOX_TEXT.explanationToggle}))
+ expect(within(card).getByRole('link',{name:item.documentLabel}).getAttribute('href')).toBe(`/satis/siparisler/${FIRST}`)
+ expect(inboxCalls()).toEqual([{url:'/api/v1/work/inbox?view=awaiting-my-decision',companyId:COMPANY}]);expect(queueCalls()).toEqual([])
+})
+
+it('does not open or read the Work inbox under only the native Risk control',async()=>{
+ const {inboxCalls,queueCalls}=installFetch(['sales.orders.risk-exception.approve'])
+ await renderAt('/onaylarim/kuyruk');await waitFor(()=>expect(stateBlock('not-found')).not.toBeNull())
+ expect(inboxCalls()).toEqual([]);expect(queueCalls()).toEqual([]);expect(screen.queryByTestId('work-inbox-list')).toBeNull()
+})

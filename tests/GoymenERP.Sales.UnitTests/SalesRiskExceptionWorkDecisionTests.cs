@@ -17,7 +17,8 @@ public sealed class SalesRiskExceptionWorkDecisionTests
         Assert.NotNull(snapshot); Assert.True(snapshot.Pending); Assert.Equal("1", snapshot.SourceVersion);
         Assert.NotNull(snapshot.SalesRiskExceptionProof); Assert.Equal((approve, true), (snapshot.SalesRiskExceptionProof.ApprovalSupported, snapshot.SalesRiskExceptionProof.RejectionSupported));
         Assert.True(SalesRiskExceptionDecisionBindingV1.MatchesDecisionSnapshot(snapshot, detail));
-        Assert.Equal($"/satis/siparisler/{detail.Exception.OrderId:D}", snapshot.Item.Link);
+        Assert.Equal($"/onaylarim/{SalesRiskExceptionDecisionBindingV1.KindName}/{detail.ExceptionId:D}", snapshot.Item.Link);
+        Assert.Equal($"/satis/siparisler/{detail.Exception.OrderId:D}", Assert.Single(snapshot.Item.References).Link);
         Assert.Equal(detail.Exception.OrderId, Assert.Single(snapshot.Item.References).RecordId);
         Assert.All(authority.Asked, p => Assert.Equal(SalesPermissionManifestV1.OrdersRiskExceptionApprove, p));
         Assert.Equal(1, owner.Reads); Assert.Equal(0, owner.HistoryReads);

@@ -1,6 +1,5 @@
 import {
   SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY,
-  SALES_RISK_EXCEPTION_APPROVE_CAPABILITY,
   SALES_WORK_DECISION_CAPABILITY,
 } from '../../sales/capabilities'
 import type { WorkInboxKind } from './types'
@@ -9,7 +8,7 @@ import type { WorkInboxKind } from './types'
 export const SALES_INBOX_KINDS: readonly WorkInboxKind[] = [
   { kind: 'sales.price-floor-exception.v1', module: 'sales', capability: SALES_WORK_DECISION_CAPABILITY.priceFloor },
   { kind: 'sales.discount-exception.v1', module: 'sales', capability: SALES_WORK_DECISION_CAPABILITY.discount },
-  { kind: 'sales.risk-exception.v1', module: 'sales', capability: SALES_RISK_EXCEPTION_APPROVE_CAPABILITY },
+  { kind: 'sales.risk-exception.v1', module: 'sales', capability: SALES_WORK_DECISION_CAPABILITY.riskException },
   // WP1 D5: the native D-05 sales order draft is in the one inbox too (the owner's `sales.orders.approve`).
   { kind: 'sales.order-draft.v1', module: 'sales', capability: SALES_WORK_DECISION_CAPABILITY.order },
   // WP4: the remaining Sales approval kinds, each with the owner's existing approve control (none is new).

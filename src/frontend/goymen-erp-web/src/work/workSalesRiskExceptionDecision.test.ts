@@ -1,5 +1,5 @@
 import {afterEach,describe,expect,it,vi} from 'vitest'
-import {decodeWorkDecisionPreview,isWorkDecisionRequest,isWorkPackageEffectiveDate,sendWorkDecision,workDecisionReasonLimit} from './workDecisionApi'
+import {decodeWorkDecisionPreview,isWorkDecisionRequest,isWorkPackageEffectiveDate,sendWorkDecision,workDecisionReasonLimit,WORK_DECISION_KINDS} from './workDecisionApi'
 import {SALES_RISK_EXCEPTION_WORK_KIND as kind,decodeWorkSalesRiskExceptionPreview as human,salesRiskExceptionWorkCommand} from './workSalesRiskExceptionDecision'
 import {salesRiskExceptionFixture as fixture,salesRiskExceptionHuman,salesRiskExceptionId as id} from './salesRiskExceptionDecisionFixture'
 import {COMPANY_A,COMPANY_B,json} from '../settings/testHarness'
@@ -8,6 +8,7 @@ afterEach(()=>vi.unstubAllGlobals())
 const decode=(v:unknown)=>decodeWorkDecisionPreview(v,COMPANY_A,kind,id)
 const record=(v:unknown)=>v as Record<string,unknown>
 describe('Risk owner-bound full10/13 human and exact native four-field protocol',()=>{
+ it('publishes exactly one Risk purpose beside all existing60 kinds',()=>{expect(WORK_DECISION_KINDS).toHaveLength(61);expect(WORK_DECISION_KINDS.filter(k=>k===kind)).toEqual([kind])})
  it('preserves all native fields,100ns UTC, rawreason and independent lossless order/exception versions',()=>{
   const v=fixture(COMPANY_A),before=JSON.stringify(v),d=decode(v);expect(d).not.toBeNull();expect(JSON.stringify(v)).toBe(before)
   expect(Object.keys(d!.salesRiskException!)).toHaveLength(10);expect(Object.keys(d!.salesRiskException!.exception)).toHaveLength(13)

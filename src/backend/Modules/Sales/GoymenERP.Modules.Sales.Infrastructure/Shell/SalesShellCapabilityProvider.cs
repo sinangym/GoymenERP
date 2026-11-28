@@ -55,8 +55,9 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    // 1.33: Discount uses its native approval authority; price disclosure remains optional.
-    public const string OwnerContractVersion = "1.34";
+    // 1.35: price-free Risk decisions use only their existing native approval authority.
+    public const string OwnerContractVersion = "1.35";
+    public const string RiskExceptionWorkDecisionCapabilityId = "sales.risk-exception.work-decision";
     public const string OverDeliveryRequestWorkDecisionCapabilityId = "sales.over-delivery-request.work-decision";
     public const string DiscountWorkDecisionCapabilityId = "sales.discount-exception.work-decision";
     public const string PriceFloorWorkDecisionCapabilityId = "sales.price-floor-exception.work-decision";
@@ -308,6 +309,10 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
         return
         [
         // WP8: purpose decision routes require the native command names, with no browse/read grant added.
+        new ShellCapabilityDeclaration(RiskExceptionWorkDecisionCapabilityId,"sales-risk-exception-work-decision",
+            "/onaylarim/sales.risk-exception.v1/:approvalId","W-SALES-RISK-EXCEPTION-01",ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            ShellCapabilityContextRequirement.SingleCompany,ShellCapabilityScopeRequirement.CompanyWide,
+            [SalesPermissionManifestV1.OrdersRiskExceptionApprove],ImplementationAvailable:true),
         new ShellCapabilityDeclaration(OverDeliveryRequestWorkDecisionCapabilityId,"sales-over-delivery-request-work-decision",
             "/onaylarim/sales.over-delivery-request.v1/:approvalId","W-SALES-OVER-DELIVERY-REQUEST-01",ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
             ShellCapabilityContextRequirement.SingleCompany,ShellCapabilityScopeRequirement.CompanyWide,
