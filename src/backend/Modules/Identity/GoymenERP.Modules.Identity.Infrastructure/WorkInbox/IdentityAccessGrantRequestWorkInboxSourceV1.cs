@@ -24,11 +24,12 @@ namespace GoymenERP.Modules.Identity.Infrastructure.WorkInbox;
 /// rests on (display names, as the pending list shows them). A role or user the read did not return is unavailable, never skipped.
 /// </para>
 /// </summary>
-internal sealed class IdentityAccessGrantRequestWorkInboxSourceV1(
+internal sealed partial class IdentityAccessGrantRequestWorkInboxSourceV1(
     IdentityDbContext database,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
-    IErpAuthorityRevalidationService authority) : IWorkInboxSourceV1
+    IErpAuthorityRevalidationService authority,
+    IIdentityAccessGrantDecisionV1? owner = null) : IWorkInboxSourceV1
 {
     public const string ModuleName = "identity";
     public const string KindName = "identity.access-grant-request.v1";
