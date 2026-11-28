@@ -20,7 +20,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// survives a later state mutation, replays without a second effect, and cannot be silently dropped by migration rollback.
 /// SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class SalesPriceFloorApprovalSqlServerRelationalAcceptanceTests
+public sealed partial class SalesPriceFloorApprovalSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid Company = TestCompanyIds.CompanyA;
     private static readonly Guid Currency = Guid.Parse("37d9052a-efb1-4fa6-99aa-735d8517b175");
