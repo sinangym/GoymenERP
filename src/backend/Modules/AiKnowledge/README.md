@@ -30,3 +30,12 @@ yüklenir; yürütülüyor/belirsiz sonucu için mevcut sahip komut sorgusu kull
 `20261126175933_AddAiCommandLedger`: EF üretimi, Down kayıt veya olay varken `THROW 52200` ile durur (forward fix).
 Silme ve otomatik imha yolu eklenmez. SQL kapalı/okunamazsa komut yürütülmez. Sağlayıcı, araç listesi ve AI bayrakları
 bu bağlantıyla açılmaz. Gerçek SQL yarış/geri alma testleri kapanışta koşulacaktır; kaynak/model testleri SQL kanıtı değildir.
+
+## WP-C5 kalıcı görev kaydı
+
+`20261128090056_AddAiScheduledTasks`, mevcut AI bağlamında şirket filtreli `ai.ScheduledTasks`,
+`ScheduledTaskCommands`, `ScheduledTaskRuns` ve `ScheduledTaskEvents` tablolarını ekler. EF üretimi snapshot korunur.
+Down, dört tablodan herhangi birinde kayıt varken ilk işlemde **THROW 52354** ile reddeder (forward fix); boş tablolar geri alınabilir.
+52354 mevcut kaynakta ve 28 Kasım kontrolündeki 11 açık PR farkında kullanılmıyordu.
+Görev servisi gerçek yetki, Ayarlar ve Work portları yapılandırılmadan kullanılamaz; DI/API/zamanlayıcı veya AI aktivasyonu yapılmaz.
+Gerçek SQL, pinler, CI ve bağımsız K3 kabulü kapanışta ayrıca gerekir.

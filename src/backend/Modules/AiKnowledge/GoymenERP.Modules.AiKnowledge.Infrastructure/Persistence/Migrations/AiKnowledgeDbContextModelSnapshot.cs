@@ -437,6 +437,171 @@ namespace GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiScheduledTaskCommandRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActorId")
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("KeyHash")
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .IsFixedLength();
+
+                    b.Property<string>("Command")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("PayloadHash")
+                        .IsRequired()
+                        .IsUnicode(false)
+                        .HasColumnType("char(64)")
+                        .IsFixedLength();
+
+                    b.Property<string>("ResponseJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("TaskId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("CompanyId", "ActorId", "KeyHash");
+
+                    b.ToTable("ScheduledTaskCommands", "ai", t =>
+                        {
+                            t.HasCheckConstraint("CK_AiScheduledTaskCommands_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [TaskId] <> '00000000-0000-0000-0000-000000000000' AND LEN([ActorId]) > 0 AND LEN([Command]) > 0 AND LEN([CorrelationId]) > 0 AND ISJSON([ResponseJson]) = 1 AND DATALENGTH([KeyHash]) = 64 AND [KeyHash] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%' AND DATALENGTH([PayloadHash]) = 64 AND [PayloadHash] COLLATE Latin1_General_100_BIN2 NOT LIKE '%[^0-9a-f]%'");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiScheduledTaskEventRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("CorrelationId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
+                    b.Property<DateTimeOffset>("RecordedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("TaskId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<long?>("Version")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "EventId");
+
+                    b.HasIndex("CompanyId", "TaskId", "RecordedAtUtc", "EventId");
+
+                    b.ToTable("ScheduledTaskEvents", "ai", t =>
+                        {
+                            t.HasCheckConstraint("CK_AiScheduledTaskEvents_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [EventId] <> '00000000-0000-0000-0000-000000000000' AND [TaskId] <> '00000000-0000-0000-0000-000000000000' AND LEN([ActorId]) > 0 AND LEN([Kind]) > 0 AND LEN([CorrelationId]) > 0");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiScheduledTaskRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TaskId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Effect")
+                        .HasColumnType("int");
+
+                    b.Property<string>("OwnerActorId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("nvarchar(128)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("ScheduleVersion")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<int>("State")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset>("UpdatedAtUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<long>("Version")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint");
+
+                    b.HasKey("CompanyId", "TaskId");
+
+                    b.HasIndex("CompanyId", "OwnerActorId", "State", "TaskId");
+
+                    b.ToTable("ScheduledTasks", "ai", t =>
+                        {
+                            t.HasCheckConstraint("CK_AiScheduledTasks_Identity", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [TaskId] <> '00000000-0000-0000-0000-000000000000' AND LEN([OwnerActorId]) > 0 AND [Purpose] = 'work.morning-summary.v1' AND [Effect] = 1 AND [State] BETWEEN 1 AND 4 AND [Version] > 0 AND LEN([ScheduleVersion]) > 0 AND [UpdatedAtUtc] >= [CreatedAtUtc]");
+                        });
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiScheduledTaskRunRow", b =>
+                {
+                    b.Property<Guid>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TaskId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("SlotUtc")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ReceiptJson")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.HasKey("CompanyId", "TaskId", "SlotUtc");
+
+                    b.ToTable("ScheduledTaskRuns", "ai", t =>
+                        {
+                            t.HasCheckConstraint("CK_AiScheduledTaskRuns_Receipt", "[CompanyId] <> '00000000-0000-0000-0000-000000000000' AND [TaskId] <> '00000000-0000-0000-0000-000000000000' AND ISJSON([ReceiptJson]) = 1");
+                        });
+                });
+
             modelBuilder.Entity("GoymenERP.Modules.Audit.Domain.Events.AuditEvent", b =>
                 {
                     b.Property<Guid>("Id")
@@ -683,6 +848,42 @@ namespace GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.Migrations
                     b.HasOne("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiKnowledgeCompanyReference", null)
                         .WithMany()
                         .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiScheduledTaskCommandRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiKnowledgeCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiScheduledTaskEventRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiKnowledgeCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiScheduledTaskRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiKnowledgeCompanyReference", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiScheduledTaskRunRow", b =>
+                {
+                    b.HasOne("GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.AiScheduledTaskRow", null)
+                        .WithMany()
+                        .HasForeignKey("CompanyId", "TaskId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
                 });
