@@ -13,11 +13,12 @@ namespace GoymenERP.Modules.Sales.Infrastructure.WorkInbox;
 /// (<c>sales.quotes.expired-conversion.approve</c>), which SAT-D44 (2) opens to the quote's creator too: the owner names no maker
 /// ≠ checker, so the item names no maker and no excluded decider. The rule carries no numbers.
 /// </summary>
-internal sealed class SalesQuoteConversionRequestWorkInboxSourceV1(
+internal sealed partial class SalesQuoteConversionRequestWorkInboxSourceV1(
     ISalesWorkInboxApprovalStoreV1 store,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
-    IErpAuthorityRevalidationService authority)
+    IErpAuthorityRevalidationService authority,
+    ISalesQuoteConversionDecisionReadV1? owner = null)
     : SalesWorkInboxSourceBaseV1(companyContext, currentUser, authority)
 {
     public const string KindName = "sales.quote-conversion-request.v1";
