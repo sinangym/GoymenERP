@@ -45,7 +45,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// service runs over the real store with SYNTHETIC owner ports: it proves the quote slice and the store, not any owner's rule.
 /// Every identity is SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class SalesQuoteSqlServerRelationalAcceptanceTests
+public sealed partial class SalesQuoteSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;

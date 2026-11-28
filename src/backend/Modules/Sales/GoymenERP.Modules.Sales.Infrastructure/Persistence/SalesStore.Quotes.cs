@@ -65,11 +65,12 @@ public sealed partial class SalesStore
     {
         RequireEnvelope(envelope);
         RequireHash(requestHash);
+        RequireQuoteApprovalCommand(envelope, requestHash, commandName, writes: false);
         RequireQuoteCommand(commandName);
         RequireResolvedCompany();
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
-        var attempt = await dbContext.QuoteAttempts.AsNoTracking()
-            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken);
+        var attempt = await QuoteApprovalReadAsync(() => dbContext.QuoteAttempts.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken), cancellationToken);
         if (attempt is null)
         {
             return null;
@@ -103,6 +104,7 @@ public sealed partial class SalesStore
         ArgumentNullException.ThrowIfNull(refusal);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
+        RequireQuoteApprovalCommand(envelope, requestHash, commandName, writes: true);
         RequireQuoteCommand(commandName);
         var companyId = RequireResolvedCompany();
         if (refusal.Status is < 400 or > 599 || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null
@@ -117,7 +119,7 @@ public sealed partial class SalesStore
         }
 
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
-        if (await QuoteAttemptExistsAsync(commandName, keyHash, cancellationToken))
+        if (await QuoteApprovalReadAsync(() => QuoteAttemptExistsAsync(commandName, keyHash, cancellationToken), cancellationToken))
         {
             throw Refused(SalesDraftStoreCodes.ConcurrentChange, "Bu anahtar zaten bir deneme taşıyor; tekrar onu alır.");
         }
@@ -135,7 +137,7 @@ public sealed partial class SalesStore
             CorrelationId = envelope.CorrelationId.Trim(),
             RecordedAtUtc = timeProvider.GetUtcNow(),
         });
-        await SaveAsync(cancellationToken);
+        await SaveQuoteApprovalAsync(cancellationToken, refusal);
     }
 
     public async Task<SalesQuoteStoreResult?> UpdateQuoteAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName, Guid quoteId,
@@ -145,6 +147,7 @@ public sealed partial class SalesStore
         ArgumentNullException.ThrowIfNull(audit);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
+        RequireQuoteApprovalCommand(envelope, requestHash, commandName, writes: true);
         if (commandName is not (SalesQuoteCommands.ReviseV1 or SalesQuoteCommands.LoseV2 or SalesQuoteCommands.ApproveExpiredConversionV1))
         {
             throw new ArgumentException("Yalnız revizyon, kayıp ve süre onayı bir teklifi günceller.", nameof(commandName));
@@ -153,8 +156,8 @@ public sealed partial class SalesStore
         var companyId = RequireResolvedCompany();
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
         var actorId = envelope.ActorId.Trim();
-        var attempt = await dbContext.QuoteAttempts.AsNoTracking()
-            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken);
+        var attempt = await QuoteApprovalReadAsync(() => dbContext.QuoteAttempts.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken), cancellationToken);
         if (attempt is not null)
         {
             return await ReplayQuoteAttemptAsync(attempt, actorId, requestHash, cancellationToken);
@@ -165,7 +168,7 @@ public sealed partial class SalesStore
             return null;
         }
 
-        var row = await dbContext.Quotes.SingleOrDefaultAsync(candidate => candidate.Id == quoteId, cancellationToken);
+        var row = await QuoteApprovalReadAsync(() => dbContext.Quotes.SingleOrDefaultAsync(candidate => candidate.Id == quoteId, cancellationToken), cancellationToken);
         if (row is null)
         {
             return null;
@@ -199,8 +202,8 @@ public sealed partial class SalesStore
         if (quote.State == SalesQuoteState.Lost)
         {
             // The lost quote no longer covers its requests: they may be quoted again (talep → teklif N:1 for the LIVE quote).
-            foreach (var link in await dbContext.QuoteRequests.Where(candidate => candidate.QuoteId == quote.Id && candidate.IsActive)
-                         .ToListAsync(cancellationToken))
+            foreach (var link in await QuoteApprovalReadAsync(() => dbContext.QuoteRequests.Where(candidate => candidate.QuoteId == quote.Id && candidate.IsActive)
+                         .ToListAsync(cancellationToken), cancellationToken))
             {
                 link.IsActive = false;
             }
@@ -209,14 +212,14 @@ public sealed partial class SalesStore
         AddQuoteAttempt(companyId, commandName, keyHash, requestHash, actorId, quote.Id, envelope, now);
         auditEvents.Enqueue(QuoteAudit(envelope, companyId, audit.EventType, audit.Operation, quote, versionBefore, before,
             QuoteAuditState(quote, withLines: quote.Revision != revisionBefore), audit.Reason));
-        await SaveAsync(cancellationToken);
+        await SaveQuoteApprovalAsync(cancellationToken);
         return new SalesQuoteStoreResult(quote, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 
     public async Task<SalesQuote?> FindQuoteAsync(Guid quoteId, CancellationToken cancellationToken = default)
     {
         RequireResolvedCompany();
-        var row = await dbContext.Quotes.AsNoTracking().SingleOrDefaultAsync(candidate => candidate.Id == quoteId, cancellationToken);
+        var row = await QuoteApprovalReadAsync(() => dbContext.Quotes.AsNoTracking().SingleOrDefaultAsync(candidate => candidate.Id == quoteId, cancellationToken), cancellationToken);
         return row is null ? null : await RestoreQuoteAsync(row, cancellationToken);
     }
 
@@ -430,18 +433,18 @@ public sealed partial class SalesStore
     private async Task<SalesQuote> RestoreQuoteAsync(QuoteRow row, CancellationToken cancellationToken)
     {
         // Every revision header (SAT-D44 (1): who created and revised the quote); the lines of the current one only.
-        var revisions = await dbContext.QuoteRevisions.AsNoTracking()
-            .Where(candidate => candidate.QuoteId == row.Id).OrderBy(candidate => candidate.Revision).ToListAsync(cancellationToken);
+        var revisions = await QuoteApprovalReadAsync(() => dbContext.QuoteRevisions.AsNoTracking()
+            .Where(candidate => candidate.QuoteId == row.Id).OrderBy(candidate => candidate.Revision).ToListAsync(cancellationToken), cancellationToken);
         if (!revisions.Any(candidate => candidate.Revision == row.Revision))
         {
             throw new InvalidOperationException("Kayıtlı teklifin güncel revizyonu bulunamadı.");
         }
 
-        var lines = await dbContext.QuoteLines.AsNoTracking()
-            .Where(line => line.QuoteId == row.Id && line.Revision == row.Revision).ToListAsync(cancellationToken);
-        var requests = await dbContext.QuoteRequests.AsNoTracking().Where(link => link.QuoteId == row.Id).ToListAsync(cancellationToken);
-        var approvals = await dbContext.QuoteExpiryApprovals.AsNoTracking()
-            .Where(approval => approval.QuoteId == row.Id).ToListAsync(cancellationToken);
+        var lines = await QuoteApprovalReadAsync(() => dbContext.QuoteLines.AsNoTracking()
+            .Where(line => line.QuoteId == row.Id && line.Revision == row.Revision).ToListAsync(cancellationToken), cancellationToken);
+        var requests = await QuoteApprovalReadAsync(() => dbContext.QuoteRequests.AsNoTracking().Where(link => link.QuoteId == row.Id).ToListAsync(cancellationToken), cancellationToken);
+        var approvals = await QuoteApprovalReadAsync(() => dbContext.QuoteExpiryApprovals.AsNoTracking()
+            .Where(approval => approval.QuoteId == row.Id).ToListAsync(cancellationToken), cancellationToken);
         return SalesQuoteRows.Restore(row, revisions, lines, requests, approvals);
     }
 

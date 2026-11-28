@@ -121,6 +121,11 @@ public sealed partial class SalesDraftService : ISalesApprovalRequestService
 
     public Task<SalesApprovalRequestCommandResult> RejectQuoteConversionRequestAsync(Guid quoteId, int requestNo,
         SalesDraftStateCommandRequest request, SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        quoteApprovalSafety ? RunQuoteConversionRejectionAsync(quoteId, requestNo, request, metadata, cancellationToken)
+            : RejectQuoteConversionRequestCoreAsync(quoteId, requestNo, request, metadata, cancellationToken);
+
+    private Task<SalesApprovalRequestCommandResult> RejectQuoteConversionRequestCoreAsync(Guid quoteId, int requestNo,
+        SalesDraftStateCommandRequest request, SalesCommandMetadata metadata, CancellationToken cancellationToken) =>
         RejectApprovalRequestAsync(SalesApprovalRequestKind.QuoteExpiredConversion, quoteId, requestNo, request,
             SalesApprovalRequestCommands.RejectQuoteConversionV1, bindings.QuoteExpiredConversionApprovePermission, metadata,
             QuoteConversionRejectedAudit, cancellationToken);

@@ -25,8 +25,13 @@ namespace GoymenERP.Modules.Sales.Application;
 /// </summary>
 public sealed partial class SalesDraftService
 {
-    public async Task<SalesQuoteResponse> ApproveExpiredQuoteConversionAsync(Guid quoteId, SalesQuoteExpiryApprovalRequest request,
-        SalesCommandMetadata metadata, CancellationToken cancellationToken = default)
+    public Task<SalesQuoteResponse> ApproveExpiredQuoteConversionAsync(Guid quoteId, SalesQuoteExpiryApprovalRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken = default) => quoteApprovalSafety
+            ? RunExpiredQuoteApprovalAsync(quoteId, request, metadata, cancellationToken)
+            : ApproveExpiredQuoteConversionCoreAsync(quoteId, request, metadata, cancellationToken);
+
+    private async Task<SalesQuoteResponse> ApproveExpiredQuoteConversionCoreAsync(Guid quoteId, SalesQuoteExpiryApprovalRequest request,
+        SalesCommandMetadata metadata, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(metadata);

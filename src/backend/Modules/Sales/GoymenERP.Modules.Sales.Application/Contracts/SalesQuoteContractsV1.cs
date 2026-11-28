@@ -416,3 +416,12 @@ public interface ISalesQuoteService
     Task<SalesOrderDraftResponse> ConvertQuoteAsync(Guid quoteId, SalesQuoteConversionRequest request, SalesCommandMetadata metadata,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>Native expired-quote decisions only; one owned transaction, or one read-only original-key reconciliation.</summary>
+public interface ISalesQuoteApprovalStoreV1
+{
+    bool QuoteApprovalEntryIsClean { get; }
+    Task<T> RunQuoteApprovalAsync<T>(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        bool cleanBeforeAuthority, Func<CancellationToken, Task<T>> execute, Func<CancellationToken, Task<T?>> readOriginalKey,
+        Func<T, bool> isReplay, Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken) where T : class;
+}
