@@ -20,7 +20,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// document is SENTETIK: the UBL-TR invoice, the tables, the PDFs and the pasted texts are built here. The draft never
 /// creates a record; counterparty and product answers come from fake owner ports.
 /// </summary>
-public sealed class AiDocumentDraftServiceTests
+public sealed partial class AiDocumentDraftServiceTests
 {
     private static readonly Guid Company = Guid.Parse("aaaaaaaa-0000-4000-8000-0000000000b3");
     private static readonly Guid Actor = Guid.Parse("11111111-1111-4111-8111-1111111111b3");
@@ -669,6 +669,9 @@ public sealed class AiDocumentDraftServiceTests
 
     private sealed class Harness
     {
+        public CapturedTestCompany Context { get; } = new();
+        public TestUser User { get; } = new(Actor, Company);
+        public Harness() => Context.Set(Company);
         public AiRuntimeOptions Runtime { get; } = new() { Enabled = true };
 
         public AiDocumentDraftOptions Options { get; } = new()
@@ -694,14 +697,13 @@ public sealed class AiDocumentDraftServiceTests
 
         public AiDocumentDraftService Service()
         {
-            var company = new CompanyContext();
-            company.Set(Company);
+            var company = Context;
             var correlation = new CorrelationContext();
             correlation.Set("corr-ai-b3-sentetik", null, SourceChannels.Web, null, null);
             return new AiDocumentDraftService(
                 Microsoft.Extensions.Options.Options.Create(Runtime),
                 Microsoft.Extensions.Options.Options.Create(Options),
-                new TestUser(Actor, Company),
+                User,
                 company,
                 Authority,
                 correlation,
@@ -720,12 +722,14 @@ public sealed class AiDocumentDraftServiceTests
     private sealed class FakeStore : IAiDocumentSourceStoreV1
     {
         public bool Available { get; set; } = true;
+        public Action? OnStore { get; set; }
         public List<(Guid CompanyId, string Sha256)> Stored { get; } = [];
 
         public Task<bool> TryStoreAsync(Guid companyId, ReadOnlyMemory<byte> content, string sha256, CancellationToken cancellationToken = default)
         {
             if (!Available) return Task.FromResult(false);
             Stored.Add((companyId, sha256));
+            OnStore?.Invoke();
             return Task.FromResult(true);
         }
     }
@@ -733,12 +737,14 @@ public sealed class AiDocumentDraftServiceTests
     private sealed class FakeOcr : IAiDocumentOcrV1
     {
         public string? Text { get; set; }
+        public Action? OnRead { get; set; }
         public List<string> MediaTypes { get; } = [];
         public bool IsAvailable => Text is not null;
 
         public Task<AiOcrResultV1> RecognizeAsync(ReadOnlyMemory<byte> content, string mediaType, CancellationToken cancellationToken = default)
         {
             MediaTypes.Add(mediaType);
+            OnRead?.Invoke();
             return Task.FromResult(new AiOcrResultV1(true, Text));
         }
     }
@@ -746,6 +752,7 @@ public sealed class AiDocumentDraftServiceTests
     private sealed class FakeLocalModel : IAiDocumentLocalModelV1
     {
         public bool Available { get; set; }
+        public Action? OnSuggest { get; set; }
         public AiLocalModelFieldResponseV1 Response { get; set; } = new(new Dictionary<string, string>(), []);
         public List<AiLocalModelFieldRequestV1> Requests { get; } = [];
         public bool IsAvailable => Available;
@@ -753,18 +760,21 @@ public sealed class AiDocumentDraftServiceTests
         public Task<AiLocalModelFieldResponseV1> SuggestAsync(AiLocalModelFieldRequestV1 request, CancellationToken cancellationToken = default)
         {
             Requests.Add(request);
+            OnSuggest?.Invoke();
             return Task.FromResult(Response);
         }
     }
 
     private sealed class FakeCounterparties : IAiDocumentCounterpartyMatcherV1
     {
+        public Action? OnMatch { get; set; }
         public AiCounterpartyMatchV1 Match { get; set; } = new(AiDraftMatchOutcomeV1.Unavailable, null);
         public List<AiDraftCounterpartyRoleV1> Roles { get; } = [];
 
         public Task<AiCounterpartyMatchV1> MatchByTaxIdAsync(string taxId, AiDraftCounterpartyRoleV1 role, CancellationToken cancellationToken = default)
         {
             Roles.Add(role);
+            OnMatch?.Invoke();
             return Task.FromResult(Match);
         }
     }
@@ -824,10 +834,18 @@ public sealed class AiDocumentDraftServiceTests
 
         public void Revoke(string permission) => grants.Remove(permission);
 
-        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default) =>
-            Task.FromResult(companyId == Company && grants.Contains(permission)
+        public Action<string, int>? AfterCheck { get; set; }
+        public int Calls { get; private set; }
+        public bool Fail { get; set; }
+        public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default)
+        {
+            var answer = companyId == Company && grants.Contains(permission)
                 ? new PermissionScope(true, true, new HashSet<string>(StringComparer.Ordinal) { "ROLE-SENTETIK" }, new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>())
-                : PermissionScope.Denied);
+                : PermissionScope.Denied;
+            AfterCheck?.Invoke(permission, ++Calls);
+            if (Fail) throw new InvalidOperationException("SENTETIK authority unavailable");
+            return Task.FromResult(answer);
+        }
     }
 
     private sealed class RecordingWriter : ISecurityEventWriterV1
@@ -844,9 +862,12 @@ public sealed class AiDocumentDraftServiceTests
 
     private sealed class TestUser(Guid userId, params Guid[] companies) : ICurrentUser
     {
-        public bool IsAuthenticated => true;
-        public string? UserId => userId.ToString("D");
+        public bool Authenticated { get; set; } = true;
+        public bool Member { get; set; } = true;
+        public string ActorId { get; set; } = userId.ToString("D");
+        public bool IsAuthenticated => Authenticated;
+        public string? UserId => ActorId;
         public IReadOnlySet<Guid> AllowedCompanyIds { get; } = companies.ToHashSet();
-        public bool CanAccessCompany(Guid companyId) => AllowedCompanyIds.Contains(companyId);
+        public bool CanAccessCompany(Guid companyId) => Member && AllowedCompanyIds.Contains(companyId);
     }
 }
