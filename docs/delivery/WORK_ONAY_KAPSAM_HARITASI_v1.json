@@ -459,14 +459,14 @@
             "source_decision_read": true,
             "host_supported": true,
             "owner_permission": "sales.orders.approve",
-            "frontend_inbox_registered": false,
-            "frontend_published": false,
-            "frontend_capability": null,
-            "capability_declared": false,
-            "route": null,
-            "route_parity": null,
-            "inbox_capability": null,
-            "inbox_capability_matches_work": null
+            "frontend_inbox_registered": true,
+            "frontend_published": true,
+            "frontend_capability": "sales.remainder-change.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/sales.remainder-change.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "sales.remainder-change.work-decision",
+            "inbox_capability_matches_work": true
           }
         ],
         "owner_commands": [
@@ -482,7 +482,7 @@
         "native_permissions": [
           "sales.orders.approve"
         ],
-        "status": "BACKEND_WORK_HOST_FRONTEND_UNPUBLISHED",
+        "status": "BACKEND_FRONTEND_SOURCE_PAIRED_NOT_RUNTIME_VERIFIED",
         "source": "CHECKED_AT_EXACT_HEAD",
         "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
         "actual_SQL": "NOT_RUN",
@@ -490,8 +490,8 @@
         "CI": "NO_CURRENT_HEAD_EVIDENCE",
         "K3": "NOT_PERFORMED",
         "map_runtime": "NOT_RUN",
-        "note": "Dedicated native DraftId/ChangeNo/version-aware owner source and Work Host now exist; generic order approval remains distinct. Paired frontend and runtime acceptance pending.",
-        "source_commit": "ae882cec8e7a554758a8e150a5327cd94674c987",
+        "note": "Dedicated native version-aware owner and Work Host paired with standalone OrdersApprove UI. Runtime/SQL/browser acceptance pending.",
+        "source_commit": "2840ff9d213c8b5df9530b08dcb8f0cf4e58643d",
         "later_deltas": [
           {
             "head": "7029f23afa7767de82af561a4bd1dd6f05ff607f",
@@ -6568,12 +6568,12 @@
       }
     ],
     "audit_sha256": "7b99cf7b328d015372dc2a31cd0afd74c8c40edebd9e72ae822f61d7ee529680",
-    "current_source_commit": "ae882cec8e7a554758a8e150a5327cd94674c987",
+    "current_source_commit": "2840ff9d213c8b5df9530b08dcb8f0cf4e58643d",
     "current_source_summary": {
       "backend_kinds": 62,
-      "frontend_published_kinds": 61,
+      "frontend_published_kinds": 62,
       "backend_supported_flows": 61,
-      "paired_flows": 60,
+      "paired_flows": 61,
       "no_host_flows": [
         10,
         11,
@@ -6588,9 +6588,7 @@
       "native_single_step_no_pending_flows": [
         62
       ],
-      "backend_only_unpublished_flows": [
-        6
-      ]
+      "backend_only_unpublished_flows": []
     }
   },
   "purpose_and_native_merge_checkpoint": {
@@ -7635,6 +7633,79 @@
       },
       "source_scope": "Flow6 DraftId/ChangeNo/line/expectedN selection reaches the same native SalesDraftService; genuine original N to N+1 receipt stays distinct from current response N+k. Current quantity-only human view, raw optional rejection reason, exact typed owner proof, original-key replay, live authority/WP3 and native SAT-D2 persona exclusions. Global maker behavior unchanged for every other exact kind.",
       "limits": "Frontend pairing is not published yet. ActualSQL/normalHTTP/browser/aggregatepins/fullCI/two independent exact-head K3/business acceptance NOT_RUN. Broad frontend3342pass1fail and isolated449pass diagnostic remain separate evidence; unresolved failure not cleared."
+    },
+    "remainder_paired_mixed_price_return_native": {
+      "source_commit": "2840ff9d213c8b5df9530b08dcb8f0cf4e58643d",
+      "scope": "BOUNDED_LOCAL_NOT_RUNTIME_ACCEPTANCE",
+      "backend_source_commit": "affe377175cce7807167d640149f22337e995192",
+      "sales": {
+        "freeGiB": 4.054344177246094,
+        "head": "affe377175cce7807167d640149f22337e995192",
+        "seconds": 68.1180074,
+        "exit": 0,
+        "total": 3020,
+        "passed": 3020,
+        "failed": 0,
+        "skipped": 0,
+        "artifact": "remainder-paired-mixed-price-return-native-20261128/sales"
+      },
+      "purchasing": {
+        "freeGiB": 3.9518814086914062,
+        "head": "affe377175cce7807167d640149f22337e995192",
+        "seconds": 27.9789866,
+        "exit": 0,
+        "total": 1604,
+        "passed": 1604,
+        "failed": 0,
+        "skipped": 0,
+        "artifact": "remainder-paired-mixed-price-return-native-20261128/purchasing"
+      },
+      "api_refresh": {
+        "freeGiB": 3.9057655334472656,
+        "head": "affe377175cce7807167d640149f22337e995192",
+        "seconds": 26.6511218,
+        "exit": 0,
+        "artifact": "remainder-paired-mixed-price-return-native-20261128/api_refresh"
+      },
+      "host": {
+        "freeGiB": 3.8204078674316406,
+        "head": "affe377175cce7807167d640149f22337e995192",
+        "seconds": 76.4382439,
+        "exit": 0,
+        "total": 1405,
+        "passed": 1405,
+        "failed": 0,
+        "skipped": 0,
+        "artifact": "remainder-paired-mixed-price-return-native-20261128/host"
+      },
+      "tsc": {
+        "head": "2840ff9d213c8b5df9530b08dcb8f0cf4e58643d",
+        "freeGiB": 3.9951820373535156,
+        "seconds": 58.5519591,
+        "exit": 0,
+        "artifact": "remainder-terminal-codec-regression-20261128/tsc"
+      },
+      "lint": {
+        "head": "2840ff9d213c8b5df9530b08dcb8f0cf4e58643d",
+        "freeGiB": 4.160308837890625,
+        "seconds": 0.8113361,
+        "exit": 0,
+        "artifact": "remainder-terminal-codec-regression-20261128/lint"
+      },
+      "frontend": {
+        "head": "2840ff9d213c8b5df9530b08dcb8f0cf4e58643d",
+        "freeGiB": 4.167240142822266,
+        "seconds": 132.14042,
+        "exit": 0,
+        "artifact": "remainder-terminal-codec-regression-20261128/frontend",
+        "total": 2621,
+        "passed": 2621,
+        "failed": 0,
+        "skipped": 0
+      },
+      "source_scope": "Remainder flow6 paired native Work human preview, canonical text quantities, standalone OrdersApprove capability and same-key recovery; mixed approved service price revision participant-history source and tests; customer return decision safety source remains default-off and uncomposed pending native guard tests.",
+      "failure_history": "Initial frontend TSC at affe failed duplicate CAPABILITY_NAV_LABEL import; bf929 test-only import fix keeps assertions. Broad bf929 frontend3434total/3430pass/4fail identifies missing remainder kind in generic terminal rejectionSupported boolean guard. Root2840ff9 fixes that production guard; bounded full Work .test.ts codec cohort plus WorkDecisionPage/RemainderPage and shell route regressions rerun; no test assertions removed. Earlier11d997 Manufacturing retry3342pass1fail/isolated449pass remains separate evidence, cause unestablished.",
+      "limits": "Backend evidence at affe; frontend at2840 includes test import fix and terminal codec production fix; broad UI not fully rerun after it. ActualSQL/normalHTTP/browser/aggregatepins/fullCI/two independent exact-head K3/business acceptance NOT_RUN. Earlier normalHTTP Purchasing132 startup pin-drift failures retained."
     }
   }
 }
