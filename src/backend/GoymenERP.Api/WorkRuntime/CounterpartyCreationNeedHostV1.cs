@@ -45,6 +45,8 @@ public sealed class CounterpartyCreationNeedHostV1(ICompanyContext company, ICur
             Same(captured, cancellationToken);
             await ActorFence(captured, cancellationToken);
             await RecipientFence(captured, request.AssigneeUserId, cancellationToken);
+            // The recipient port's completed await must not release a reply using a cached TasksAssign decision.
+            await ActorFence(captured, cancellationToken);
             Same(captured, cancellationToken);
             if (!Matches(answer, captured, request, metadata)) throw Unavailable();
             return answer;
