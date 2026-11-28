@@ -443,9 +443,17 @@ describe('/onaylarim/kuyruk — Benden karar bekleyen', () => {
   })
 
   it('opens for another inbox kind\'s existing approve capability', async () => {
-    installFetch({ granted: [LOGISTICS_CAPABILITY.planExcessApprove] })
+    installFetch({ granted: [CAPABILITY.logisticsPlanExcessWorkDecision] })
     await renderAt('/onaylarim/kuyruk')
     expect(await screen.findByTestId('work-inbox-list')).toBeTruthy()
+  })
+
+  it.each(['inventory.stock-transfer.overage-approve', LOGISTICS_CAPABILITY.planExcessApprove])('keeps native-only capability %s separate from Work inbox admission', async native => {
+    const api = installFetch({ granted: [native] })
+    await renderAt('/onaylarim/kuyruk')
+    await waitFor(() => expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+    expect(api.inboxReads()).toEqual([])
+    expect(api.queueReads()).toEqual([])
   })
 
   it('an actor with no inbox or queue capability gets the neutral not-found page and nothing is read', async () => {

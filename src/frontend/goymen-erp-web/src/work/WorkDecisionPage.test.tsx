@@ -930,6 +930,38 @@ const overagePreview={...preview,kind:overageKind,approvalReasonRequired:true,re
  references:[{role:'inventory-transfer',label:'SENTETIK transfer',recordId:overageTransfer,link:null}],inventoryTransferOverage:overageProposal}
 const overagePath=`/work/decisions/${overageKind}/${id}`
 const mountOverage=()=>mount(`/onaylarim/${overageKind}/${id}`,true)
+it.each([
+ {decisionKind:overageKind,capability:overageCap,module:'inventory',permission:'inventory.stock-transfer.overage-approve',human:overagePreview,heading:T.overageProposal,ruleCode:'inventory.transfer-overage-received'},
+ {decisionKind:excessKind,capability:excessCap,module:'logistics',permission:'logistics.shipments.plan-excess.approve',human:excessPreview,heading:T.planExcessProposal,ruleCode:'logistics.plan-excess-quantity'},
+])('opens the real inbox and follows $decisionKind with only its standalone purpose capability',async({decisionKind,capability,module,permission,human,heading,ruleCode})=>{
+ const decisionPath=`/work/decisions/${decisionKind}/${id}`,detailPath=`/onaylarim/${decisionKind}/${id}`
+ const ruleVersion=`work.approval-rule:${decisionKind}:0`
+ const calls=installFetch({capabilities:[capability],respond:(url,init)=>{
+  if(url.includes('/work/inbox/events')){
+   const event=JSON.parse(String(init?.body)) as {clientEventId:string}
+   return json({clientEventId:event.clientEventId,replayed:false})
+  }
+  if(url.includes('/work/inbox'))return json({companyId:COMPANY_A,view:'awaiting-my-decision',generatedAtUtc:'2026-11-27T08:00:00Z',
+   items:[{module,kind:decisionKind,itemId:id,documentLabel:human.documentLabel,link:detailPath,waitingSinceUtc:'2026-11-27T08:00:00Z',awaitingPermission:permission,
+    duration:{class:'Hours',state:'Undefined',limit:null,dueAtUtc:null,isOverdue:null,policyVersion:null,holidayCalendar:null},ruleVersion,
+    explanation:{rules:[{ruleCode,threshold:null,actual:null,deviation:null,unit:null}],references:human.references}}],
+   sources:[{module,kind:decisionKind,awaitingPermission:permission,durationClass:'Hours',ruleVersion,state:'Ready',hasMore:false}]})
+  return url.includes(decisionPath)?json(human):undefined
+ }})
+ const router=mount('/onaylarim/kuyruk',true)
+ await screen.findByTestId('work-inbox-list')
+ const card=screen.getByTestId('work-inbox-item'),link=within(card).getByRole('link')
+ expect(card.getAttribute('data-kind')).toBe(decisionKind);expect(link.getAttribute('href')).toBe(detailPath)
+ const inboxReads=calls.filter(call=>call.url.includes('/work/inbox?'))
+ expect(inboxReads).toHaveLength(1);expect(inboxReads[0]!.headers['X-Company-Id']).toBe(COMPANY_A)
+ expect(calls.some(call=>call.url.includes(decisionPath))).toBe(false)
+ await userEvent.setup().click(link)
+ await screen.findByRole('heading',{name:heading})
+ expect(router.state.location.pathname).toBe(detailPath)
+ const detailReads=calls.filter(call=>call.url.includes(decisionPath))
+ expect(detailReads).toHaveLength(1);expect(detailReads[0]!.method).toBe('GET');expect(detailReads[0]!.headers['X-Company-Id']).toBe(COMPANY_A)
+ expect(calls.some(call=>call.url.includes('/work/queue')||call.url.includes('/inventory/')||call.url.includes('/logistics/'))).toBe(false)
+})
 it.each([{approve:true,pieceCount:0},{approve:false,pieceCount:null}])('shows exact human overage context with pieces=$pieceCount and requires explicit time/reason approve=$approve',async({approve,pieceCount})=>{
  const calls=installFetch({capabilities:[overageCap],respond:(url,init)=>url.includes(overagePath)
   ?init?.method==='POST'?json({companyId:COMPANY_A,kind:overageKind,itemId:id,state:approve?'Approved':'Rejected',replayed:false,originalCorrelationId:'original'}):json({...overagePreview,inventoryTransferOverage:{...overageProposal,pieceCount}}):undefined})
