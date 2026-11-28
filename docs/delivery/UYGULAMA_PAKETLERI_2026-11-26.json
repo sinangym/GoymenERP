@@ -2322,7 +2322,7 @@
         "activation": "No grants/flags/provider changes"
       },
       "execution": {
-        "source_commit": "8772734ae27f9897185f9f829c0d9139a4639596",
+        "source_commit": "b5db1126304ad1fdb324a544babdb0004bafb8f1",
         "implemented_kinds": [
           "accounting.invoiced-shipment-cost.v1",
           "accounting.purchase-cost-difference.v1",
@@ -2374,7 +2374,9 @@
           "purchasing.incoming-invoice-variance.v1",
           "purchasing.goods-receipt-batch.v1",
           "manufacturing.plan.v1",
-          "finance.credit-account.v1"
+          "finance.credit-account.v1",
+          "accounting.inventory-cost-cancellation.v1",
+          "accounting.source-voucher.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -3516,8 +3518,11 @@
           "7898cc30397ab51d38464c5ac674de2422890d07",
           "9f9442c4e9382033ea97f54e62d7238ab50e91c4"
         ],
-        "kind_count_scope": "Source51 backend/51 paired frontend/0 staged;64 runtime flows are NOT_VERIFIED/NOT_RUN, verified0.",
-        "staged_kinds": [],
+        "kind_count_scope": "53 backend /51 frontend paired /2 staged; source pairing only,64 runtime flows NOT_VERIFIED/NOT_RUN,verified0.",
+        "staged_kinds": [
+          "accounting.inventory-cost-cancellation.v1",
+          "accounting.source-voucher.v1"
+        ],
         "historical_kind_count_scope": "29 paired source kinds/29 native kinds with exact set equality atcc379ff28f74d5810ed51ad537ebece821440d72, including Product package-standard; staged0. Native price-list publish safety is a prerequisite, not a30th Work purpose. All64 runtime flows remain NOT_VERIFIED/NOT_RUN; source pairing is not acceptance.",
         "historical_kind_count_scopes": [
           "Atb1cacee89f805a05959b5b79af034270b80b8103 source-derived sets:30native/29paired frontend; only product.price-list-version.v1 staged, no unknown frontend kind. Historicalcc379 exact29/29 remains valid only at that head. verified_runtime_flows=0; all64 semantics/runtime remain NOT_VERIFIED/NOT_RUN.",
@@ -3751,7 +3756,10 @@
           "sql": "Finance389 unique test source names,15 new native SQL Facts (opening9/banklimit6) compiled; actual SQL NOT_RUN. No new migration in this increment.",
           "limits": "ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3 pending;41packages/50references/64flows;verified_runtime_flows=0, all64 semantics NOT_VERIFIED/runtimeNOT_RUN."
         },
-        "staged_native_kinds": [],
+        "staged_native_kinds": [
+          "accounting.inventory-cost-cancellation.v1",
+          "accounting.source-voucher.v1"
+        ],
         "native_finance_paired_checkpoint": {
           "source_commit": "8046fd301ca682a4dda01eb4dbdd71cfc9735b42",
           "scope": "Flow42 bank limit and Flow44/45 opening/reversal now have private scalar proofs, original native receipts, complete purpose-only human GET, paired Work UI and Finance provider1.32/67 declarations. Existing owner commands and permissions reused; no grant, new permission, policy or activation.",
@@ -4106,7 +4114,7 @@
           "delivery_scope": "Flow51 catalog and Flow52 posting mapping owner/source/DTO/WorkHost/full human UI are paired in source:47 backend/47 frontend/0 staged. Flow53 native whole-approval safety integrated; owner read follow-up is frozen in its separate author branch, not yet integrated. Source pairing is not runtime acceptance.",
           "runtime_acceptance": "NOT_RUN"
         },
-        "current_checkpoint_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#invoice_and_inventory_cost_work_checkpoint",
+        "current_checkpoint_ref": "invoice_and_inventory_cost_work_checkpoint",
         "native_cost_work_checkpoint": {
           "source_commit": "c1a3809ad3fab2235f75fc5e91f671e3b557b938",
           "evidence_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#native_cost_work_checkpoint",
@@ -4118,14 +4126,17 @@
           "runtime_acceptance": "NOT_RUN"
         },
         "invoice_and_inventory_cost_work_checkpoint": {
-          "source_commit": "8772734ae27f9897185f9f829c0d9139a4639596",
+          "source_commit": "b5db1126304ad1fdb324a544babdb0004bafb8f1",
           "status": "SOURCE_AND_BOUNDED_LOCAL_TESTS_ONLY",
-          "backend_supported_kinds": 51,
+          "backend_supported_kinds": 53,
           "frontend_paired_kinds": 51,
-          "staged_frontend_kinds": [],
+          "staged_frontend_kinds": [
+            "accounting.inventory-cost-cancellation.v1",
+            "accounting.source-voucher.v1"
+          ],
           "flow54": "Retained invoice-line COGS owner, private original Commands receipt, full human Work5/25 transport and paired purpose under the existing company-wide journal reversal approval. Native proposal1→2 remains separate from current invoice-line revision. No new permission. Work-only empty return-list and exact Int32 boundaries source-reviewed; native numeric decoder defaults unchanged.",
           "flow55": "Both native cost kinds now have paired purpose-only Work UI, provider1.19/40 declarations, exact canonical record links and separate existing approval permissions. Old native screens remain;12 Accounting and69 unique global Inbox rows remain. Existing nested human whitelist, Int64 text, genuine Posted/RoundedNoCost/Stale outcomes and original-key unknown recovery preserved.",
-          "flow56_prerequisite": "Native component cancellation now uses the existing exact owned command boundary, same Db/collector/actual audit writer, all-await fences including nested claim/evidence reads, late-refusal rollback and one readonly original-key reconciliation. Outer cost version is unchanged; only cancellation version increments. Owner/read/receipt/Work purpose remains pending. No schema/formula/permission policy changed.",
+          "flow56_prerequisite": "Native cancellation owner read, retained independent original N / preparation M, immutable recorded time, source cancellation and genuine19-field Commands receipt integrated. Work POST selects M and sends native N/M exactly; original N unchanged, cancellation M+1. Typed human5/source10 whitelist, long text, no private hashes/receipt. API Host126 new cases included in1944 source3ade; frontend core is frozen separately and not integrated/published.",
           "local_evidence": {
             "accounting": {
               "seconds": 35.367425,
@@ -4224,9 +4235,77 @@
               "failed": 1,
               "skipped": 0,
               "scope": "24 unchanged files passed; the changed succession fixture aliased its two physical claim objects. Corrected fixture affects the two new Work files;98 cases rerun separately, not a claimed whole25-file PASS on the later head."
+            },
+            "native_cancellation_voucher_tax_batch": {
+              "accounting": {
+                "exit": 0,
+                "seconds": 36.4684133,
+                "freeGiB": 3.8343734741210938,
+                "head": "3ade25586b7b2f52ec7c77498810f9c78b8d4989",
+                "passed": 1753,
+                "total": 1753,
+                "skipped": 0,
+                "artifact": "cancellation-source-voucher-tax-id-import-fixed-20261128/accounting"
+              },
+              "organization": {
+                "exit": 0,
+                "seconds": 23.9125366,
+                "head": "3ade25586b7b2f52ec7c77498810f9c78b8d4989",
+                "freeGiB": 3.7197647094726562,
+                "passed": 278,
+                "total": 278,
+                "skipped": 0,
+                "artifact": "cancellation-source-voucher-tax-id-organization-restored-20261128/organization"
+              },
+              "host_before_source_voucher_cases": {
+                "exit": 0,
+                "seconds": 67.6643958,
+                "head": "3ade25586b7b2f52ec7c77498810f9c78b8d4989",
+                "freeGiB": 4.165416717529297,
+                "passed": 1944,
+                "total": 1944,
+                "skipped": 0,
+                "artifact": "cancellation-source-voucher-tax-id-organization-restored-20261128/host"
+              },
+              "work": {
+                "exit": 0,
+                "seconds": 13.7353983,
+                "head": "3ade25586b7b2f52ec7c77498810f9c78b8d4989",
+                "freeGiB": 4.0562286376953125,
+                "passed": 195,
+                "total": 195,
+                "skipped": 0,
+                "artifact": "cancellation-source-voucher-tax-id-organization-restored-20261128/work"
+              },
+              "api_refresh": {
+                "exit": 0,
+                "seconds": 21.5094972,
+                "head": "3ade25586b7b2f52ec7c77498810f9c78b8d4989",
+                "freeGiB": 4.177669525146484,
+                "artifact": "cancellation-source-voucher-tax-id-organization-restored-20261128/api-refresh"
+              }
+            },
+            "source_voucher_host_batch": {
+              "controlled_host": {
+                "seconds": 61.8930277,
+                "exit": 0,
+                "freeGiB": 4.109066009521484,
+                "head": "b5db1126304ad1fdb324a544babdb0004bafb8f1",
+                "passed": 2077,
+                "total": 2077,
+                "skipped": 0,
+                "artifact": "source-voucher-host-bound-20261128/host"
+              },
+              "api_refresh": {
+                "seconds": 22.9908158,
+                "exit": 0,
+                "freeGiB": 4.137733459472656,
+                "head": "b5db1126304ad1fdb324a544babdb0004bafb8f1",
+                "artifact": "source-voucher-host-bound-20261128/api-refresh"
+              }
             }
           },
-          "evidence_scope": "Every artifact retains its exact source SHA. Current Accounting1647/Host1816/API refresh belong to877; Work195 belongs toc0c95. TSC/lint and two changed frontend files98PASS belong toba5, whose frontend bytes remain unchanged at877. Prior25-file run remains1623PASS/1FAIL and is not reported as later-head fullPASS. Full API prior-source build remains separate. ActualSQL/normalHTTP/browser/fullCI/pins/K3 remain pending.",
+          "evidence_scope": "Exact source SHA per artifact;3ade Accounting1753,Organization278,Work195 and controlledHost1944 are separate from b5db API refresh/Host2077. References=false API refresh follows freshly rebuilt Accounting/Organization; not a new full all-reference build. Accounting260 and Organization41 SQL source FQNs compiled in controlled integration-source build; actualSQL NOT_RUN. Frontend51 pairing evidence remains separate prior877/ba5; staged2 have no integrated UI acceptance. All64 runtime semantics remain NOT_VERIFIED/NOT_RUN and verified_runtime_flows=0.",
           "retained_failures": [
             {
               "source_commit": "8ad468ad6a98affade9f125cc9174efd43e9003c",
@@ -4284,12 +4363,33 @@
               "failed": 4,
               "skipped": 0,
               "reason": "Four old native-screen link expectations remained after purpose pairing; exact canonical purpose links and separate unchanged native-screen assertions corrected. API/Host NOT_RUN in this failed phase."
+            },
+            {
+              "source_commit": "e0c51ab8c3b83e57c14bc9fb533d38ecec30eada",
+              "artifact": "cancellation-source-voucher-tax-id-20261128/accounting",
+              "result": "exit1/19.21325s CS8604 nullable current cancellation components; no unit execution, later phases NOT_RUN. c43 added explicit missing/empty/null-entry refusal and3 negative cases; no null-forgiving bypass."
+            },
+            {
+              "source_commit": "c43b92dbc1bb65f9aaab68d96dfc78e78ccc8ed9",
+              "artifact": "cancellation-source-voucher-tax-id-null-fixed-20261128/accounting",
+              "result": "exit1/27.3484729s CS0246/CS0535 missing BuildingBlocks.Messaging using in new test protocol; no unit execution.3ade adds only actual namespace import."
+            },
+            {
+              "source_commit": "3ade25586b7b2f52ec7c77498810f9c78b8d4989",
+              "artifact": "cancellation-source-voucher-tax-id-import-fixed-20261128/organization",
+              "result": "exit0/0.5880889s EMPTY log and no TRX: NOT_RUN, never PASS. Organization test assets/nuget props absent. Later targeted restore4.263085s succeeded; required actual TRX total/pass/skip counters checked."
+            },
+            {
+              "source_commit": "3ade25586b7b2f52ec7c77498810f9c78b8d4989",
+              "artifact": "cancellation-source-voucher-tax-id-import-fixed-20261128/host",
+              "result": "exit1/49.5097553s CS0246/CS1061 against stale OrganizationInfrastructure DLL because Organization tests had not built. No test execution. Corrected by actual targeted restore/build/test278, not source weakening; laterHost1944 PASS."
             }
           ],
-          "sql": "251 unique ordinal-sorted Accounting source names;24 new Fact sources since227 (previous16 plus8 source-voucher native safety). All compiled in controlled Host; actual SQL NOT_RUN. Injected1205 is not natural-deadlock acceptance.",
-          "bounded_source_peers": "Full bounded native54 owner/Host/UI, native55 owner/Host, native56 safety/source tests and publication/integration deltas were read. Two frontend P2 and two Host/test P2 findings were source-closed with followup regressions; actual local results are recorded separately. Some reviewers authored dependency pieces; this is not the two independent exact-head K3 acceptance. Inventory cost core nine-file independent bounded peer found one unsupported matcher, fixed with existing native DOM disabled assertion; root later fixed unused import, aliased fixture and four link assertions without weakening behavior. Publication ten existing test files preserve all other assertions; native five validator bodies/default decoder remain unchanged.",
+          "sql": "Accounting260 unique SQL source FQNs +Organization41. Native cancellation4 owner/source SQL Facts, source-voucher5 owner/source/real-native-period-close restart SQL Facts, Organization9 guard SQL Facts added/compiled only. Period-close replay SOURCE now uses existing Accounting+Finance carry fixture rather than fake PeriodOpen flag; actual execution still NOT_RUN. Guard pins/full SQL acceptance deferred to train closure.",
+          "bounded_source_peers": "Other-author full bounded native59 four-file peer; native57 owner/source17-file peer; native56 Host/DTO5-file +2test peer and root null-guard delta; new actual-period-close SQL source peer. No open concrete P0/P1/P2 in those bounded scopes; no formal K3. New56 frontend core review found CLR decimal overflow gap; correction/publication in progress, not integrated.",
           "limits": "41 packages/50 references/64 flow rows retained; verified_runtime_flows=0 and all64 runtime NOT_RUN/semantics NOT_VERIFIED. ActualSQL/normalHTTP/browser/fullCI/pins/two independent K3/business acceptance remain pending. No grants/roles/Critical/provider/secrets/deployment/AI activation. Token telemetry unavailable; measured local phase durations are retained.",
-          "native_source_voucher_safety": "Existing exact owned approval runner and actual scoped audit writer now guard native source voucher approval.23 new unit cases and8 new SQL Fact sources; real module clean-entry composition case included. Source actor remains invoice finalizer; existing native result8/view25 unchanged. Owner read/receipt/Work adapter pending. Actual SQL NOT_RUN."
+          "native_source_voucher_safety": "Native source-voucher owned Audit/TX safety plus exact purpose owner/source/private16-scalar binding, immutable commercial8 totals and genuine17-field original Commands receipt integrated. Work human4/native25 whitelist, Int64 text, typed public lines/reversal, native approve-only expected1→Posted2. Current cancellation/period state never substitutes the original result. Source read and native command reuse existing owners; no general read/grant. SourceVoucher Host131+2 snapshot-version cases included in2077 at b5db. Frontend not integrated/published.",
+          "native_company_tax_id_safety": "Native Organization company-tax-id approve/reject now uses the existing scoped master through guarded IOrganizationCompanyTaxIdService, actual Audit writer/collector and owned serializable TX. Native204/hash/company-version/known errors remain; clean entry, post-save/precommit/release, caller preservation and single read-only race reconciliation added.18 new unit source variants included in278 actual tests;2 actual-DI no-SQL composition facts included in1944 and2077.9 new SQL Facts compiled only. Narrow selected-request owner/receipt read remains in progress; no Work decision kind/publication for59 yet."
         }
       }
     },
