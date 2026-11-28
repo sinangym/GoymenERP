@@ -1,4 +1,3 @@
-using System.Globalization;
 using GoymenERP.Modules.Sales.Application.Contracts;
 using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Drafts;
@@ -33,9 +32,15 @@ public sealed partial class SalesDraftService
     /// discount; it binds the approving actor and reason to each line's current check and is invalidated by the next
     /// commercial revision. Its dedicated permission confers neither price write nor order approval.
     /// </summary>
-    public async Task<SalesOrderDraftResponse> ApproveDiscountExceptionsAsync(Guid draftId,
+    public Task<SalesOrderDraftResponse> ApproveDiscountExceptionsAsync(Guid draftId,
         SalesDraftDiscountExceptionApprovalRequest request, SalesCommandMetadata metadata,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) => discountApprovalSafety
+            ? RunDiscountApprovalAsync(draftId, request, metadata, cancellationToken)
+            : ApproveDiscountExceptionsCoreAsync(draftId, request, metadata, cancellationToken);
+
+    private async Task<SalesOrderDraftResponse> ApproveDiscountExceptionsCoreAsync(Guid draftId,
+        SalesDraftDiscountExceptionApprovalRequest request, SalesCommandMetadata metadata,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(metadata);
@@ -43,22 +48,7 @@ public sealed partial class SalesDraftService
 
         var permission = bindings.DiscountExceptionApprovePermission;
         var scope = await RequireAsync(permission, cancellationToken);
-        var validationErrors = new List<SalesDraftFieldError>();
-        if (!long.TryParse(request.ExpectedVersion, NumberStyles.None, CultureInfo.InvariantCulture, out var expectedVersion)
-            || expectedVersion < 1)
-        {
-            validationErrors.Add(new("expectedVersion", "validation_failed"));
-        }
-
-        if (request.Lines is null || request.Lines.Any(static line => line is null))
-        {
-            validationErrors.Add(new("lines", "validation_failed"));
-        }
-
-        if (validationErrors.Count > 0)
-        {
-            throw new SalesDraftServiceException(400, "validation_failed", validationErrors);
-        }
+        var expectedVersion = ValidateDiscountApprovalShape(request);
 
         var lines = request.Lines!;
         const string commandName = SalesDraftCommands.ApproveDiscountExceptionsV1;

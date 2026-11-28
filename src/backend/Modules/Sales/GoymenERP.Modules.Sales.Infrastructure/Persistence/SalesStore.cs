@@ -146,7 +146,9 @@ public sealed partial class SalesStore(
         RequireHash(requestHash);
         RequireCommand(commandName);
         RequirePriceFloorApprovalCommand(envelope, requestHash, commandName, writes: false);
+        RequireDiscountApprovalCommand(envelope, requestHash, commandName, writes: false);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         RequireResolvedCompany();
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
         var actorId = envelope.ActorId.Trim();
@@ -154,6 +156,7 @@ public sealed partial class SalesStore(
             .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash,
                 cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         if (attempt is null)
         {
             return null;
@@ -190,7 +193,9 @@ public sealed partial class SalesStore(
         RequireHash(requestHash);
         RequireCommand(commandName);
         RequirePriceFloorApprovalCommand(envelope, requestHash, commandName, writes: true);
+        RequireDiscountApprovalCommand(envelope, requestHash, commandName, writes: true);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         var companyId = RequireResolvedCompany();
         if (refusal.Status is < 400 or > 599 || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null
             || refusal.Errors.Any(error => error is null || string.IsNullOrWhiteSpace(error.Field) || string.IsNullOrWhiteSpace(error.Code)))
@@ -202,6 +207,7 @@ public sealed partial class SalesStore(
         var existingAttempt = await dbContext.DraftAttempts.AsNoTracking()
             .AnyAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         if (existingAttempt)
         {
             throw Refused(SalesDraftStoreCodes.ConcurrentChange, "Bu anahtar zaten bir deneme taşıyor; tekrar onu alır.");
@@ -220,7 +226,8 @@ public sealed partial class SalesStore(
             CorrelationId = envelope.CorrelationId.Trim(),
             RecordedAtUtc = timeProvider.GetUtcNow(),
         });
-        await SavePriceFloorApprovalAsync(cancellationToken, refusal);
+        if (ownedDiscountApproval is not null) await SaveDiscountApprovalAsync(cancellationToken, refusal);
+        else await SavePriceFloorApprovalAsync(cancellationToken, refusal);
     }
 
     public Task<SalesDraftStateResult?> UpdateDraftStateAsync(SalesDraftWriteEnvelope envelope, string requestHash,
@@ -549,7 +556,9 @@ public sealed partial class SalesStore(
         RequireEnvelope(envelope);
         RequireHash(requestHash);
         RequirePriceFloorApprovalCommand(envelope, requestHash, commandName, writes: true);
+        RequireDiscountApprovalCommand(envelope, requestHash, commandName, writes: true);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
 
         if (string.IsNullOrWhiteSpace(audit.EventType) || string.IsNullOrWhiteSpace(audit.Operation) || string.IsNullOrWhiteSpace(audit.Reason))
         {
@@ -562,6 +571,7 @@ public sealed partial class SalesStore(
         var attempt = await dbContext.DraftAttempts.AsNoTracking()
             .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         if (attempt is not null)
         {
             if (!string.Equals(attempt.ActorId, actorId, StringComparison.Ordinal)
@@ -588,6 +598,7 @@ public sealed partial class SalesStore(
 
         var row = await dbContext.Drafts.SingleOrDefaultAsync(candidate => candidate.Id == draftId, cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         if (row is null)
         {
             return null;
@@ -596,8 +607,10 @@ public sealed partial class SalesStore(
         // The line rows are tracked here so the command's own columns can change in this save (the guard admits only those).
         var lineRows = await dbContext.DraftLines.Where(line => line.DraftId == draftId).OrderBy(line => line.LineNo).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         var draft = (await RestoreAsync([row], cancellationToken)).Single();
         await beforeWrite(draft, cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         var before = picture(draft);
         var versionBefore = draft.Version;
         var activeBefore = draft.Lines.ToDictionary(line => line.Id, line => (line.QuantityText, line.Commercial, line.Tax));
@@ -694,7 +707,8 @@ public sealed partial class SalesStore(
 
         AddAttemptAndAudit(companyId, keyHash, actorId, commandName, requestHash, envelope, draft, result, now, audit, versionBefore,
             before, picture(draft));
-        await SavePriceFloorApprovalAsync(cancellationToken);
+        if (ownedDiscountApproval is not null) await SaveDiscountApprovalAsync(cancellationToken);
+        else await SavePriceFloorApprovalAsync(cancellationToken);
         return new SalesDraftStateResult(draft, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim(), result);
     }
 
@@ -2045,8 +2059,10 @@ public sealed partial class SalesStore(
     {
         RequireResolvedCompany();
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         var row = await dbContext.Drafts.AsNoTracking().SingleOrDefaultAsync(candidate => candidate.Id == draftId, cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         return row is null ? null : (await RestoreAsync([row], cancellationToken)).Single();
     }
 
@@ -2131,41 +2147,59 @@ public sealed partial class SalesStore(
         }
 
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         var ids = rows.Select(row => row.Id).ToArray();
         var marginCostRows = await dbContext.DraftMarginCosts.AsNoTracking().Where(cost => ids.Contains(cost.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         var kilogramsPerUnitRows = await dbContext.DraftLineKilogramsPerUnit.AsNoTracking().Where(item => ids.Contains(item.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         var lines = await dbContext.DraftLines.AsNoTracking().Where(line => ids.Contains(line.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         var slices = await dbContext.DraftDeliverySlices.AsNoTracking().Where(slice => ids.Contains(slice.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         var revisions = await dbContext.DraftRevisions.AsNoTracking().Where(revision => ids.Contains(revision.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         var revisionLines = await dbContext.DraftRevisionLines.AsNoTracking().Where(line => ids.Contains(line.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         var revisionHeaders = await dbContext.DraftRevisionHeaders.AsNoTracking().Where(header => ids.Contains(header.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         var schedules = await dbContext.DraftDeliverySchedules.AsNoTracking().Where(schedule => ids.Contains(schedule.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         var scheduleDates = await dbContext.DraftDeliveryScheduleDates.AsNoTracking().Where(date => ids.Contains(date.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         var cancellations = await dbContext.DraftCancellations.AsNoTracking().Where(cancellation => ids.Contains(cancellation.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         var forceClosures = await dbContext.DraftForceClosures.AsNoTracking().Where(closure => ids.Contains(closure.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         var userClosures = await dbContext.DraftUserClosures.AsNoTracking().Where(closure => ids.Contains(closure.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         var remainderChanges = await dbContext.DraftRemainderChanges.AsNoTracking().Where(change => ids.Contains(change.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         var remainderDecisions = await dbContext.DraftRemainderDecisions.AsNoTracking().Where(decision => ids.Contains(decision.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         var customerRejections = await dbContext.DraftCustomerRejections.AsNoTracking().Where(rejection => ids.Contains(rejection.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         var overDeliveryApprovals = await dbContext.DraftOverDeliveryApprovals.AsNoTracking().Where(approval => ids.Contains(approval.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         var lineClosures = await dbContext.DraftLineClosures.AsNoTracking().Where(closure => ids.Contains(closure.DraftId)).ToListAsync(cancellationToken);
         await PriceFloorApprovalFenceAsync(cancellationToken);
+        await DiscountApprovalFenceAsync(cancellationToken);
         var drafts = new List<SalesOrderDraft>(rows.Count);
         foreach (var row in rows)
         {

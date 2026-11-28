@@ -35,7 +35,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// zero) with <c>sales.orders.margin.read</c>, and another company's line-pricing read is not found. Orders are stored through the real
 /// Sales store from SYNTHETIC owner snapshots (the AT-024 precedent); every grant is a fresh synthetic role. SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class SalesDiscountExceptionSqlServerRelationalAcceptanceTests
+public sealed partial class SalesDiscountExceptionSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
