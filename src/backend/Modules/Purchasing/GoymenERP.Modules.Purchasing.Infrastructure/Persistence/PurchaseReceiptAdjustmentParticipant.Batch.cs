@@ -144,7 +144,9 @@ public sealed partial class PurchaseReceiptAdjustmentParticipant
         var adjustments = await database.ReceiptAdjustments.AsNoTracking().Where(item => item.OrderId == row.Id).ToListAsync(cancellationToken);
         var cancellations = await database.CancellationHistory.AsNoTracking().Where(item => item.OrderId == row.Id).ToListAsync(cancellationToken);
         var batches = await database.ReceiptAdjustmentBatches.AsNoTracking().Where(item => item.OrderId == row.Id).ToListAsync(cancellationToken);
-        var order = PurchasingStore.RestoreOrder(row, lines, shares, slices, closures, rates, adjustments, cancellations, batches);
+        var order = await new PurchasingStore(database, company, audit, TimeProvider.System, decisionAuditWriter: auditWriter)
+            .RestoreParticipantOrderAsync(row, lines, shares, slices, closures, rates, adjustments, cancellations, batches,
+                EnsureTransaction, cancellationToken);
         var ids = request.Lines.Select(item => item.AdjustmentId).ToArray();
         var replacementIds = request.Lines.Where(item => item.NewAcceptanceId is not null).Select(item => item.NewAcceptanceId!.Value).ToArray();
         if (batches.Any(item => item.BatchId == request.BatchId)

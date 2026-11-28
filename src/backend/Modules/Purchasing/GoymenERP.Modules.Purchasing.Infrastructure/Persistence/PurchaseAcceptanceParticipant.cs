@@ -26,6 +26,7 @@ public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipa
     private readonly DbConnection _connection;
     private readonly DbTransaction _transaction;
     private readonly Guid _companyId;
+    private readonly CompanyContext _companyContext;
     private int _stageStarted;
     private int _disposed;
 
@@ -34,13 +35,14 @@ public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipa
         AuditEventCollector auditEvents,
         DbConnection connection,
         DbTransaction transaction,
-        Guid companyId)
+        Guid companyId, CompanyContext companyContext)
     {
         _dbContext = dbContext;
         _auditEvents = auditEvents;
         _connection = connection;
         _transaction = transaction;
         _companyId = companyId;
+        _companyContext = companyContext;
     }
 
     public static async Task<IPurchaseAcceptanceParticipantV1> EnlistAsync(
@@ -72,7 +74,7 @@ public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipa
         try
         {
             await dbContext.Database.UseTransactionAsync(transaction, cancellationToken);
-            return new PurchaseAcceptanceParticipant(dbContext, auditEvents, connection, transaction, companyId);
+            return new PurchaseAcceptanceParticipant(dbContext, auditEvents, connection, transaction, companyId, companyContext);
         }
         catch
         {
@@ -212,7 +214,9 @@ public sealed class PurchaseAcceptanceParticipant : IPurchaseAcceptanceParticipa
         var adjustmentRows = await _dbContext.ReceiptAdjustments.AsNoTracking().Where(row => row.OrderId == request.PurchaseOrderId).ToListAsync(cancellationToken);
         var cancellationRows = await _dbContext.CancellationHistory.AsNoTracking().Where(row => row.OrderId == request.PurchaseOrderId).ToListAsync(cancellationToken);
         var batchRows = await _dbContext.ReceiptAdjustmentBatches.AsNoTracking().Where(row => row.OrderId == request.PurchaseOrderId).ToListAsync(cancellationToken);
-        var order = PurchasingStore.RestoreOrder(orderRow, lineRows, acceptanceRows, sliceRows, closureRows, rateRows, adjustmentRows, cancellationRows, batchRows);
+        var order = await new PurchasingStore(_dbContext, _companyContext, _auditEvents, TimeProvider.System)
+            .RestoreParticipantOrderAsync(orderRow, lineRows, acceptanceRows, sliceRows, closureRows, rateRows,
+                adjustmentRows, cancellationRows, batchRows, EnsureActiveTransaction, cancellationToken);
         if (order.Version != validated.ExpectedPurchaseOrderVersion)
         {
             throw Refused(PurchaseAcceptanceParticipantCodes.OrderVersionConflict, 409, "Sipariş sürümü değişti.");

@@ -142,7 +142,9 @@ public sealed partial class PurchaseReceiptAdjustmentParticipant : IPurchaseRece
         var adjustments = await database.ReceiptAdjustments.AsNoTracking().Where(item => item.OrderId == row.Id).ToListAsync(cancellationToken);
         var cancellations = await database.CancellationHistory.AsNoTracking().Where(item => item.OrderId == row.Id).ToListAsync(cancellationToken);
         var batches = await database.ReceiptAdjustmentBatches.AsNoTracking().Where(item => item.OrderId == row.Id).ToListAsync(cancellationToken);
-        var order = PurchasingStore.RestoreOrder(row, lines, shares, slices, closures, rates, adjustments, cancellations, batches);
+        var order = await new PurchasingStore(database, company, audit, TimeProvider.System, decisionAuditWriter: auditWriter)
+            .RestoreParticipantOrderAsync(row, lines, shares, slices, closures, rates, adjustments, cancellations, batches,
+                EnsureTransaction, cancellationToken);
         var unit = lines.Single(item => item.LineId == target.LineId).UnitIsKilogram ? QuantityUnit.Kilogram : QuantityUnit.Piece;
         var undo = ParseQuantity(request.UndoQuantity, unit);
         var replacement = ParseQuantity(request.NewAcceptedQuantity ?? "0", unit);
