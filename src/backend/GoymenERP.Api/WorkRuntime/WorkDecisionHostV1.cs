@@ -271,7 +271,7 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
                 : await source.ReadDecisionAsync(context, id, token);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { throw; }
-        catch (UnauthorizedAccessException) when (kind is SourceVoucher or InventoryCostCancellation or InvoicedShipmentCost or PurchaseCostDifference or InvoiceLineCogs or ManufacturingCostDifference or PostingAccountMapping or ApprovedSourceCatalog or JournalReversal or AccountingPeriodOpening or AccountingPeriodReopening or NormalJournalDraft or CreditMovement or CashExchangeBookValue or BankCreditLimit or OpeningBalance or OpeningBalanceReversal or OfficialInvoiceImport or OfficialSalesInvoice or ManualBankPaymentReversal or ManualReceiptReversal or ExpensePayment) { await Fence(); throw new WorkDecisionException(403); }
+        catch (UnauthorizedAccessException) when (kind is OrganizationCompanyTaxId or SourceVoucher or InventoryCostCancellation or InvoicedShipmentCost or PurchaseCostDifference or InvoiceLineCogs or ManufacturingCostDifference or PostingAccountMapping or ApprovedSourceCatalog or JournalReversal or AccountingPeriodOpening or AccountingPeriodReopening or NormalJournalDraft or CreditMovement or CashExchangeBookValue or BankCreditLimit or OpeningBalance or OpeningBalanceReversal or OfficialInvoiceImport or OfficialSalesInvoice or ManualBankPaymentReversal or ManualReceiptReversal or ExpensePayment) { await Fence(); throw new WorkDecisionException(403); }
         catch { await Fence(); throw new WorkDecisionException(503); }
         await Fence();
         if (snapshot is null) throw new WorkDecisionException(404);
