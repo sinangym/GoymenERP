@@ -231,6 +231,46 @@ public sealed partial class CounterpartyPartyMergeSqlServerRelationalAcceptanceT
     }
 
     [SqlServerFact]
+    public async Task Seen_merge_sqlguid_order_difference_uses_one_canonical_impact_and_genuine_original_receipt()
+    {
+        var probe = new MergePurposeProbe(); await using var test = new MergeTest(true, services => ConfigureMergePurpose(services, probe)); using var client = test.Client();
+        var anchorParty = await CreatePartyAsync(client, "SENTETIK order actor anchor"); probe.Actor = await MergeActorAsync(test, anchorParty);
+        var survivor = Guid.Parse("00000001-0000-0000-0000-000000000000");
+        var merged = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        Assert.Equal(new[] { merged, survivor }, new[] { survivor, merged }.Order());
+        Assert.Equal(new[] { survivor, merged }, new[] { survivor, merged }.OrderBy(x => new System.Data.SqlTypes.SqlGuid(x)));
+        await using var scope = test.Factory.Services.CreateAsyncScope(); scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(TestCompanyIds.CompanyA);
+        var db = scope.ServiceProvider.GetRequiredService<CounterpartyDbContext>();
+        // Exact synthetic GUIDs are seeded only in this disposable SQL fixture so provider order cannot pass accidentally.
+        db.Parties.AddRange(new Party(survivor, PartyCode.FromSequence(990001), PartyKind.LegalEntity, "SENTETIK ordered survivor"),
+            new Party(merged, PartyCode.FromSequence(990002), PartyKind.LegalEntity, "SENTETIK ordered duplicate"));
+        db.CompanyPartyAccounts.AddRange(new CompanyPartyAccount(Guid.NewGuid(), TestCompanyIds.CompanyA, survivor, PartyRole.Customer),
+            new CompanyPartyAccount(Guid.NewGuid(), TestCompanyIds.CompanyA, merged, PartyRole.Customer));
+        await db.SaveChangesAsync(); db.ChangeTracker.Clear();
+        var sqlOrder = await db.CompanyPartyAccounts.AsNoTracking().Where(x => x.PartyId == survivor || x.PartyId == merged)
+            .OrderBy(x => x.CompanyId).ThenBy(x => x.PartyId).ThenBy(x => x.Id).Select(x => x.PartyId).ToArrayAsync();
+        Assert.Equal(new[] { survivor, merged }, sqlOrder); // Actual SQL ORDER BY differs from the receipt's canonical Guid order.
+        var service = Assert.IsAssignableFrom<ICounterpartyPartyMergePurposeV1>(scope.ServiceProvider.GetRequiredService<ICounterpartyPartyMergeService>());
+        var native = await scope.ServiceProvider.GetRequiredService<ICounterpartyPartyMergeService>().PreviewMergeAsync(survivor, new(merged, "1", "1"), default);
+        var preview = await service.PreviewPurposeAsync(survivor, new(merged, "1", "1"), _ => Task.CompletedTask);
+        Assert.NotNull(preview.SeenImpactDigest); Assert.NotNull(preview.NativePreview.Preview);
+        Assert.Equal(new[] { merged, survivor }, preview.NativePreview.Preview.HoldingAccounts.Select(x => x.PartyId));
+        Assert.Equal(System.Text.Json.JsonSerializer.Serialize(native), System.Text.Json.JsonSerializer.Serialize(preview.NativePreview));
+        var metadata = MergePurposeMetadata(probe.Actor!, Guid.NewGuid().ToString("N")); var command = new ApproveCounterpartyPartyMerge(merged, "1", "1", "SENTETIK SQL GUID ordering");
+        var applied = await service.ApprovePurposeAsync(survivor, command, preview.SeenImpactDigest, metadata, _ => Task.CompletedTask);
+        Assert.Equal(CounterpartyPartyMergePurposeStatusV1.Executed, applied.Status); Assert.NotNull(applied.Execution);
+        Assert.Equal(204, applied.Execution.Response.StatusCode); Assert.False(applied.Execution.IsReplay);
+        var replay = await service.ApprovePurposeAsync(survivor, command, preview.SeenImpactDigest, metadata, _ => Task.CompletedTask);
+        Assert.Equal(CounterpartyPartyMergePurposeStatusV1.Executed, replay.Status); Assert.NotNull(replay.Execution);
+        Assert.Equal(204, replay.Execution.Response.StatusCode); Assert.True(replay.Execution.IsReplay);
+        Assert.Equal(metadata.CorrelationId, replay.Execution.OriginalCorrelationId);
+        Assert.Equal(1, await test.ScalarAsync<int>("SELECT COUNT(*) FROM [counterparty].[PartyMerges] WHERE [MergedPartyId]=@Party;", merged));
+        Assert.Equal(1, await test.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [Operation]='ApproveMerge' AND [EntityId]=CONVERT(nvarchar(36),@Party);", merged));
+        Assert.Equal(1, await test.ScalarAsync<int>("SELECT COUNT(*) FROM [counterparty].[OutboxMessages] WHERE [EventType]=@Event;", merged));
+        Assert.Equal(2, await db.CompanyPartyAccounts.AsNoTracking().CountAsync(x => x.PartyId == survivor || x.PartyId == merged));
+    }
+
+    [SqlServerFact]
     public async Task Seen_merge_initial_unsafe_caller_cannot_become_owned_when_first_permission_await_cleans_caller_state()
     {
         var probe = new MergePurposeProbe(); await using var test = new MergeTest(true, services => ConfigureMergePurpose(services, probe)); using var client = test.Client();

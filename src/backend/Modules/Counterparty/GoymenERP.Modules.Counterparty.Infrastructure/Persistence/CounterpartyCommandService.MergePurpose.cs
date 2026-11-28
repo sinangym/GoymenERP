@@ -33,7 +33,11 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyPartyMer
         new(account.CompanyId, account.Id, account.PartyId, account.Version.ToString(CultureInfo.InvariantCulture), account.IsActive);
     private static CounterpartyPartyMergeImpactPreviewV1 MergeImpactPreview(Guid companyId, Party survivor, Party merged,
         IReadOnlyList<CounterpartyPartyMergeHoldingAccountV1> accounts) =>
-        new(companyId, PartyPreview(survivor), PartyPreview(merged), accounts, new(merged.Id, survivor.Id, false));
+        // SQL uniqueidentifier ordering differs from Guid.CompareTo. Freeze one detached canonical order
+        // for native/purpose preview, the captured audit impact and its strict original-receipt validation.
+        new(companyId, PartyPreview(survivor), PartyPreview(merged),
+            Array.AsReadOnly(accounts.OrderBy(x => x.CompanyId).ThenBy(x => x.PartyId).ThenBy(x => x.AccountId).ToArray()),
+            new(merged.Id, survivor.Id, false));
     private static string MergeImpactDigest(CounterpartyPartyMergeImpactPreviewV1 impact) => IdempotencyHash.ComputePayload(impact);
 
     private string SerializePurposeMergeSnapshot(Party merged, Guid survivor, PartyMerge merge, IReadOnlyCollection<Guid> companies)

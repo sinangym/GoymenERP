@@ -3,6 +3,7 @@ using System.Text.Json;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Counterparty.Application.Contracts;
+using GoymenERP.Modules.Counterparty.Domain.Accounts;
 using GoymenERP.Modules.Counterparty.Domain.Parties;
 using GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 using GoymenERP.Modules.Idempotency.Domain.Executions;
@@ -38,6 +39,29 @@ public sealed partial class CounterpartyPartyMergePreviewTests
         Assert.NotEqual(before.SeenImpactDigest, after.SeenImpactDigest);
         Assert.Equal("1", after.NativePreview.Preview!.Survivor.Version); Assert.Equal("1", after.NativePreview.Preview.Merged.Version);
         Assert.Equal(0, f.Audit.Writes);
+    }
+
+    [Fact]
+    public async Task Purpose_preview_canonical_guid_order_is_explicit_even_when_sqlguid_order_is_different()
+    {
+        var survivor = Guid.Parse("00000001-0000-0000-0000-000000000000");
+        var merged = Guid.Parse("00000000-0000-0000-0000-000000000001");
+        var ids = new[] { survivor, merged };
+        Assert.Equal(new[] { merged, survivor }, ids.Order());
+        Assert.Equal(new[] { survivor, merged }, ids.OrderBy(x => new System.Data.SqlTypes.SqlGuid(x)));
+        await using var f = await Fixture.Create();
+        f.Db.Parties.AddRange(new Party(survivor, PartyCode.FromSequence(990001), PartyKind.LegalEntity, "SENTETIK ordered survivor"),
+            new Party(merged, PartyCode.FromSequence(990002), PartyKind.LegalEntity, "SENTETIK ordered duplicate"));
+        f.Db.CompanyPartyAccounts.AddRange(
+            new CompanyPartyAccount(Guid.NewGuid(), A, survivor, PartyRole.Customer),
+            new CompanyPartyAccount(Guid.NewGuid(), A, merged, PartyRole.Customer));
+        await f.Db.SaveChangesAsync(); f.Db.ChangeTracker.Clear();
+        var purpose = await PurposeService(f, new PurposeWriter()).PreviewPurposeAsync(survivor, new(merged, "1", "1"), _ => Task.CompletedTask);
+        var impact = Assert.IsType<CounterpartyPartyMergeImpactPreviewV1>(purpose.NativePreview.Preview);
+        Assert.Equal(new[] { merged, survivor }, impact.HoldingAccounts.Select(x => x.PartyId));
+        Assert.Equal(IdempotencyHash.ComputePayload(impact), purpose.SeenImpactDigest);
+        Assert.Equal(0, f.Audit.Writes);
+        // InMemory validates the deterministic formatter contract; the real SQL source below exercises provider ordering.
     }
 
     [Theory]
