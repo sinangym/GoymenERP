@@ -83,6 +83,16 @@ public sealed class CounterpartyCreationNeedHostV1Tests
         r.Native.AfterEffect = null; Assert.True((await r.Create(q)).IsReplay); Assert.Equal(1, r.Native.Effects);
     }
 
+    [Fact]
+    public async Task Last_normally_completed_recipient_read_cannot_release_a_retained_task_after_assign_permission_revocation()
+    {
+        var r = new Rig(); var q = Request(); r.Holders.AfterRead = () => { if (r.Holders.Requests.Count == 2) r.Authority.Granted = false; };
+        Assert.Equal(503, (await Assert.ThrowsAsync<WorkCollaborationException>(() => r.Create(q))).Status);
+        Assert.Equal(1, r.Native.Effects); Assert.Single(r.Native.Commands);
+        r.Holders.AfterRead = null; r.Authority.Granted = true; r.SetTrace("SENTETIK-final-read-recovery");
+        var replay = await r.Create(q); Assert.True(replay.IsReplay); Assert.Equal(Original, replay.OriginalCorrelationId); Assert.Equal(1, r.Native.Effects);
+    }
+
     [Theory] [InlineData("company")] [InlineData("assigner")] [InlineData("recipient")] [InlineData("title")] [InlineData("details")]
     [InlineData("deadline")] [InlineData("record")] [InlineData("version")] [InlineData("correlation")] [InlineData("missing")]
     public async Task Unbound_native_reply_is_unknown_then_original_key_recovers_without_rewriting_the_payload(string fault)
