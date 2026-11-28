@@ -961,6 +961,52 @@
               "artifact": "remainder-paired-mixed-price-return-native-20261128/purchasing"
             },
             "source_scope": "Approved parent-owned selected service price revision and genuine held sibling participant history; no new schema or policy. API and UI delivery queued separately; SQL and normalHTTP acceptance NOT_RUN."
+          },
+          "mixed_service_price_api_preview": {
+            "source_commit": "af90ecc1991cc07b143bd58b207d110490cff09b",
+            "scope": "BOUNDED_LOCAL_NOT_RUNTIME_ACCEPTANCE",
+            "sales": {
+              "freeGiB": 4.201507568359375,
+              "seconds": 69.0777453,
+              "exit": 0,
+              "head": "af90ecc1991cc07b143bd58b207d110490cff09b",
+              "total": 3081,
+              "passed": 3081,
+              "failed": 0,
+              "skipped": 0,
+              "artifact": "contract-work-return-guards-mixed-price-api-20261128/sales"
+            },
+            "purchasing": {
+              "freeGiB": 4.094612121582031,
+              "seconds": 28.3405994,
+              "exit": 0,
+              "head": "af90ecc1991cc07b143bd58b207d110490cff09b",
+              "total": 1618,
+              "passed": 1618,
+              "failed": 0,
+              "skipped": 0,
+              "artifact": "contract-work-return-guards-mixed-price-api-20261128/purchasing"
+            },
+            "api_refresh": {
+              "freeGiB": 4.006641387939453,
+              "seconds": 27.1313904,
+              "exit": 0,
+              "head": "af90ecc1991cc07b143bd58b207d110490cff09b",
+              "artifact": "contract-work-return-guards-mixed-price-api-20261128/api_refresh"
+            },
+            "host": {
+              "freeGiB": 3.9913177490234375,
+              "seconds": 77.4432243,
+              "exit": 0,
+              "head": "af90ecc1991cc07b143bd58b207d110490cff09b",
+              "total": 1505,
+              "passed": 1505,
+              "failed": 0,
+              "skipped": 0,
+              "artifact": "contract-work-return-guards-mixed-price-api-20261128/host"
+            },
+            "source_scope": "Flow11 native contract owner current/original read, genuine Attempt/Audit receipt, same scoped aliases, Work Host canonical frozen rejection transport and complete native human view with optional price disclosure. Flow10 owned return decision safety source and shared foreign-write guards remain factory-off; current/original source under development. Approved mixed service price revision API and separate current native preview are composed; no replacement order engine.",
+            "limits": "All genuine SQL source tests are compilation-only; SQL NOT_RUN. New mixed normalHTTP tests not run while existing startup shell owner pins await aggregate closure; no HTTP/DI acceptance claimed. Contract frontend not yet published. Browser/aggregatepins/fullCI/two independent exact-head K3/business acceptance NOT_RUN."
           }
         }
       },
@@ -2505,7 +2551,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Finish customer-return10 and contract-discount11 native owner/Host/UI. Cari62 remains native single-step. Preserve actual SQL/browser/aggregate pin/CI/K3 gates.",
+      "next_action": "Finish contract11 paired frontend and return10 native owner/Host/UI; Cari62 remains native single-step. Preserve all SQL/browser/aggregate pin/CI/K3 gates.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2624,7 +2670,7 @@
         "activation": "No grants/flags/provider changes"
       },
       "execution": {
-        "source_commit": "2840ff9d213c8b5df9530b08dcb8f0cf4e58643d",
+        "source_commit": "af90ecc1991cc07b143bd58b207d110490cff09b",
         "implemented_kinds": [
           "organization.company-tax-id-change.v1",
           "accounting.invoiced-shipment-cost.v1",
@@ -2687,7 +2733,8 @@
           "sales.discount-exception.v1",
           "sales.over-delivery-request.v1",
           "sales.risk-exception.v1",
-          "sales.remainder-change.v1"
+          "sales.remainder-change.v1",
+          "sales.contract-discount.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -3157,6 +3204,52 @@
             "source_scope": "Remainder flow6 paired native Work human preview, canonical text quantities, standalone OrdersApprove capability and same-key recovery; mixed approved service price revision participant-history source and tests; customer return decision safety source remains default-off and uncomposed pending native guard tests.",
             "failure_history": "Initial frontend TSC at affe failed duplicate CAPABILITY_NAV_LABEL import; bf929 test-only import fix keeps assertions. Broad bf929 frontend3434total/3430pass/4fail identifies missing remainder kind in generic terminal rejectionSupported boolean guard. Root2840ff9 fixes that production guard; bounded full Work .test.ts codec cohort plus WorkDecisionPage/RemainderPage and shell route regressions rerun; no test assertions removed. Earlier11d997 Manufacturing retry3342pass1fail/isolated449pass remains separate evidence, cause unestablished.",
             "limits": "Backend evidence at affe; frontend at2840 includes test import fix and terminal codec production fix; broad UI not fully rerun after it. ActualSQL/normalHTTP/browser/aggregatepins/fullCI/two independent exact-head K3/business acceptance NOT_RUN. Earlier normalHTTP Purchasing132 startup pin-drift failures retained."
+          },
+          "contract_work_return_guards_mixed_price_api": {
+            "source_commit": "af90ecc1991cc07b143bd58b207d110490cff09b",
+            "scope": "BOUNDED_LOCAL_NOT_RUNTIME_ACCEPTANCE",
+            "sales": {
+              "freeGiB": 4.201507568359375,
+              "seconds": 69.0777453,
+              "exit": 0,
+              "head": "af90ecc1991cc07b143bd58b207d110490cff09b",
+              "total": 3081,
+              "passed": 3081,
+              "failed": 0,
+              "skipped": 0,
+              "artifact": "contract-work-return-guards-mixed-price-api-20261128/sales"
+            },
+            "purchasing": {
+              "freeGiB": 4.094612121582031,
+              "seconds": 28.3405994,
+              "exit": 0,
+              "head": "af90ecc1991cc07b143bd58b207d110490cff09b",
+              "total": 1618,
+              "passed": 1618,
+              "failed": 0,
+              "skipped": 0,
+              "artifact": "contract-work-return-guards-mixed-price-api-20261128/purchasing"
+            },
+            "api_refresh": {
+              "freeGiB": 4.006641387939453,
+              "seconds": 27.1313904,
+              "exit": 0,
+              "head": "af90ecc1991cc07b143bd58b207d110490cff09b",
+              "artifact": "contract-work-return-guards-mixed-price-api-20261128/api_refresh"
+            },
+            "host": {
+              "freeGiB": 3.9913177490234375,
+              "seconds": 77.4432243,
+              "exit": 0,
+              "head": "af90ecc1991cc07b143bd58b207d110490cff09b",
+              "total": 1505,
+              "passed": 1505,
+              "failed": 0,
+              "skipped": 0,
+              "artifact": "contract-work-return-guards-mixed-price-api-20261128/host"
+            },
+            "source_scope": "Flow11 native contract owner current/original read, genuine Attempt/Audit receipt, same scoped aliases, Work Host canonical frozen rejection transport and complete native human view with optional price disclosure. Flow10 owned return decision safety source and shared foreign-write guards remain factory-off; current/original source under development. Approved mixed service price revision API and separate current native preview are composed; no replacement order engine.",
+            "limits": "All genuine SQL source tests are compilation-only; SQL NOT_RUN. New mixed normalHTTP tests not run while existing startup shell owner pins await aggregate closure; no HTTP/DI acceptance claimed. Contract frontend not yet published. Browser/aggregatepins/fullCI/two independent exact-head K3/business acceptance NOT_RUN."
           }
         },
         "reuse": [
