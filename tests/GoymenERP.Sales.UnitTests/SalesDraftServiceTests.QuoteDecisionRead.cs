@@ -73,6 +73,24 @@ public sealed partial class SalesDraftServiceTests
     }
 
     [Fact]
+    public async Task Selected_quote_last_approval_await_price_revocation_is_observed_by_final_native_disclosure()
+    {
+        // Discover the last approval boundary, rather than baking an ordinal tied to one implementation.
+        var (baseline,baselineSource)=await QuoteHumanSource("Pending");baseline.Authority.Measured.Clear();
+        var normal=await QuotePurposeService(baseline,new PurposeQuoteStore(baseline.Quotes!,baselineSource))
+            .ReadQuoteConversionDecisionAsync(baselineSource.Request.Id,_=>Task.CompletedTask);
+        Assert.Equal(SalesPriceDisclosure.Visible,Assert.Single(normal.Detail!.Quote.Lines).PriceDisclosure);
+        var lastApprove=baseline.Authority.Measured.LastIndexOf(SalesPermissionManifestV1.QuotesExpiredConversionApprove)+1;Assert.True(lastApprove>0);
+        var (world,source)=await QuoteHumanSource("Pending");var before=world.Authority.Calls;var revoked=false;
+        world.Authority.OnRead=(permission,call)=>{if(call-before==lastApprove){Assert.Equal(SalesPermissionManifestV1.QuotesExpiredConversionApprove,permission);revoked=true;world.Authority.Denied.Add(PriceReadPermission);}};
+        var result=await QuotePurposeService(world,new PurposeQuoteStore(world.Quotes!,source))
+            .ReadQuoteConversionDecisionAsync(source.Request.Id,_=>Task.CompletedTask);
+        Assert.True(revoked);Assert.Equal(SalesQuoteDecisionReadStateV1.Found,result.State);
+        var line=Assert.Single(result.Detail!.Quote.Lines);Assert.Equal(SalesPriceDisclosure.Withheld,line.PriceDisclosure);
+        Assert.Null(line.UnitPrice);Assert.Null(line.PriceUnitId);Assert.Null(line.DiscountPercent);Assert.Null(result.Detail.Quote.DueTerms);
+    }
+
+    [Fact]
     public async Task Selected_quote_initial_cancel_never_reads_any_port()
     {
         var world=new World();var reader=new PurposeQuoteStore(new FakeQuoteStore(world.Store,world.Requests,()=>world.Clock),null);

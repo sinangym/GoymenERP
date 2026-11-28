@@ -37,8 +37,8 @@ public sealed partial class SalesDraftService : ISalesQuoteConversionDecisionRea
             // A normally completing consumer may revoke ONLY price visibility. It is not an approval co-permission.
             var finalDisclosure = await DiscloseAsync(scope!, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
-            scope = await RequireStillAsync(scope!, permission, cancellationToken);
-            cancellationToken.ThrowIfCancellationRequested();
+            // Native disclosure is the last awaited authority observation, after every consumer/approval fence.
+            if (!Matches(scope!.CompanyId, scope.ActorId)) throw new SalesDraftServiceException(403, "forbidden");
             if (finalDisclosure != disclosure)
             {
                 human = QuoteDetail(quote, finalDisclosure, ServerBusinessDay());
