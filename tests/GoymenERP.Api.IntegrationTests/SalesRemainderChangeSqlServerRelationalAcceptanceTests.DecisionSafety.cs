@@ -58,13 +58,18 @@ public sealed partial class SalesRemainderChangeSqlServerRelationalAcceptanceTes
     public async Task Owned_remainder_saved_and_precommit_authority_loss_or_completed_cancellation_roll_back_then_same_key_can_execute_once()
     {
         await using var run = await Run.StartAsync();
-        foreach (var phase in new[] { 1, 3 }) foreach (var cancel in new[] { false, true }) foreach (var approve in new[] { false, true })
+        foreach (var approve in new[] { false, true })
         {
+          // Observe the actual final approval read before provider Commit on an otherwise identical native command.
+          // Receipt attachment now performs more fenced reads; the old pre-receipt literal 3 is no longer that phase.
+          var precommitFence = await RemainderPrecommitFenceNumber(run, approve);
+          foreach (var phase in new[] { 1, precommitFence }) foreach (var cancel in new[] { false, true })
+          {
             var id = await SeedOwnedRemainder(run); var key = "abort-remainder-" + id.ToString("N"); var before = await run.EffectsAsync(id);
             var save = new RemainderSaveProbe(); await using var safe = RemainderScope(run, save); using var cts = new CancellationTokenSource(); var savedFences = 0; var fired = false;
             safe.Authority.AfterRead = permission =>
             {
-                // After the actual Sales Save: save-release=1, owned result-release=2, owned precommit=3.
+                // Save-release=1; the real precommit ordinal was captured at provider TransactionCommitting above.
                 // Optional PriceRead calls are deliberately not counted as approval fences.
                 if (save.Saved && permission == SalesPermissionManifestV1.OrdersApprove && ++savedFences == phase)
                 { fired = true; if (cancel) cts.Cancel(); else safe.Authority.Granted = false; }
@@ -74,6 +79,7 @@ public sealed partial class SalesRemainderChangeSqlServerRelationalAcceptanceTes
             Assert.True(fired); Assert.True(save.Saved); Assert.Equal(before, await run.EffectsAsync(id)); Assert.Equal(0, await run.AttemptsAsync(key)); AssertOwnedRemainderClean(safe);
             await using var retry = RemainderScope(run); Assert.False((await DecideOwnedRemainder(retry, id, key, approve)).IsReplay);
             Assert.True((await DecideOwnedRemainder(retry, id, key, approve)).IsReplay); Assert.Equal(1, await run.AttemptsAsync(key));
+          }
         }
     }
 
@@ -157,11 +163,12 @@ public sealed partial class SalesRemainderChangeSqlServerRelationalAcceptanceTes
         Assert.Equal(before, await run.EffectsAsync(id)); Assert.Equal(0, await run.AttemptsAsync(key));
     }
 
-    private static async Task<Guid> SeedOwnedRemainder(Run run)
+    private static async Task<Guid> SeedOwnedRemainder(Run run, Guid? companyId = null)
     {
-        var draft = await run.ApprovedDraftAsync(CompanyA, "safety-" + Guid.NewGuid().ToString("N"), "10");
-        await run.PartlyDeliveredAsync(CompanyA, draft, "floor-" + Guid.NewGuid().ToString("N"), 6m, 4m, 2.5m);
-        await using var scope = run.SalesStore(CompanyA);
+        var company = companyId ?? CompanyA;
+        var draft = await run.ApprovedDraftAsync(company, "safety-" + Guid.NewGuid().ToString("N"), "10");
+        await run.PartlyDeliveredAsync(company, draft, "floor-" + Guid.NewGuid().ToString("N"), 6m, 4m, 2.5m);
+        await using var scope = run.SalesStore(company);
         await scope.Store.ChangeRemainderAsync(run.SalesEnvelope("request-" + Guid.NewGuid().ToString("N")), Hash("SENTETIK-" + draft.Id), SalesDraftCommands.RequestRemainderChangeV1, draft.Id,
             (order, now) => order.RequestRemainderChange(4, Assert.Single(order.Lines).Id, GoymenERP.Modules.Sales.Domain.Drafts.RemainderChangeKind.Revise, "8", 8m, "SENTETIK kalan", new(6m, 4m, 2.5m), run.Actor, now),
             new("sales.order-draft.remainder-change-requested.v1", "RequestRemainderChange", "SENTETIK kalan"), (_, _) => Task.CompletedTask);
@@ -171,6 +178,15 @@ public sealed partial class SalesRemainderChangeSqlServerRelationalAcceptanceTes
         ? safe.Service.ApproveRemainderChangeAsync(id, 1, new("05"), RemainderMetadata(key), token)
         : safe.Service.RejectRemainderChangeAsync(id, 1, new("05", "  SENTETIK ret  "), RemainderMetadata(key), token);
     private static SalesCommandMetadata RemainderMetadata(string key) => new(key, "SENTETIK-remainder-original", null, T0);
+    private static async Task<int> RemainderPrecommitFenceNumber(Run run, bool approve)
+    {
+        var id = await SeedOwnedRemainder(run); var saved = new RemainderSaveProbe(); var commit = new RemainderCommitProbe();
+        await using var safe = RemainderScope(run, saved, commit); var savedApprovalReads = 0; var measured = 0;
+        safe.Authority.AfterRead = permission => { if (saved.Saved && permission == SalesPermissionManifestV1.OrdersApprove) savedApprovalReads++; };
+        commit.BeforeCommit = () => measured = savedApprovalReads;
+        var answer = await DecideOwnedRemainder(safe, id, "phase-" + id.ToString("N"), approve);
+        Assert.False(answer.IsReplay); Assert.Equal(1, commit.Commits); Assert.True(measured > 1); return measured;
+    }
     private static void AssertOwnedRemainderClean(RemainderSafetyScope safe)
     { Assert.False(safe.Db.ChangeTracker.HasChanges()); Assert.False(safe.Writer.HasPendingDrafts); Assert.Null(safe.Db.Database.CurrentTransaction); }
     private static RemainderSafetyScope RemainderScope(Run run, params IInterceptor[] interceptors)
@@ -179,16 +195,16 @@ public sealed partial class SalesRemainderChangeSqlServerRelationalAcceptanceTes
         var collector = p.GetRequiredService<AuditEventCollector>(); Assert.Same(collector, p.GetRequiredService<IAuditEventCollector>()); var writer = p.GetRequiredService<IAuditTransactionWriterV1>();
         var db = new SalesDbContext(new DbContextOptionsBuilder<SalesDbContext>().UseSqlServer(run.Factory.DatabaseConnectionString, x => x.MigrationsHistoryTable("__EFMigrationsHistory", SalesDbContext.Schema))
             .AddInterceptors(new AuditSaveChangesInterceptor(collector, company)).AddInterceptors(interceptors).Options, company);
-        var store = new SalesStore(db, company, collector, TimeProvider.System, officialCancellationAuditWriter: writer); var authority = new RemainderAuthority();
+        var store = new SalesStore(db, company, collector, TimeProvider.System, officialCancellationAuditWriter: writer); var authority = new RemainderAuthority(); var roles = new RemainderRoles(); var user = new RemainderUser();
         var correlation = new CorrelationContext(); correlation.Set("SENTETIK-remainder-original", null, "Web", null, null);
-        var service = new SalesDraftService(company, new RemainderUser(), authority, new RemainderRoles(), correlation,
+        var service = new SalesDraftService(company, user, authority, roles, correlation,
             p.GetRequiredService<ISalesPartyAccountPortV1>(), p.GetRequiredService<ISettingsPrerequisiteProvider>(), p.GetService<IProductSalesEligibilityV1>(), store, new(), TimeProvider.System,
             allocations: p.GetRequiredService<ISalesOrderAllocationReadPortV1>(), loadings: p.GetRequiredService<ISalesOrderLoadingReadPortV1>(), requests: store).WithRemainderDecisionSafety();
-        return new(scope, db, service, authority, writer, collector);
+        return new(scope, db, service, authority, writer, collector, roles, company, user);
     }
-    private sealed class RemainderSafetyScope(AsyncServiceScope scope, SalesDbContext db, SalesDraftService service, RemainderAuthority authority, IAuditTransactionWriterV1 writer, AuditEventCollector collector) : IAsyncDisposable
+    private sealed class RemainderSafetyScope(AsyncServiceScope scope, SalesDbContext db, SalesDraftService service, RemainderAuthority authority, IAuditTransactionWriterV1 writer, AuditEventCollector collector, RemainderRoles roles, ICompanyContext company, RemainderUser user) : IAsyncDisposable
     {
-        internal SalesDbContext Db => db; internal SalesDraftService Service => service; internal RemainderAuthority Authority => authority; internal IAuditTransactionWriterV1 Writer => writer; internal AuditEventCollector Collector => collector;
+        internal SalesDbContext Db => db; internal SalesDraftService Service => service; internal RemainderAuthority Authority => authority; internal IAuditTransactionWriterV1 Writer => writer; internal AuditEventCollector Collector => collector; internal RemainderRoles Roles => roles; internal ICompanyContext Company => company; internal RemainderUser User => user;
         public async ValueTask DisposeAsync() { await db.DisposeAsync(); await scope.DisposeAsync(); }
     }
     private sealed class RemainderAuthority : IErpAuthorityRevalidationService
@@ -200,7 +216,7 @@ public sealed partial class SalesRemainderChangeSqlServerRelationalAcceptanceTes
     private sealed class RemainderUser : ICurrentUser
     { public bool IsAuthenticated => true; public string UserId => "SENTETIK-remainder-independent"; public IReadOnlySet<Guid> AllowedCompanyIds => new HashSet<Guid>([CompanyA]); public bool CanAccessCompany(Guid id) => id == CompanyA; }
     private sealed class RemainderRoles : IActiveRoleCodeReader
-    { public Task<IReadOnlySet<string>> GetActiveRoleCodesAsync(Guid companyId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlySet<string>>(new HashSet<string>()); }
+    { internal bool Support; public Task<IReadOnlySet<string>> GetActiveRoleCodesAsync(Guid companyId, CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlySet<string>>(Support ? new HashSet<string>([ErpPersonaRoleCodes.SalesSupport]) : new HashSet<string>()); }
     private sealed class RemainderSaveProbe : SaveChangesInterceptor
     {
         internal bool Saved; internal int Saves; internal Exception? Failure;
@@ -210,7 +226,11 @@ public sealed partial class SalesRemainderChangeSqlServerRelationalAcceptanceTes
         { Saved = true; return ValueTask.FromResult(result); }
     }
     private sealed class RemainderCommitProbe : DbTransactionInterceptor
-    { internal int Commits; internal Action? AfterCommit; public override Task TransactionCommittedAsync(DbTransaction transaction, TransactionEndEventData data, CancellationToken token = default) { Commits++; AfterCommit?.Invoke(); return Task.CompletedTask; } }
+    {
+        internal int Commits; internal Action? BeforeCommit; internal Action? AfterCommit;
+        public override ValueTask<InterceptionResult> TransactionCommittingAsync(DbTransaction transaction, TransactionEventData data, InterceptionResult result, CancellationToken token = default) { BeforeCommit?.Invoke(); return ValueTask.FromResult(result); }
+        public override Task TransactionCommittedAsync(DbTransaction transaction, TransactionEndEventData data, CancellationToken token = default) { Commits++; AfterCommit?.Invoke(); return Task.CompletedTask; }
+    }
     private sealed class RemainderRollbackFault : DbTransactionInterceptor
     { internal int Calls; public override ValueTask<InterceptionResult> TransactionRollingBackAsync(DbTransaction transaction, TransactionEventData data, InterceptionResult result, CancellationToken token = default) { Calls++; throw new InvalidOperationException("SENTETIK rollback fault"); } }
     private sealed class RemainderKeyProbe : DbCommandInterceptor

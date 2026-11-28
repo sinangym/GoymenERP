@@ -29,11 +29,11 @@ public sealed partial class SalesDraftService
         try
         {
             var result = await boundary.RunRemainderDecisionAsync(envelope, hash, command, cleanBeforeAuthority,
-                ct => DecideRemainderChangeCoreAsync(draftId, changeNo, request, metadata, approving, ct),
+                async ct => await Attach(await DecideRemainderChangeCoreAsync(draftId, changeNo, request, metadata, approving, ct), ct),
                 async ct =>
                 {
                     var replay = await FindReplayAsync(scope, permission, envelope, hash, command, ct);
-                    return replay is null ? null : await ReplayedAsync(scope, replay, ct);
+                    return replay is null ? null : await Attach(await ReplayedAsync(scope, replay, ct), ct);
                 }, async ct => { scope = await RequireStillAsync(scope, permission, ct); ct.ThrowIfCancellationRequested(); }, token);
             scope = await RequireStillAsync(scope, permission, token); token.ThrowIfCancellationRequested();
             var disclosure = await ReplayDisclosureAsync(scope, token); token.ThrowIfCancellationRequested();
@@ -44,8 +44,17 @@ public sealed partial class SalesDraftService
             if (disclosure.Disclosure == SalesPriceDisclosure.Withheld || finalPrice == SalesPriceDisclosure.Withheld)
                 result = result with { Detail = result.Detail with { Lines = result.Detail.Lines.Select(line => line with
                     { UnitPrice = null, PriceUnitId = null, DiscountPercent = null, PriceDisclosure = SalesPriceDisclosure.Withheld }).ToArray() } };
-            return result with { Detail = result.Detail with { IsOwnDecisionRestricted = result.Detail.IsOwnDraft && scope.IsSalesSupport } };
+            result = result with { Detail = result.Detail with { IsOwnDecisionRestricted = result.Detail.IsOwnDraft && scope.IsSalesSupport } };
+            return result.OriginalRemainderDecisionReceipt is { } receipt
+                ? result with { OriginalRemainderDecisionReceipt = receipt with { CurrentResponseDigest = SalesRemainderDecisionDigestsV1.CurrentResponseDigest(result) } }
+                : result;
         }
         catch (SalesDraftStoreException refusal) { throw Store(refusal); }
+        async Task<SalesOrderDraftResponse> Attach(SalesOrderDraftResponse answer, CancellationToken ct)
+        {
+            if (store is not ISalesRemainderDecisionReadStoreV1 receipts) return answer;
+            var bound = await receipts.AttachRemainderOriginalReceiptAsync(answer, draftId, changeNo, request, ct);
+            ct.ThrowIfCancellationRequested(); scope = await RequireStillAsync(scope, permission, ct); ct.ThrowIfCancellationRequested(); return bound;
+        }
     }
 }
