@@ -674,7 +674,7 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Reuse the existing native service approval async preparation through an owner-read port, then connect parent-owned durable membership/atomic approval with fresh source/reference/tax authority and original replay proof. Until persistence/API/UI and Work preview are connected the mixed path stays closed. Partial goods/service/invoice owners are reused.",
+      "next_action": "Compose guarded API/DI and then partial goods/service acceptance/invoicing and receipt-adjustment historical paths. Retain fail-closed unsupported paths; require actualSQL/browser/CI/K3 before first-use acceptance.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -821,6 +821,66 @@
           },
           "SQL_source": "8 Facts compiled; actual SQL NOT_RUN",
           "activation": "API/DI/runtime closed. Linked supplier revision, Draft child price editing, immutable historical restore, preview/API/UI acceptance remain pending."
+        },
+        "linked_supplier_revision": {
+          "source_commit": "7029f23afa7767de82af561a4bd1dd6f05ff607f",
+          "scope": "BOUNDED_LOCAL_NOT_RUNTIME_ACCEPTANCE",
+          "sales_native_remainder": {
+            "freeGiB": 3.7004470825195312,
+            "head": "081bb4e383496ec72ca80e2f1becc057cc3e0c91",
+            "seconds": 63.757042,
+            "exit": 0,
+            "artifact": "remainder-native-composed-sales-20261128/sales",
+            "total": 2955,
+            "passed": 2955,
+            "failed": 0,
+            "skipped": 0
+          },
+          "purchasing": {
+            "exit": 0,
+            "head": "7029f23afa7767de82af561a4bd1dd6f05ff607f",
+            "seconds": 36.5759902,
+            "freeGiB": 3.9786949157714844,
+            "artifact": "risk-host-mixed-revision-analyzer-fixed-20261128/purchasing",
+            "total": 1577,
+            "passed": 1577,
+            "failed": 0,
+            "skipped": 0
+          },
+          "api_refresh": {
+            "exit": 0,
+            "head": "7029f23afa7767de82af561a4bd1dd6f05ff607f",
+            "seconds": 24.9677628,
+            "freeGiB": 3.9593887329101562,
+            "artifact": "risk-host-mixed-revision-analyzer-fixed-20261128/api_refresh"
+          },
+          "controlled_host": {
+            "exit": 0,
+            "head": "7029f23afa7767de82af561a4bd1dd6f05ff607f",
+            "seconds": 67.6454224,
+            "freeGiB": 3.9389610290527344,
+            "artifact": "risk-host-mixed-revision-analyzer-fixed-20261128/host",
+            "total": 1334,
+            "passed": 1334,
+            "failed": 0,
+            "skipped": 0
+          },
+          "retained_failed_compiles": [
+            {
+              "phase": "risk-host-mixed-revision-integrated-20261128",
+              "cause": "CS0411 always-throwing converter required explicit PurchaseOrderResponse generic type; no tests executed."
+            },
+            {
+              "phase": "risk-host-mixed-revision-typed-20261128",
+              "cause": "Missing Purchasing.Domain using for native rule type; no tests executed."
+            },
+            {
+              "phase": "risk-host-mixed-revision-import-fixed-20261128",
+              "cause": "xUnit2000 expected/actual order at two assertions, values/assertions retained; no tests executed."
+            }
+          ],
+          "source_changes": "Risk selected owner now reaches native Approve/Reject through Work Host with genuine original receipt. Remainder same scoped native transaction safety and reciprocal marker composition; selected source/Host/UI pending. Mixed supplier revision stages both owners in one transaction, genuine historical receipts and narrow linked Draft price setter; native legacy behavior retained.",
+          "limits": "SQL sources compiled only, not executed. Risk frontend and mixed API/DI still unpublished. Mixed acceptance/receipt-adjustment history still pending. ActualSQL/normalHTTP/browser/pins/fullCI/two independent exact-head K3/business acceptance NOT_RUN."
         }
       },
       "delivery_tracking": {
@@ -2364,7 +2424,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Complete risk Work Host/UI and remaining flows6/10/11 using native owner commands. Cari62 remains approved native single-step. All64 runtime semantics unverified; actualSQL/HTTP/browser/pins/fullCI/twoK3 pending.",
+      "next_action": "Finish Risk paired UI/publication, remainder selected source/Host/UI, customer-return10 and contract-discount11. Cari62 stays approved native single-step. All runtime acceptance gates remain pending.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2483,7 +2543,7 @@
         "activation": "No grants/flags/provider changes"
       },
       "execution": {
-        "source_commit": "2b8a883cd63fdefbaa26929010f57feba67ae783",
+        "source_commit": "7029f23afa7767de82af561a4bd1dd6f05ff607f",
         "implemented_kinds": [
           "organization.company-tax-id-change.v1",
           "accounting.invoiced-shipment-cost.v1",
@@ -2544,7 +2604,8 @@
           "identity.access-grant-request.v1",
           "sales.price-floor-exception.v1",
           "sales.discount-exception.v1",
-          "sales.over-delivery-request.v1"
+          "sales.over-delivery-request.v1",
+          "sales.risk-exception.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -2699,6 +2760,66 @@
             "frontend_skipped": 0,
             "source_changes": "Numbered over-delivery owner/Host/UI/publication paired. Risk selected source and original receipt, same configured scoped owner aliases and reciprocal whole-read markers composed. Five additional Risk SQL Facts are source-only, not executed.",
             "limits": "Actual SQL, normal HTTP/browser, aggregate pins, full CI, independent exact-head K3 and business acceptance NOT_RUN. No role/grant/provider/activation."
+          },
+          "risk_host_remainder_and_mixed_revision": {
+            "source_commit": "7029f23afa7767de82af561a4bd1dd6f05ff607f",
+            "scope": "BOUNDED_LOCAL_NOT_RUNTIME_ACCEPTANCE",
+            "sales_native_remainder": {
+              "freeGiB": 3.7004470825195312,
+              "head": "081bb4e383496ec72ca80e2f1becc057cc3e0c91",
+              "seconds": 63.757042,
+              "exit": 0,
+              "artifact": "remainder-native-composed-sales-20261128/sales",
+              "total": 2955,
+              "passed": 2955,
+              "failed": 0,
+              "skipped": 0
+            },
+            "purchasing": {
+              "exit": 0,
+              "head": "7029f23afa7767de82af561a4bd1dd6f05ff607f",
+              "seconds": 36.5759902,
+              "freeGiB": 3.9786949157714844,
+              "artifact": "risk-host-mixed-revision-analyzer-fixed-20261128/purchasing",
+              "total": 1577,
+              "passed": 1577,
+              "failed": 0,
+              "skipped": 0
+            },
+            "api_refresh": {
+              "exit": 0,
+              "head": "7029f23afa7767de82af561a4bd1dd6f05ff607f",
+              "seconds": 24.9677628,
+              "freeGiB": 3.9593887329101562,
+              "artifact": "risk-host-mixed-revision-analyzer-fixed-20261128/api_refresh"
+            },
+            "controlled_host": {
+              "exit": 0,
+              "head": "7029f23afa7767de82af561a4bd1dd6f05ff607f",
+              "seconds": 67.6454224,
+              "freeGiB": 3.9389610290527344,
+              "artifact": "risk-host-mixed-revision-analyzer-fixed-20261128/host",
+              "total": 1334,
+              "passed": 1334,
+              "failed": 0,
+              "skipped": 0
+            },
+            "retained_failed_compiles": [
+              {
+                "phase": "risk-host-mixed-revision-integrated-20261128",
+                "cause": "CS0411 always-throwing converter required explicit PurchaseOrderResponse generic type; no tests executed."
+              },
+              {
+                "phase": "risk-host-mixed-revision-typed-20261128",
+                "cause": "Missing Purchasing.Domain using for native rule type; no tests executed."
+              },
+              {
+                "phase": "risk-host-mixed-revision-import-fixed-20261128",
+                "cause": "xUnit2000 expected/actual order at two assertions, values/assertions retained; no tests executed."
+              }
+            ],
+            "source_changes": "Risk selected owner now reaches native Approve/Reject through Work Host with genuine original receipt. Remainder same scoped native transaction safety and reciprocal marker composition; selected source/Host/UI pending. Mixed supplier revision stages both owners in one transaction, genuine historical receipts and narrow linked Draft price setter; native legacy behavior retained.",
+            "limits": "SQL sources compiled only, not executed. Risk frontend and mixed API/DI still unpublished. Mixed acceptance/receipt-adjustment history still pending. ActualSQL/normalHTTP/browser/pins/fullCI/two independent exact-head K3/business acceptance NOT_RUN."
           }
         },
         "reuse": [
