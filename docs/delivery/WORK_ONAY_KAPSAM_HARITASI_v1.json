@@ -440,7 +440,7 @@
             "kind": "sales.request.v1",
             "source": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesRequestWorkInboxSourceV1.cs:15",
             "source_decision_read": true,
-            "host_supported": false,
+            "host_supported": true,
             "owner_permission": "sales.requests.approve",
             "frontend_inbox_registered": true,
             "frontend_published": false,
@@ -465,21 +465,21 @@
         "native_permissions": [
           "sales.requests.approve"
         ],
-        "status": "SELECTED_OWNER_SOURCE_READY_NO_WORK_HOST",
+        "status": "BACKEND_HOST_TYPED_PREVIEW_LOCAL_SOURCE_FRONTEND_PENDING",
         "source": "CHECKED_AT_EXACT_HEAD",
-        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "local_tests": "60 controlled Host/DTO cases PASS atf4050b0a9, fail0/skip0; source units2556 at a44. Different evidence heads, not train acceptance.",
         "actual_SQL": "NOT_RUN",
         "browser_HTTP": "NOT_RUN",
         "CI": "NO_CURRENT_HEAD_EVIDENCE",
         "K3": "NOT_PERFORMED",
         "map_runtime": "NOT_RUN",
-        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "source_commit": "da11afc40",
         "later_deltas": [],
         "native_prerequisite": {
           "source_commit": "a44ba2f6cc8a2147297ee4a82ea11cc883b72aa9",
           "state": "SOURCE_IMPLEMENTED_BOUNDED_LOCAL",
           "local_evidence": "2556 Sales cases PASS, fail0/skip0; actual SQL NOT_RUN",
-          "remaining": "Root Host/DTO, publication, frontend and native SQL/browser acceptance; cleanup release P2 fixed at22fe013d3, no pending source fix."
+          "remaining": "Paired frontend/publication, actual SQL/native HTTP/browser and train acceptance. Host/DTO now connected; SAT-D22 preserved."
         }
       }
     },
@@ -6417,11 +6417,11 @@
       }
     ],
     "audit_sha256": "7b99cf7b328d015372dc2a31cd0afd74c8c40edebd9e72ae822f61d7ee529680",
-    "current_source_commit": "a44ba2f6cc8a2147297ee4a82ea11cc883b72aa9",
+    "current_source_commit": "f71e023a4a7960a5c35ba3e018036668d8828df7",
     "current_source_summary": {
-      "backend_kinds": 54,
+      "backend_kinds": 55,
       "frontend_published_kinds": 54,
-      "backend_supported_flows": 53,
+      "backend_supported_flows": 54,
       "paired_flows": 53,
       "no_host_flows": [
         2,
@@ -6429,7 +6429,6 @@
         4,
         5,
         6,
-        7,
         8,
         10,
         11,
@@ -6444,6 +6443,9 @@
       "runtime_verified_flows": 0,
       "native_single_step_no_pending_flows": [
         62
+      ],
+      "backend_only_unpublished_flows": [
+        7
       ]
     }
   },
@@ -6503,13 +6505,40 @@
       "actual_SQL": "NOT_RUN"
     },
     "remaining": [
-      "Flow7 root Host/DTO/publication/frontend not connected at this source head; source pending membership and Approved reject support remain distinct.",
+      "Flow7 Work Host/DTO source connected; 60 controlled cases PASS atf405. Paired frontend/publication in progress; actual SQL/HTTP/browser not accepted.",
       "Flow58 Work source/Host/UI still missing; owner purpose read/original impact receipt now present. Read-only narrow context adaptation is in progress in the assigned clone.",
       "KIM-D59 native preview/UI/Work link delivered; atomic viewed account-membership to native mutation binding is still in progress, not accepted.",
       "Credit profile fields are present; instrument release decision pending, NonCash reimbursement/bank policy and runtime links unresolved.",
       "Actual SQL, normal HTTP/browser, pins/full CI and two independent exact-head K3 remain."
     ],
     "activation": "NONE",
-    "runtime_verified_flows": 0
+    "runtime_verified_flows": 0,
+    "sales_request_host": {
+      "production_source_commit": "da11afc40",
+      "test_fixture_fix_commit": "f4050b0a9",
+      "typed_human_fields": 3,
+      "local_check": {
+        "source_commit": "f4050b0a9",
+        "cases": 60,
+        "passed": 60,
+        "failed": 0,
+        "skipped": 0
+      },
+      "earlier_combined_run": {
+        "source_commit": "da11afc40",
+        "total": 2311,
+        "passed": 2302,
+        "failed": 9,
+        "skipped": 0,
+        "reason": "Eight new fixtures tried to mutate write-once correlation within one request; one malformed-null-lines fixture rehashed before the SUT. Test-only corrections create a new correlation/Host scope and pass malformed fields directly to the validator. Assertions/production policy unchanged. Full2311 was not rerun at the fixed source."
+      },
+      "reused_native": "SAT-D22 authorized maker exception; native RequestsApprove, raw required rejection reason<=4000; original Approved2 receipt remains separate from current Rejected3 native replay detail.",
+      "remaining": "Frontend/capability publication in assigned clone; actual SQL/HTTP/browser/CI/K3 NOT_RUN."
+    },
+    "identity_read_context": {
+      "source_commit": "f71e023a4",
+      "state": "SOURCE_NOT_YET_REBUILT",
+      "scope": "New actual company/actor/correlation/causation read context; legacy write-metadata overload projects actual fields, no fabricated key/channel. One new unit source case. Work source in assigned clone."
+    }
   }
 }

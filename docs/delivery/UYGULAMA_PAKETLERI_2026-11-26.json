@@ -2210,7 +2210,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Connect Flow7 owner source to Work Host/typed DTO and paired UI, then Flow58 with actual original-impact receipt; preserve SAT-D22 and native Critical SoD. Finish KIM-D59 atomic seen-impact binding. Current 54 paired kinds/53 mapped flows are source only; all64 runtime acceptance NOT_RUN.",
+      "next_action": "Pair Flow7 frontend and capability publication against its connected native Host/typed DTO, then Flow58 with original seen-impact token/receipt binding. Finish KIM-D59 atomic seen-impact binding. Source counts55 backend kinds/54 mapped flows,54 paired kinds/53 mapped flows; all64 runtime acceptance NOT_RUN.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2384,7 +2384,8 @@
           "manufacturing.plan.v1",
           "finance.credit-account.v1",
           "accounting.inventory-cost-cancellation.v1",
-          "accounting.source-voucher.v1"
+          "accounting.source-voucher.v1",
+          "sales.request.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
