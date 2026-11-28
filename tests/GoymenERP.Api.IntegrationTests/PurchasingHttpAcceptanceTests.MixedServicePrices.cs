@@ -20,6 +20,7 @@ public sealed partial class PurchasingHttpAcceptanceTests
         using var scope = factory.Services.CreateScope(); var services = scope.ServiceProvider;
         var parent = services.GetRequiredService<PurchasingService>();
         Assert.Same(parent, services.GetRequiredService<IPurchaseMixedServicePriceRevisionServiceV1>());
+        Assert.Same(parent, services.GetRequiredService<IPurchaseMixedServicePriceRevisionPreviewV1>());
         Assert.Same(parent, services.GetRequiredService<IPurchasingService>());
         Assert.Same(parent, services.GetRequiredService<IPurchaseMixedOrderApprovalPreviewV1>());
         Assert.Same(parent, services.GetRequiredService<IPurchaseMixedOrderMembershipServiceV1>());
@@ -119,20 +120,46 @@ public sealed partial class PurchasingHttpAcceptanceTests
             PurchasingRequestHash.Compute(PurchasingCommands.OrderSupplierReviseV1, PurchaseOrderId, supplier with { MixedServices = null }));
     }
 
+    [Fact]
+    public async Task Mixed_Approved_price_preview_has_its_own_read_route_and_does_not_require_or_create_command_metadata()
+    {
+        var owner = new MixedPriceHttpOwner(); using var host = MixedPriceHost(owner); using var client = CreateClient(host);
+        using var response = await client.GetAsync($"{PurchasingApiV1.OrdersPath}/{PurchaseOrderId:D}/service-price-revision-preview?expectedVersion=9007199254740993");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode); AssertPrivateNoStore(response);
+        Assert.Equal((PurchaseOrderId, "9007199254740993"), (owner.OrderId, owner.ReadVersion));
+        Assert.Null(owner.Request); Assert.Null(owner.Metadata); Assert.False(response.Headers.Contains("Idempotency-Replayed"));
+        using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(new[] { "companyId", "parent", "services" }, json.RootElement.EnumerateObject().Select(x => x.Name));
+    }
+
+    [Theory]
+    [InlineData("")] [InlineData("?expectedVersion=1&companyId=foreign")] [InlineData("?expectedVersion=1&expectedVersion=2")]
+    [InlineData("?expectedVersion=01")] [InlineData("?expectedVersion=9223372036854775808")]
+    public async Task Mixed_price_preview_rejects_missing_foreign_ambiguous_or_noncanonical_version_before_owner(string query)
+    {
+        var owner = new MixedPriceHttpOwner(); using var host = MixedPriceHost(owner); using var client = CreateClient(host);
+        using var response = await client.GetAsync($"{PurchasingApiV1.OrdersPath}/{PurchaseOrderId:D}/service-price-revision-preview{query}");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode); Assert.Null(owner.ReadVersion); Assert.Equal(0, owner.Calls);
+    }
+
     private static string MixedPricePath() => $"{PurchasingApiV1.OrdersPath}/{PurchaseOrderId:D}/service-price-revisions";
     private static readonly Guid HeldPriceService = Guid.Parse("cda56784-1023-4bce-8000-000000000001");
     private static string MixedPriceBody() => $$"""{"expectedVersion":"9007199254740993","services":[{"serviceOrderId":"{{AcceptanceId:D}}","expectedVersion":"9223372036854775806","lineIds":["{{PurchaseOrderLineId:D}}"]},{"serviceOrderId":"{{HeldPriceService:D}}","expectedVersion":"9223372036854775807","lineIds":["{{PurchaseOrderLineId:D}}"]}],"changes":[{"serviceOrderId":"{{AcceptanceId:D}}","lines":[{"lineId":"{{PurchaseOrderLineId:D}}","unitPrice":"0"}]}],"reason":"  SENTETIK native reason  "}""";
     private WebApplicationFactory<Program> MixedPriceHost(MixedPriceHttpOwner owner) => factory.WithWebHostBuilder(builder =>
         builder.ConfigureTestServices(services => { services.RemoveAll<IPurchaseMixedServicePriceRevisionServiceV1>();
-            services.AddScoped<IPurchaseMixedServicePriceRevisionServiceV1>(_ => owner); }));
-    private sealed class MixedPriceHttpOwner : IPurchaseMixedServicePriceRevisionServiceV1
+            services.AddScoped<IPurchaseMixedServicePriceRevisionServiceV1>(_ => owner);
+            services.RemoveAll<IPurchaseMixedServicePriceRevisionPreviewV1>(); services.AddScoped<IPurchaseMixedServicePriceRevisionPreviewV1>(_ => owner); }));
+    private sealed class MixedPriceHttpOwner : IPurchaseMixedServicePriceRevisionServiceV1, IPurchaseMixedServicePriceRevisionPreviewV1
     {
+        public string? ReadVersion { get; private set; }
         public int Calls { get; private set; }
         public Guid OrderId { get; private set; }
         public RevisePurchaseMixedServicePricesRequest? Request { get; private set; }
         public PurchasingCommandMetadata? Metadata { get; private set; }
         public int? Failure { get; init; }
         public bool Replay { get; init; }
+        public Task<PurchaseMixedServicePriceRevisionPreviewV1> ReadMixedServicePriceRevisionPreviewAsync(Guid id, string version, CancellationToken token = default)
+        { Calls++; OrderId = id; ReadVersion = version; return Task.FromResult(new PurchaseMixedServicePriceRevisionPreviewV1(CompanyA, OrderDetail(id), [])); }
         public Task<PurchaseOrderResponse> ReviseMixedServicePricesAsync(Guid id, RevisePurchaseMixedServicePricesRequest request,
             PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default)
         {
