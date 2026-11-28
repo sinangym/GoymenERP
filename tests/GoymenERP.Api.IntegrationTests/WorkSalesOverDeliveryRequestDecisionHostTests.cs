@@ -74,7 +74,7 @@ public sealed class WorkSalesOverDeliveryRequestDecisionHostTests
 
     [Theory] [InlineData("zero")] [InlineData("padded")] [InlineData("max")] [InlineData("approve-reason")]
     [InlineData("reject-null")] [InlineData("reject-blank")] [InlineData("reject-long")] [InlineData("quote")]
-    [InlineData("floor")] [InlineData("loss")] [InlineData("period")] [InlineData("cancellation")]
+    [InlineData("floor")] [InlineData("discount")] [InlineData("loss")] [InlineData("period")] [InlineData("cancellation")]
     public async Task Malformed_or_foreign_body_is_refused_before_any_source_or_owner_IO(string fault)
     {
         var r = new Rig(); var q = Request(); q = fault switch
@@ -84,6 +84,7 @@ public sealed class WorkSalesOverDeliveryRequestDecisionHostTests
             "reject-null" => q with { Approve = false }, "reject-blank" => q with { Approve = false, Reason = " \t " },
             "reject-long" => q with { Approve = false, Reason = new('x', SalesApprovalRequest.MaximumTextLength + 1) },
             "quote" => q with { SalesQuoteConversion = new(Order, 3, 0, "1") }, "floor" => q with { SalesPriceFloor = new([]) },
+            "discount" => q with { SalesDiscount = new([]) },
             "loss" => q with { InventoryTransferLoss = new(1, At) }, "period" => q with { NormalJournalDraft = new(Order) },
             _ => q with { InventoryCostCancellation = new("1") }
         };
