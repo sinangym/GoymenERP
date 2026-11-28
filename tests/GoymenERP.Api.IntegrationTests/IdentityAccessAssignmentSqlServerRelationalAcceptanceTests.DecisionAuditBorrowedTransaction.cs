@@ -81,6 +81,7 @@ public sealed partial class IdentityAccessAssignmentSqlServerRelationalAcceptanc
                 Assert.Equal(artifact, again);
                 AssertCallerStillOwnsEverything();
                 await caller.RollbackAsync(); // Only this caller owns rollback/disposal.
+                await caller.DisposeAsync();
                 db.ChangeTracker.Clear();
                 Assert.False(await db.Users.AsNoTracking().AnyAsync(x => x.Id == callerUser.Id));
                 Assert.Single(await db.CommandExecutions.Where(x => x.OriginalCorrelationId == metadata.CorrelationId).ToListAsync());
