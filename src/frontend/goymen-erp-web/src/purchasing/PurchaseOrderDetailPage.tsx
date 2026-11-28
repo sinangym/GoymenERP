@@ -31,6 +31,7 @@ import { AllocationLinkPanel } from './AllocationLinkPanel'
 import { PurchaseOrderCancellationPanel } from './PurchaseOrderCancellationPanel'
 import { LineSchedulePanel } from './LineSchedulePanel'
 import { SupplierRevisionPanel } from './SupplierRevisionPanel'
+import { MixedServicePriceRevisionPanel } from './MixedServicePriceRevisionPanel'
 import { ORDER_CANCELLATION_TEXT, PURCHASE_ORDER_STATUS_LABEL } from './purchasingText'
 import { PURCHASE_ORDER_STATUS_TONE } from './purchaseOrderStatus'
 import type { PurchaseKgPrice, PurchaseOrderCurrency, PurchaseOrderLine, PurchaseOrderRealization } from './contract'
@@ -372,6 +373,10 @@ function PurchaseOrderDetail({ namespace }: { readonly namespace: string | null 
       fenceKey={`${namespace}::${shell.routeEntryGeneration}`} companyId={companyId} order={order} lines={lines} actorId={actorId}
       sessionEpoch={shell.sessionEpoch} canEdit={hasCapability(shell, PURCHASING_CAPABILITY.orderSupplierRevise)}
       hasCurrency={state.data.currency !== null && state.data.currency !== undefined} onSettled={() => query.refetch()} /></div> : null}
+    {isCurrentDetail && namespace !== null ? <div className={styles.section}><MixedServicePriceRevisionPanel
+      fenceKey={`${namespace}::${shell.routeEntryGeneration}`} companyId={companyId} actorId={actorId}
+      sessionEpoch={shell.sessionEpoch} order={order} canEdit={hasCapability(shell, PURCHASING_CAPABILITY.orderSupplierRevise)}
+      onSettled={() => query.refetch()} /></div> : null}
     {isCurrentDetail && namespace !== null ? <div className={styles.section}><GoodsReceiptBatchPanel
       fenceKey={`${namespace}::${shell.routeEntryGeneration}`} companyId={companyId} orderId={order.id}
       orderVersion={order.version} /></div> : null}

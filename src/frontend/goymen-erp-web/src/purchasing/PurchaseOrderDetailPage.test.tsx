@@ -10,6 +10,7 @@ const scenario = vi.hoisted(() => ({
   status: 'Draft' as 'Draft' | 'Approved' | 'Cancelled',
   cancellation: undefined as { cancelledBy: string; cancelledAtUtc: string; reason: string } | null | undefined,
   cancelPanelMounts: [] as Array<Record<string, unknown>>,
+  pricePanelMounts: [] as Array<Record<string, unknown>>,
   canApprove: true,
   canReadSourceRequest: true,
   capabilities: [] as string[],
@@ -110,6 +111,7 @@ vi.mock('@tanstack/react-query', () => ({
   }),
 }))
 
+vi.mock('./MixedServicePriceRevisionPanel', () => ({ MixedServicePriceRevisionPanel: (props: Record<string, unknown>) => { scenario.pricePanelMounts.push(props); return null } }))
 vi.mock('./AllocationLinkPanel', () => ({ AllocationLinkPanel: () => null }))
 vi.mock('./api', () => ({ fetchPurchaseOrder: vi.fn() }))
 
@@ -174,6 +176,7 @@ beforeEach(() => {
   scenario.cancellation = undefined
   scenario.pricing = undefined
   scenario.cancelPanelMounts = []
+  scenario.pricePanelMounts = []
   scenario.canApprove = true
   scenario.canReadSourceRequest = true
   scenario.capabilities = []
@@ -848,5 +851,26 @@ describe('PurchaseOrderDetailPage realization table (AK-3b; SAT-D436 TK6, TK8)',
     expect(screen.getByTestId('purchase-order-realization-line-7')).toBeTruthy()
     expect(screen.queryByTestId('purchase-order-realization-line-8')).toBeNull()
     expect(screen.queryByTestId('purchase-order-realization-document')).toBeNull()
+  })
+})
+
+
+describe('PurchaseOrderDetailPage mixed price native owner mount', () => {
+  it.each([true, false])('passes only the actual current order, context and existing revise control: %s', allowed => {
+    scenario.status = 'Approved'; scenario.routeEntryGeneration = 7
+    scenario.capabilities = allowed ? ['purchasing.orders.supplier-revise'] : []
+    renderDetail()
+    expect(scenario.pricePanelMounts).toEqual([expect.objectContaining({
+      fenceKey: 'fixture::7', companyId: COMPANY, actorId: ACTOR, sessionEpoch: 1,
+      order: expect.objectContaining({ id: ORDER, companyId: COMPANY, version: '3', status: 'Approved' }),
+      canEdit: allowed, onSettled: expect.any(Function),
+    })])
+  })
+  it.each(['company', 'order'])('does not mount a price editor from a foreign cached %s detail', fault => {
+    scenario.capabilities = ['purchasing.orders.supplier-revise']
+    if (fault === 'company') scenario.detailCompanyId = OTHER_COMPANY
+    else scenario.detailOrderId = OTHER_ORDER
+    renderDetail()
+    expect(scenario.pricePanelMounts).toEqual([])
   })
 })
