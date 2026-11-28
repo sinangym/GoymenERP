@@ -2,6 +2,8 @@ using GoymenERP.Api.Multitenancy;
 using GoymenERP.Api.OpenApi;
 using GoymenERP.BuildingBlocks.Observability;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
+using GoymenERP.Modules.Purchasing.Domain;
+using GoymenERP.Modules.Purchasing.Domain.Services;
 using Microsoft.AspNetCore.Mvc;
 
 namespace GoymenERP.Api.Endpoints;
@@ -31,6 +33,17 @@ public static partial class PurchasingEndpoints
             .ProducesErpBadRequest("validation_failed").ProducesErpCodeLessNotFound()
             .ProducesErpConflict(PurchasingProblemCodesV1.VersionConflict).ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
 
+        MapRevisionMutation(group.MapPost("/{id:guid}/service-price-revisions", (Guid id, HttpContext http,
+            [FromServices] IPurchaseMixedServicePriceRevisionServiceV1 service, ICorrelationContext correlation, CancellationToken token) =>
+        {
+            SetPrivateNoStore(http.Response);
+            if (http.Request.Query.Count != 0) return Task.FromResult(Problem(400, "validation_failed", correlation));
+            // The same parent owner authorizes OrdersRevise and freezes all selected native child versions/lines.
+            return MutateAsync(http, correlation, PurchaseMixedOrderJsonV1.ReadServicePriceRevision,
+                (body, metadata) => service.ReviseMixedServicePricesAsync(id, body, metadata, token), token);
+        }).WithName("RevisePurchaseMixedServicePricesV1").Accepts<RevisePurchaseMixedServicePricesRequest>("application/json"),
+            PurchasingRuleCodes.OrderNotApproved, PurchaseServiceOrder.StateConflict, PurchaseServiceOrder.VersionConflict);
+
         MapRevisionMutation(group.MapPost("/{id:guid}/service-memberships", (Guid id, HttpContext http,
             [FromServices] IPurchaseMixedOrderMembershipServiceV1 service, ICorrelationContext correlation, CancellationToken token) =>
         {
@@ -47,6 +60,9 @@ public static class PurchaseMixedOrderJsonV1
 {
     public static BindPurchaseOrderServicesRequest ReadMembership(string json) =>
         PurchaseServiceOrderJsonV1.Read<BindPurchaseOrderServicesRequest>(json);
+
+    public static RevisePurchaseMixedServicePricesRequest ReadServicePriceRevision(string json) =>
+        PurchaseServiceOrderJsonV1.Read<RevisePurchaseMixedServicePricesRequest>(json);
 
     public static ApprovePurchaseOrderRequest ReadApprove(string json)
     {
