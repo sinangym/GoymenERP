@@ -1,0 +1,15 @@
+import type {WorkSalesDiscountPreview} from './workSalesDiscountDecision'
+import {SALES_DISCOUNT_WORK_KIND} from './workSalesDiscountDecision'
+export const salesDiscountId='f3030000-0000-4000-8000-000000000001',discountUnit='f3030000-0000-4000-8000-000000000002',discountList='f3030000-0000-4000-8000-000000000003'
+export function salesDiscountHuman(company:string,visible=true,version='9007199254740993',pending=true,listed=true):WorkSalesDiscountPreview {
+ const lines=Array.from({length:2},(_,i)=>{const lineId=`f3030000-0000-4000-8001-${String(i+1).padStart(12,'0')}`,discountCheck={checkedBy:'SENTETIK-discount-writer-'+i,checkedAtUtc:'2026-11-28T09:00:00.0000001Z',listUnitPrice:visible&&listed?'100.0000':null,limitPercent:'10',requiresApproval:true,approvedBy:pending?null:'SENTETIK-checker',approvedAtUtc:pending?null:'2026-11-28T09:01:00Z',reason:pending?null:'SENTETIK kayıtlı gerekçe'}
+ return {lineId,lineNo:i+1,productId:`f3030000-0000-4000-8002-${String(i+1).padStart(12,'0')}`,productVersion:'9007199254740993',productCode:'SNT-'+i,productName:'SENTETIK İskonto Ürün '+i,orderUnitId:discountUnit,quantity:'0001.2500',discountCheck,
+ pricing:visible?{lineId,lineNo:i+1,unitPrice:'100.0000',priceUnitId:discountUnit,priceSource:'Manual' as const,priceReference:listed?{priceListId:discountList,priceListName:'SENTETIK Liste',versionNo:3,validFrom:'2026-01-01',validThrough:null,currencyCode:'TRY',priceUnitId:discountUnit,unitPrice:'100.0000',floorUnitPrice:null,vatBasis:'ExcludingVat' as const,lowerQuantity:'0',upperQuantity:null,tier:'Company' as const}:null,discountPercent:'15.000',discountAmount:null,surchargePercent:null,surchargeAmount:null,netUnitPrice:'85',floorException:null,discountCheck}:null}})
+ return {companyId:company,draftId:salesDiscountId,documentNo:'SENTETIK-SO-DISCOUNT',version,revision:0,state:'Draft',approvalState:'Preparing',partyId:company,companyAccountId:company,currencyId:company,businessDate:'2026-11-28',isSubcontractService:false,lines,priceDisclosure:visible?'Visible':'Withheld',approvalSupported:pending&&version!=='9223372036854775807'}
+}
+export function salesDiscountFixture(company:string,visible=true,version='9007199254740993',pending=true,listed=true){
+ const h=salesDiscountHuman(company,visible,version,pending,listed)
+ return {companyId:company,kind:SALES_DISCOUNT_WORK_KIND,itemId:salesDiscountId,documentLabel:h.documentNo,sourceVersion:h.version,pending:h.approvalSupported,approvalReasonRequired:false,approvalSupported:h.approvalSupported,rejectionSupported:false,
+ references:[{role:'sales-order-draft',label:h.documentNo,recordId:h.draftId,link:`/satis/siparisler/${h.draftId}`},...(listed?[{role:'price-list',label:'SENTETIK Liste',recordId:discountList,link:null}]:[]),...h.lines.map(l=>({role:'product',label:l.productCode+' '+l.productName,recordId:l.productId,link:null}))],
+ rules:h.lines.map(()=>listed?{ruleCode:'sales.discount-over-limit',threshold:'10',actual:visible?'15':null,deviation:visible?'5':null,unit:'%'}:{ruleCode:'sales.discount-without-list-price',threshold:null,actual:null,deviation:null,unit:null}),salesDiscount:h}
+}
