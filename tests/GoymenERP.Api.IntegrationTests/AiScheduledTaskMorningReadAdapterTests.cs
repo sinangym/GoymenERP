@@ -18,7 +18,7 @@ public sealed class AiScheduledTaskMorningReadAdapterTests
     {
         var services = new ServiceCollection();
         services.AddAiRuntime(new ConfigurationBuilder().Build());
-        var registration = Assert.Single(services.Where(x => x.ServiceType == typeof(IAiScheduledTaskMorningReadV1)));
+        var registration = Assert.Single(services, x => x.ServiceType == typeof(IAiScheduledTaskMorningReadV1));
         Assert.Equal(ServiceLifetime.Scoped, registration.Lifetime);
         Assert.Equal(typeof(AiScheduledTaskMorningReadAdapterV1), registration.ImplementationType);
         Assert.DoesNotContain(services, x => x.ServiceType == typeof(IAiScheduledTaskServiceV1));
