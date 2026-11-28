@@ -6463,7 +6463,7 @@
       }
     ],
     "audit_sha256": "7b99cf7b328d015372dc2a31cd0afd74c8c40edebd9e72ae822f61d7ee529680",
-    "current_source_commit": "a461e610460b7597c08544c7ebb00499e6b671fb",
+    "current_source_commit": "efa3425b44313a28c6d4408e146670671645f16d",
     "current_source_summary": {
       "backend_kinds": 57,
       "frontend_published_kinds": 56,
@@ -6835,6 +6835,29 @@
     "runtime_verified_flows": 0,
     "new_permission_or_role_assignment": false,
     "new_schema": false,
-    "remaining": "Quote paired frontend/publication pending backend contract completion; Floor historical source/binding and two P2 fixes in author branch. Mixed persistent membership/atomic approval/API/UI still unavailable."
+    "remaining": "Quote paired frontend/publication pending backend contract completion; Floor historical source/binding and two P2 fixes in author branch. Mixed persistent membership/atomic approval/API/UI still unavailable.",
+    "null_boundary_followup": {
+      "source_commit": "efa3425b44313a28c6d4408e146670671645f16d",
+      "API_refresh": {
+        "head": "efa3425b44313a28c6d4408e146670671645f16d",
+        "freeGiB": 3.759746551513672,
+        "exit": 0,
+        "seconds": 22.8217341,
+        "errors": 0,
+        "warnings": 0,
+        "scope": "API_ONLY_FRESH_DEPENDENCIES_FROM_a461_NOT_FULL_SOLUTION_BUILD"
+      },
+      "controlled_API": {
+        "head": "efa3425b44313a28c6d4408e146670671645f16d",
+        "freeGiB": 3.4830780029296875,
+        "exit": 0,
+        "seconds": 69.3016183,
+        "passed": 2427,
+        "failed": 0,
+        "skipped": 0
+      },
+      "artifact": "quote-preview-null-boundary-fixed-20261128",
+      "change": "Preserve503 for null owner detail/quote before native hash; two new negative boundary cases. Valid human contract unchanged."
+    }
   }
 }
