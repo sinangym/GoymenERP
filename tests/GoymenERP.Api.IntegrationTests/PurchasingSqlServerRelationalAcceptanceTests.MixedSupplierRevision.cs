@@ -267,6 +267,49 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         Assert.Equal(2L, await run.ScalarAsync<long>("SELECT Version FROM purchasing.ServiceOrders WHERE OrderId=@id", ("@id", f.Service.OrderId)));
     }
 
+    [SqlServerFact]
+    public async Task Mixed_supplier_revision_original_receipt_survives_later_native_Draft_admission_and_reapproval_with_distinct_membership_baselines()
+    {
+        await using var run = await Run.StartAsync(); var f = await SupplierRevisionSourcesAsync(run); var body = SupplierRevisionRequest(f);
+        var metadata = AdmissionEnvelope(run, "mixed-supplier-before-new-membership");
+        PurchaseMixedSupplierRevisionAnswerV1 original;
+        await using (var revise = MixedApprovalScope(run)) original = await MixedReviseSupplier(revise, f, body, metadata);
+        PurchaseServiceOrderState extra;
+        await using (var child = ServiceScope(run, CompanyA))
+        {
+            var draft = ServiceDraft(run) with { SupplierPartyId = RevisedSupplier, CompanyAccountId = RevisedSupplierAccount, Money = f.Service.Money };
+            extra = (await child.Store.WriteAsync(draft.OrderId, PurchaseServiceOrderCommandsV1.Create, run.Envelope("mixed-supplier-extra-child"),
+                Hash("mixed-supplier-extra-child"), "SENTETIK actual later native child", (_, _) => Task.FromResult(draft), _ => Task.CompletedTask, default))!.Order!;
+        }
+        await using (var bind = MixedApprovalScope(run))
+            _ = await bind.Store.BindServicesAsync(f.Parent.Order.Id, new("5", [new(extra.OrderId, "1", extra.Lines.Select(x => x.LineId).ToArray())]),
+                AdmissionEnvelope(run, "mixed-supplier-extra-membership"),
+                PurchasingRequestHash.Compute(PurchaseMixedOrderMembershipV1.Command, f.Parent.Order.Id,
+                    new BindPurchaseOrderServicesRequest("5", [new(extra.OrderId, "1", extra.Lines.Select(x => x.LineId).ToArray())])),
+                true, MixedSqlProjection, _ => Task.CompletedTask);
+        await using (var retry = MixedApprovalScope(run))
+        {
+            var replay = await MixedReviseSupplier(retry, f, body, metadata);
+            Assert.True(replay.IsReplay); Assert.Equal(JsonSerializer.Serialize(original.Receipt, PurchasingJson.Options), JsonSerializer.Serialize(replay.Receipt, PurchasingJson.Options));
+            Assert.Single(replay.Receipt!.Children);
+        }
+        await using (var child = ServiceScope(run, CompanyA)) _ = await SetLinkedSupplierPrice(child, f, AdmissionEnvelope(run, "mixed-supplier-existing-child-price"), 3m);
+        await using (var price = run.Store(CompanyA))
+            _ = await ((IPurchasingSupplierRevisionStoreV1)price.Store).SetRevisionPriceAsync(f.Parent.Order.Id, f.Parent.Order.Lines[0].Id, 6,
+                new(3m, f.Parent.Order.Lines[0].UnitId), AdmissionEnvelope(run, "mixed-supplier-extra-parent-price"), new string('D', 64), _ => Task.CompletedTask);
+        await using (var approve = MixedApprovalScope(run))
+        {
+            var accepted = await MixedApprove(approve, f, new("7") { MixedServices = [new(f.Service.OrderId, "4", f.Service.Lines.Select(x => x.LineId).ToArray()),
+                new(extra.OrderId, "1", extra.Lines.Select(x => x.LineId).ToArray())] }, run.Envelope("mixed-supplier-two-baselines-approved", actor: OrderApprover));
+            Assert.Equal("8", accepted.Receipt!.Original.Visible.Order.Version); Assert.Equal(2, accepted.Receipt.Original.Children.Count);
+        }
+        await using var restart = MixedApprovalScope(run); var restored = (await restart.Store.FindOrderAsync(f.Parent.Order.Id))!;
+        Assert.Equal((8L, PurchaseOrderStatus.Approved), (restored.Order.Version, restored.Order.Status));
+        Assert.Equal(new[] { 3L, 6L }, restored.Order.ServiceMembershipBatches.Select(x => x.OrderVersionAfter));
+        Assert.Equal(f.Service.SupplierPartyId, restored.Order.ServiceMemberships.Single(x => x.ServiceOrderId == f.Service.OrderId).SupplierPartyId);
+        Assert.Equal(RevisedSupplier, restored.Order.ServiceMemberships.Single(x => x.ServiceOrderId == extra.OrderId).SupplierPartyId);
+    }
+
     private static readonly Guid RevisedSupplier = Guid.Parse("b9c7ba2a-f66a-4a0e-a5ea-cea4495fa001");
     private static readonly Guid RevisedSupplierAccount = Guid.Parse("b9c7ba2a-f66a-4a0e-a5ea-cea4495fa002");
     private static async Task<MembershipSources> SupplierRevisionSourcesAsync(Run run)

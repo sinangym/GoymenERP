@@ -51,8 +51,10 @@ public sealed partial class PurchasingStore
         if (events.Length != 1) throw new PurchasingServiceException(503, "service_unavailable");
         var after = ReadMixedAuditAfter(events[0].AfterJson);
         var original = after?.MixedApproval ?? throw new PurchasingServiceException(503, "service_unavailable");
+        var membershipVersion = PurchaseMixedOrderApprovalIntentV1.Version(request.ExpectedVersion);
         var memberships = await ReadMixedOwnerAsync(() => dbContext.OrderServiceMemberships.AsNoTracking()
-            .Where(x => x.CompanyId == company && x.OrderId == orderId).ToArrayAsync(token), fence, token);
+            .Where(x => x.CompanyId == company && x.OrderId == orderId
+                && x.OrderVersionAfter <= membershipVersion).ToArrayAsync(token), fence, token);
         if (original.Children is null || original.Membership is null
             || original.Children.Any(x => x is null || !MixedChildShape(x.OriginalBefore) || !MixedChildShape(x.Prepared) || !MixedChildShape(x.After))
             || original.Membership.Any(x => x is null) || memberships.Length != original.Membership.Count
@@ -94,7 +96,8 @@ public sealed partial class PurchasingStore
             supplier = await ReadMixedSupplierVersionAsync(orderId, last.OrderVersionAfter, fence, token,
                 Math.Min(ceiling, PurchaseMixedOrderApprovalIntentV1.Version(request.ExpectedVersion) + 1));
         }
-        var receipt = RestoreMixedOrderReceiptCore(attempt, events, revisions, childEvents, orderId, request, actor, permission, key, hash, supplier)
+        var receipt = RestoreMixedOrderReceiptCore(attempt, events, revisions, childEvents, orderId, request, actor, permission, key, hash, supplier,
+                supplier is null ? null : memberships.Where(x => x.OrderVersionAfter > supplier.ResultVersion).Select(x => x.ServiceOrderId).ToHashSet())
             ?? throw new PurchasingServiceException(503, "service_unavailable");
         return new(receipt, null, true, attempt.CorrelationId);
     }
@@ -133,7 +136,7 @@ public sealed partial class PurchasingStore
     private static PurchaseMixedOrderApprovalReceiptV1? RestoreMixedOrderReceiptCore(PurchaseAttemptRow attempt, IReadOnlyList<AuditEvent> events,
         IReadOnlyList<PurchaseServiceOrderRevisionRow> revisions, IReadOnlyList<AuditEvent> childEvents, Guid orderId,
         ApprovePurchaseOrderRequest request, string actor, string permission, string key, string hash,
-        PurchaseMixedSupplierRevisionReceiptV1? supplier = null)
+        PurchaseMixedSupplierRevisionReceiptV1? supplier = null, IReadOnlySet<Guid>? introducedAfterRevision = null)
     {
         try
         {
@@ -207,8 +210,10 @@ public sealed partial class PurchasingStore
                 if (selected is null || membership is null || old.CompanyId != attempt.CompanyId || membership.CompanyId != old.CompanyId
                     || membership.PurchaseOrderId != orderId || old.SupplierPartyId != header.SupplierPartyId
                     || old.CompanyAccountId != header.CompanyAccountId
-                    || (supplier is not null && (old.SupplierRevisionOrigin != new PurchaseServiceSupplierRevisionOrigin(orderId, supplier.ResultVersion, supplier.KeyHash)
-                        || supplier.Children.Count(x => x.Revised.OrderId == old.OrderId && x.Revised.Version <= old.Version) != 1)) || old.Money.CurrencyId != membership.CurrencyId
+                    || (supplier is not null && (introducedAfterRevision?.Contains(old.OrderId) == true
+                        ? membership.SupplierPartyId != header.SupplierPartyId || membership.CompanyAccountId != header.CompanyAccountId
+                        : old.SupplierRevisionOrigin != new PurchaseServiceSupplierRevisionOrigin(orderId, supplier.ResultVersion, supplier.KeyHash)
+                            || supplier.Children.Count(x => x.Revised.OrderId == old.OrderId && x.Revised.Version <= old.Version) != 1)) || old.Money.CurrencyId != membership.CurrencyId
                     || selected.ExpectedVersion != old.Version.ToString(CultureInfo.InvariantCulture)
                     || selected.LineIds is null || selected.LineIds.Count != old.Lines.Count
                     || selected.LineIds.Distinct().Count() != selected.LineIds.Count

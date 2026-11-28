@@ -116,10 +116,11 @@ public sealed partial class PurchaseOrder
                 ?? throw new ArgumentException("Selected service owner is missing.");
             var selection = currentSelections.SingleOrDefault(x => x.ServiceOrderId == membership.ServiceOrderId)
                 ?? throw new ArgumentException("Current service selection is missing.");
+            var joinedAfterRevision = SupplierRevision > 0 && serviceMembershipBatches.Single(batch => batch.Members.Any(x => x.ServiceOrderId == membership.ServiceOrderId))
+                .OrderVersionAfter > supplierRevisions[^1].OrderVersionAfter;
             if (membership.CompanyId != CompanyId || membership.PurchaseOrderId != Id
-                || (SupplierRevision == 0 && (membership.SupplierPartyId != SupplierPartyId || membership.CompanyAccountId != companyAccountId))
-                || (SupplierRevision > 0 && (supplierRevisions[0].PreviousSupplierPartyId != membership.SupplierPartyId
-                    || supplierRevisions[^1].SupplierPartyId != SupplierPartyId
+                || ((SupplierRevision == 0 || joinedAfterRevision) && (membership.SupplierPartyId != SupplierPartyId || membership.CompanyAccountId != companyAccountId))
+                || (SupplierRevision > 0 && !joinedAfterRevision && (supplierRevisions[^1].SupplierPartyId != SupplierPartyId
                     || service.SupplierRevisionOrigin is not { } origin || origin.ParentOrderId != Id
                     || origin.ParentRevisionVersion != supplierRevisions[^1].OrderVersionAfter)) || Money?.CurrencyId != membership.CurrencyId
                 || service.CompanyId != CompanyId || service.SupplierPartyId != SupplierPartyId

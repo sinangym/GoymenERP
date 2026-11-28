@@ -122,7 +122,7 @@ public sealed partial class PurchasingStore
                 throw MixedSupplierUnavailable();
             ValidateMixedSupplierParent(audit, after.NativeOrder, result, previous);
             var members = await ReadMixedOwnerAsync(() => dbContext.OrderServiceMemberships.AsNoTracking()
-                .Where(x => x.CompanyId == company && x.OrderId == id).ToArrayAsync(token), fence, token);
+                .Where(x => x.CompanyId == company && x.OrderId == id && x.OrderVersionAfter <= expected).ToArrayAsync(token), fence, token);
             if (members.Length != result.Children.Count || members.Any(x => !previous.Original.Membership.Any(m => MixedStoredMemberMatches(x, m))))
                 throw MixedSupplierUnavailable();
             var revisions = new List<PurchaseServiceOrderRevisionRow>();

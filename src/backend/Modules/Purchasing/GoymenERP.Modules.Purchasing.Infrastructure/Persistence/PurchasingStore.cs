@@ -1429,7 +1429,9 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             {
                 membershipTimeline.Dequeue();
                 var originalAccount = mixedSupplierHistory is null ? row.CompanyAccountId
-                    : mixedSupplierHistory.Revisions.Values.OrderBy(x => x.ResultVersion).First().PreviousCompanyAccountId;
+                    : mixedSupplierHistory.Revisions.Values.Where(x => x.ResultVersion < membershipBatch.Batch.OrderVersionAfter)
+                        .OrderByDescending(x => x.ResultVersion).Select(x => (Guid?)x.CompanyAccountId).FirstOrDefault()
+                        ?? mixedSupplierHistory.Revisions.Values.OrderBy(x => x.ResultVersion).First().PreviousCompanyAccountId;
                 order.RestoreServiceMembershipBatch(membershipBatch.Batch, originalAccount, membershipBatch.Prepared);
                 continue;
             }

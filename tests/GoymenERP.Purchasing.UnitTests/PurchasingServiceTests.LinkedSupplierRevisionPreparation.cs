@@ -153,6 +153,30 @@ public sealed partial class PurchasingServiceTests
         Assert.Equal(f.Child, JsonSerializer.Deserialize<PurchaseServiceOrderState>(old, PurchasingJson.Options)! with {
             Lines = f.Child.Lines, Materials = f.Child.Materials, ExpectedOutputs = f.Child.ExpectedOutputs, Acceptances = f.Child.Acceptances });
     }
+    [Fact]
+    public void Linked_supplier_revision_later_native_Draft_membership_needs_no_invented_revision_origin_but_existing_child_still_does()
+    {
+        var f = LinkedRevisionFixture();
+        var revised = Assert.Single(f.Parent.ReviseSupplierWithServiceOrders(4, Account, [f.Child], PrepareLinked(f),
+            [new(f.Child.OrderId, f.Child.Version, f.Child.Lines.Select(x => x.LineId).ToArray())], NewSupplier, NewSupplierAccount,
+            PurchaseOrderInvoiceHistory.None, Actor, "SENTETIK locked ALS-D115 preparation", f.At)) with {
+                SupplierRevisionOrigin = new(f.Parent.Id, 5, new string('A', 64)) };
+        var extra = PurchaseServiceOrder.Create(f.Child with { OrderId = Guid.NewGuid(), Version = 1, Status = PurchaseServiceOrderStatus.Draft,
+            PreparedBy = Actor, ApprovedBy = null, SupplierPartyId = NewSupplier, CompanyAccountId = NewSupplierAccount,
+            CreatedAtUtc = f.At, UpdatedAtUtc = f.At, SupplierRevisionOrigin = null });
+        f.Parent.BindServiceOrders(5, NewSupplierAccount, [extra], [new(extra.OrderId, extra.Version, extra.Lines.Select(x => x.LineId).ToArray())], f.At);
+        f.Parent.SetSupplierRevisionPrice(6, f.Parent.Lines[0].Id, new(3m, f.Parent.Lines[0].UnitId), Actor, f.At);
+        var selections = new[] { new PurchaseOrderServiceSelection(revised.OrderId, revised.Version, revised.Lines.Select(x => x.LineId).ToArray()),
+            new(extra.OrderId, extra.Version, extra.Lines.Select(x => x.LineId).ToArray()) };
+        Assert.Throws<ArgumentException>(() => f.Parent.ApproveSelectedServiceOrders(7, NewSupplierAccount,
+            [revised with { SupplierRevisionOrigin = null }, extra], selections, Approver, f.At, revised.Money.CurrencyId,
+            new Dictionary<Guid, PurchaseOrderLineTheoreticalKilograms>()));
+        Assert.Equal(7L, f.Parent.Version);
+        var approved = f.Parent.ApproveSelectedServiceOrders(7, NewSupplierAccount, [revised, extra], selections,
+            Approver, f.At, revised.Money.CurrencyId, new Dictionary<Guid, PurchaseOrderLineTheoreticalKilograms>());
+        Assert.Equal(8L, f.Parent.Version); Assert.Equal(2, approved.Count); Assert.Null(approved.Single(x => x.OrderId == extra.OrderId).SupplierRevisionOrigin);
+        Assert.Equal(new[] { 3L, 6L }, f.Parent.ServiceMembershipBatches.Select(x => x.OrderVersionAfter));
+    }
     private static readonly Guid NewSupplier = Guid.Parse("ab125621-513a-4cce-8e23-23452bfe9e34");
     private static readonly Guid NewSupplierAccount = Guid.Parse("ab125621-513a-4cce-8e23-23452bfe9e35");
     private sealed record LinkedRevisionCase(PurchaseOrder Parent, PurchaseServiceOrderState Child, DateTimeOffset At);
