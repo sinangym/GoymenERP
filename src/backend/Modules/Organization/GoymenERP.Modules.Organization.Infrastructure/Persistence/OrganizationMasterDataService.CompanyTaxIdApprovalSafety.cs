@@ -203,8 +203,13 @@ internal sealed partial class OrganizationMasterDataService
 }
 
 internal sealed class GuardedCompanyTaxIdService(OrganizationMasterDataService core, IAuditTransactionWriterV1? writer)
-    : IOrganizationCompanyTaxIdService
+    : IOrganizationCompanyTaxIdService, IOrganizationCompanyTaxIdDecisionReadV1
 {
+    public Task<OrganizationCompanyTaxIdDecisionReadResultV1> ReadDecisionAsync(Guid requestId, Func<CancellationToken, Task> freshConsumerFence, CancellationToken cancellationToken = default) =>
+        core.ReadTaxIdDecisionAsync(requestId, freshConsumerFence, cancellationToken);
+    public Task<OrganizationCompanyTaxIdDecisionReceiptV1?> ReadDecisionReceiptAsync(Guid requestId, DecideCompanyTaxIdChange command, string key,
+        CommandExecutionResult original, Func<CancellationToken, Task> freshConsumerFence, CancellationToken cancellationToken = default) =>
+        core.ReadTaxIdDecisionReceiptAsync(requestId, command, key, original, freshConsumerFence, cancellationToken);
     public Task<CommandExecutionResult> DecideCompanyTaxIdChangeAsync(Guid id, DecideCompanyTaxIdChange command, CommandMetadata metadata, CancellationToken token) =>
         core.RunGuardedCompanyTaxIdDecisionAsync(id, command, metadata, writer, token);
     public Task<CompanyTaxIdView?> GetCompanyTaxIdAsync(CancellationToken token) => core.GetCompanyTaxIdAsync(token);

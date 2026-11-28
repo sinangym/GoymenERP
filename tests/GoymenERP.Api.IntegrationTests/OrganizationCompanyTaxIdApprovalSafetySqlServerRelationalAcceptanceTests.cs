@@ -24,7 +24,7 @@ namespace GoymenERP.Api.IntegrationTests;
 
 // Real migrated SQL and actual scoped Audit collector/writer. Authority revocation and provider failures below are
 // controlled injection, not real Identity/WP3/simultaneous deadlock/HTTP acceptance. Existing Identity SQL tests remain.
-public sealed class OrganizationCompanyTaxIdApprovalSafetySqlServerRelationalAcceptanceTests
+public sealed partial class OrganizationCompanyTaxIdApprovalSafetySqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyId = TestCompanyIds.CompanyA;
     private const string Maker = "SENTETIK-tax-safety-maker";

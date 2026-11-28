@@ -16,7 +16,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace GoymenERP.Organization.UnitTests;
 
 // These are entry/composition tests without a SQL connection. Owned SQL execution is tested separately.
-public sealed class CompanyTaxIdApprovalSafetyTests
+public sealed partial class CompanyTaxIdApprovalSafetyTests
 {
     private static readonly Guid CompanyId = Guid.Parse("0f000000-0000-4000-8000-000000005901");
     private static readonly Guid RequestId = Guid.Parse("0f000000-0000-4000-8000-000000005902");
