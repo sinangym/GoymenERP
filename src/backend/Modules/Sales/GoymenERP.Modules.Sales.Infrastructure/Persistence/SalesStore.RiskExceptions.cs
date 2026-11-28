@@ -25,6 +25,7 @@ public sealed partial class SalesStore : ISalesRiskExceptionStore
         RequireEnvelope(envelope);
         RequireHash(requestHash);
         RequireRiskExceptionCommand(commandName);
+        RequireRiskExceptionDecisionCommand(envelope, requestHash, commandName, writes: false);
         RequireResolvedCompany();
         var attempt = await FindRiskExceptionAttemptAsync(commandName, IdempotencyKeyHash(envelope.IdempotencyKey), cancellationToken);
         if (attempt is null)
@@ -43,6 +44,7 @@ public sealed partial class SalesStore : ISalesRiskExceptionStore
         RequireRiskExceptionAudit(audit);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
+        RequireRiskExceptionDecisionCommand(envelope, requestHash, SalesRiskExceptionCommands.RequestV1, writes: true);
         var companyId = RequireResolvedCompany();
         if (orderId == Guid.Empty)
         {
@@ -84,6 +86,7 @@ public sealed partial class SalesStore : ISalesRiskExceptionStore
         RequireEnvelope(envelope);
         RequireHash(requestHash);
         RequireRiskExceptionCommand(commandName);
+        RequireRiskExceptionDecisionCommand(envelope, requestHash, commandName, writes: true);
         var companyId = RequireResolvedCompany();
         if (refusal.Status is < 400 or > 599 || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null
             || refusal.Errors.Any(error => error is null || string.IsNullOrWhiteSpace(error.Field) || string.IsNullOrWhiteSpace(error.Code)))
@@ -105,7 +108,7 @@ public sealed partial class SalesStore : ISalesRiskExceptionStore
         dbContext.ShipmentRiskExceptionAttempts.Add(NewRiskExceptionAttempt(companyId, commandName, keyHash, requestHash,
             envelope.ActorId.Trim(), orderId, AttemptOutcomeRefused, null, JsonSerializer.Serialize(refusal, Json), envelope.CorrelationId,
             timeProvider.GetUtcNow()));
-        await SaveAsync(cancellationToken);
+        await SaveRiskExceptionDecisionAsync(cancellationToken, refusal);
     }
 
     public async Task<SalesRiskExceptionStoreResult?> DecideRiskExceptionAsync(SalesDraftWriteEnvelope envelope, string requestHash,
@@ -117,6 +120,7 @@ public sealed partial class SalesStore : ISalesRiskExceptionStore
         RequireEnvelope(envelope);
         RequireHash(requestHash);
         RequireRiskExceptionCommand(commandName);
+        RequireRiskExceptionDecisionCommand(envelope, requestHash, commandName, writes: true);
         if (commandName == SalesRiskExceptionCommands.RequestV1)
         {
             throw new ArgumentException("İstek kendi mağaza yöntemini kullanır.", nameof(commandName));
@@ -136,8 +140,8 @@ public sealed partial class SalesStore : ISalesRiskExceptionStore
             return null;
         }
 
-        var row = await dbContext.ShipmentRiskExceptions
-            .SingleOrDefaultAsync(candidate => candidate.OrderId == orderId && candidate.ExceptionNo == exceptionNo, cancellationToken);
+        var row = await RiskExceptionDecisionReadAsync(() => dbContext.ShipmentRiskExceptions
+            .SingleOrDefaultAsync(candidate => candidate.OrderId == orderId && candidate.ExceptionNo == exceptionNo, cancellationToken), cancellationToken);
         if (row is null)
         {
             return null;
@@ -162,7 +166,7 @@ public sealed partial class SalesStore : ISalesRiskExceptionStore
         dbContext.ShipmentRiskExceptionAttempts.Add(NewRiskExceptionAttempt(companyId, commandName, keyHash, requestHash, actorId, orderId,
             AttemptOutcomeRecorded, item.Id, null, envelope.CorrelationId, now));
         EnqueueRiskExceptionAudit(envelope, companyId, audit, item, versionBefore, before);
-        await SaveAsync(cancellationToken);
+        await SaveRiskExceptionDecisionAsync(cancellationToken);
         return new SalesRiskExceptionStoreResult(item, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 
@@ -203,8 +207,8 @@ public sealed partial class SalesStore : ISalesRiskExceptionStore
 
     private Task<ShipmentRiskExceptionAttemptRow?> FindRiskExceptionAttemptAsync(string commandName, string keyHash,
         CancellationToken cancellationToken) =>
-        dbContext.ShipmentRiskExceptionAttempts.AsNoTracking()
-            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken);
+        RiskExceptionDecisionReadAsync(() => dbContext.ShipmentRiskExceptionAttempts.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken), cancellationToken);
 
     private static ShipmentRiskExceptionAttemptRow NewRiskExceptionAttempt(Guid companyId, string commandName, string keyHash,
         string requestHash, string actorId, Guid orderId, int outcome, Guid? exceptionId, string? refusalJson, string correlationId,
@@ -282,8 +286,8 @@ public sealed partial class SalesStore : ISalesRiskExceptionStore
     {
         if (attempt.Outcome == AttemptOutcomeRecorded && attempt.ExceptionId is { } exceptionId)
         {
-            var row = await dbContext.ShipmentRiskExceptions.AsNoTracking()
-                .SingleOrDefaultAsync(candidate => candidate.Id == exceptionId, cancellationToken)
+            var row = await RiskExceptionDecisionReadAsync(() => dbContext.ShipmentRiskExceptions.AsNoTracking()
+                .SingleOrDefaultAsync(candidate => candidate.Id == exceptionId, cancellationToken), cancellationToken)
                 ?? throw new InvalidOperationException("Kayıtlı deneme kaydının risk istisnası bulunamadı.");
             return new SalesRiskExceptionReplay(SalesRiskExceptionRows.Restore(row), null, attempt.CorrelationId);
         }

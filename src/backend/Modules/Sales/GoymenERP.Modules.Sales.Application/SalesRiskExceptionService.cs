@@ -30,7 +30,7 @@ namespace GoymenERP.Modules.Sales.Application;
 /// Today the risk read cannot answer <c>Within</c> (shipped-not-invoiced has no source yet), so the SAT-D284 refusal is
 /// reachable once the invoicing owner answers; until then every request is <c>Over</c> or <c>Unavailable</c> and accepted.
 /// </summary>
-public sealed class SalesRiskExceptionService(
+public sealed partial class SalesRiskExceptionService(
     ICompanyContext companyContext,
     ICurrentUser currentUser,
     IErpAuthorityRevalidationService authority,
@@ -173,7 +173,15 @@ public sealed class SalesRiskExceptionService(
         return new SalesRiskExceptionListResponse([.. items.Select(item => View(item, today))]);
     }
 
-    private async Task<SalesRiskExceptionCommandResult> DecideAsync(Guid draftId, int exceptionNo, SalesDraftStateCommandRequest? request,
+    private Task<SalesRiskExceptionCommandResult> DecideAsync(Guid draftId, int exceptionNo, SalesDraftStateCommandRequest? request,
+        string commandName, string permission, SalesCommandMetadata metadata,
+        Action<SalesShipmentRiskException, string, long, DateTimeOffset> decide, SalesDraftStateAudit audit,
+        CancellationToken cancellationToken) =>
+        riskExceptionDecisionSafety && commandName is (SalesRiskExceptionCommands.ApproveV1 or SalesRiskExceptionCommands.RejectV1)
+            ? RunRiskExceptionDecisionAsync(draftId, exceptionNo, request, commandName, permission, metadata, decide, audit, cancellationToken)
+            : DecideCoreAsync(draftId, exceptionNo, request, commandName, permission, metadata, decide, audit, cancellationToken);
+
+    private async Task<SalesRiskExceptionCommandResult> DecideCoreAsync(Guid draftId, int exceptionNo, SalesDraftStateCommandRequest? request,
         string commandName, string permission, SalesCommandMetadata metadata,
         Action<SalesShipmentRiskException, string, long, DateTimeOffset> decide, SalesDraftStateAudit audit,
         CancellationToken cancellationToken)

@@ -37,7 +37,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// answers lapsed, the mirror is append-only (TR 51487) and its migration refuses to roll back over a usage (THROW 51488).
 /// SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class SalesShipmentRiskExceptionSqlServerRelationalAcceptanceTests
+public sealed partial class SalesShipmentRiskExceptionSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;
