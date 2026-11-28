@@ -107,9 +107,25 @@ public sealed class WorkSalesOverDeliveryRequestDecisionHostTests
             "version" => s with { SourceVersion = "2" }, "company" => s with { CompanyId = Guid.NewGuid() },
             "foreign-carrier" => s with { InventoryCostCancellationProof = new(Company, Id, Id, Id, 1, 1, Id, Maker, At, At, "Prepared", "", "") }, _ => s
         };
-        if (fault == "permission") r.Source.Permission = SalesPermissionManifestV1.OrdersApprove;
+        if (fault == "permission")
+        {
+            // Reach the malformed-source pin deliberately; all other fixtures grant only the native purpose permission.
+            r.Source.Permission = SalesPermissionManifestV1.OrdersApprove;
+            r.Authority.AdditionalPermissions.Add(SalesPermissionManifestV1.OrdersApprove);
+        }
         Assert.Equal(503, (await Assert.ThrowsAsync<WorkDecisionException>(() => r.Decide(Request()))).Status);
-        Assert.Equal(0, r.Native.Calls); Assert.Empty(r.Native.Commands);
+        Assert.Equal(0, r.Native.Calls); Assert.Equal(0, r.Native.Effects); Assert.Empty(r.Native.Commands);
+    }
+
+    [Fact]
+    public async Task Wrong_source_permission_is_denied_before_source_or_owner_IO_when_only_native_decision_is_granted()
+    {
+        var r = new Rig(); r.Source.Permission = SalesPermissionManifestV1.OrdersApprove;
+        Assert.Equal(403, (await Assert.ThrowsAsync<WorkDecisionException>(() => r.Decide(Request()))).Status);
+        Assert.Equal(0, r.Source.Reads); Assert.Equal(0, r.Native.Reads); Assert.Equal(0, r.Native.HistoryReads);
+        Assert.Equal(0, r.Native.Calls); Assert.Equal(0, r.Native.Effects); Assert.Empty(r.Native.Commands);
+        Assert.NotEmpty(r.Authority.Permissions);
+        Assert.All(r.Authority.Permissions, permission => Assert.Equal(SalesPermissionManifestV1.OrdersApprove, permission));
     }
 
     [Theory] [InlineData("facts")] [InlineData("permission")] [InlineData("actor")] [InlineData("company")] [InlineData("cancel")]
@@ -295,8 +311,9 @@ public sealed class WorkSalesOverDeliveryRequestDecisionHostTests
     private sealed class Authority : IErpAuthorityRevalidationService
     {
         internal bool Allowed = true; internal readonly List<string> Permissions = [];
+        internal readonly HashSet<string> AdditionalPermissions = new(StringComparer.Ordinal);
         public Task<PermissionScope> RevalidatePermissionScopeAsync(string p, Guid c, CancellationToken ct = default)
-        { Permissions.Add(p); return Task.FromResult(new PermissionScope(Allowed && p == SalesPermissionManifestV1.OrdersOverDeliveryApprove, true, new HashSet<string>(), new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>())); }
+        { Permissions.Add(p); return Task.FromResult(new PermissionScope(Allowed && (p == SalesPermissionManifestV1.OrdersOverDeliveryApprove || AdditionalPermissions.Contains(p)), true, new HashSet<string>(), new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>())); }
     }
     private sealed class Delegations : IWorkDelegationReaderV1
     {
