@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Globalization;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.Inventory.Application;
 using GoymenERP.Modules.Inventory.Infrastructure.Persistence;
@@ -29,6 +30,8 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
             await response.Content.ReadFromJsonAsync<LoadingInstructionResponse>(LogisticsJson.Options));
         var shippedShare = Assert.Single(shipped.Detail.Shares, share => share.ShareId == request.ShipmentId);
         Assert.Equal("Shipped", shippedShare.Kind);
+        Assert.True(long.TryParse(shipped.Detail.Instruction.Version, NumberStyles.None, CultureInfo.InvariantCulture, out var shippedVersion));
+        Assert.True(shippedVersion > 0);
 
         var company = new CompanyContext(); company.Set(CompanyA);
         await using var inventory = new InventoryDbContext(new DbContextOptionsBuilder<InventoryDbContext>()
@@ -49,7 +52,7 @@ public sealed partial class LogisticsInstructionSqlServerRelationalAcceptanceTes
         {
             var delivered = (await writer.Store.MutateInstructionAsync(run.Envelope("identity-journey-deliver"),
                 Hash("identity-journey-deliver"), LogisticsCommands.RecordDeliveryV1, fixture.InstructionId,
-                (value, now) => value.MarkDelivered(shipped.Detail.Instruction.Version, deliveryId, fixture.LineId,
+                (value, now) => value.MarkDelivered(shippedVersion, deliveryId, fixture.LineId,
                     request.ShipmentId, Kg(2m), now),
                 new LogisticsMutationAudit("logistics.loading-instruction.delivery-recorded.v1", "RecordDelivery", "SENTETIK LOJ-D21 teslim")))!.Instruction;
             var delivery = Assert.Single(delivered.Instruction.Shares, share => share.ShareId == deliveryId);
