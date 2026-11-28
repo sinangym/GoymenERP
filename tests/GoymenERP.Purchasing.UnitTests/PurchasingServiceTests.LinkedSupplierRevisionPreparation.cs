@@ -86,7 +86,7 @@ public sealed partial class PurchasingServiceTests
         Assert.Equal(PurchaseServiceOrder.StateConflict, Assert.Throws<PurchaseServiceOrderException>(() => PurchaseServiceOrder.RevisePrices(
             Assert.Single(PrepareLinked(f)), f.Child.Version + 1, new Dictionary<Guid, decimal> { [f.Child.Lines[0].LineId] = 5m },
             Actor, "SENTETIK unsupported Draft setter", f.At)).Code);
-        Assert.Equal(4L, f.Parent.Version); Assert.Equal(f.Child.Version, 3L);
+        Assert.Equal(4L, f.Parent.Version); Assert.Equal(3L, f.Child.Version);
     }
     [Fact]
     public async Task Linked_supplier_revision_preparation_defaults_unavailable_and_private_candidate_facts_do_not_become_public_wire()
@@ -112,7 +112,7 @@ public sealed partial class PurchasingServiceTests
         Assert.Null(f.Parent.Approval); Assert.All(f.Parent.Lines, x => Assert.Null(x.Price)); Assert.Same(member, Assert.Single(f.Parent.ServiceMemberships));
         Assert.All(Assert.Single(changed).Lines, x => Assert.Null(x.UnitPrice));
         Assert.Equal(4L, Assert.Single(f.Parent.SupplierRevisions).PreviousApprovalVersion);
-        Assert.Equal(f.Child.Version, 3L); Assert.Equal(PurchaseServiceOrderStatus.Approved, f.Child.Status);
+        Assert.Equal(3L, f.Child.Version); Assert.Equal(PurchaseServiceOrderStatus.Approved, f.Child.Status);
     }
     [Theory]
     [InlineData(0)] [InlineData(7)]
