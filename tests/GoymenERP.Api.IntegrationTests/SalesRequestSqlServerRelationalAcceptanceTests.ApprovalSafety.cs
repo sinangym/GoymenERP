@@ -74,6 +74,7 @@ public sealed partial class SalesRequestSqlServerRelationalAcceptanceTests
         var db = p.GetRequiredService<SalesDbContext>(); Assert.Same(db, p.GetRequiredService<SalesDbContext>());
         var collector = p.GetRequiredService<AuditEventCollector>(); Assert.Same(collector, p.GetRequiredService<IAuditEventCollector>());
         var writer = p.GetService<IAuditTransactionWriterV1>(); var authority = p.GetRequiredService<RequestSafetyAuthority>();
+        authority.ExpectedPermission = discount ? SalesPermissionManifestV1.OrdersDiscountExceptionApprove : SalesPermissionManifestV1.RequestsApprove;
         var callerPhase = fault.EndsWith("second-await", StringComparison.Ordinal) ? 2 : 1;
         var caller = new DocumentCounterRow { CompanyId = CompanyA, Series = "SR", Next = 1, Version = 1, UpdatedAtUtc = DateTimeOffset.UtcNow };
         authority.AfterAwait = () =>
@@ -414,9 +415,10 @@ public sealed partial class SalesRequestSqlServerRelationalAcceptanceTests
     private sealed class RequestSafetyAuthority : IErpAuthorityRevalidationService
     {
         internal bool Granted = true; internal int Reads; internal Action? AfterAwait;
+        internal string ExpectedPermission = SalesPermissionManifestV1.RequestsApprove;
         public async Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default)
         {
-            Assert.Equal(SalesPermissionManifestV1.RequestsApprove, permission); Assert.Equal(CompanyA, companyId);
+            Assert.Equal(ExpectedPermission, permission); Assert.Equal(CompanyA, companyId);
             Reads++; await Task.Yield(); AfterAwait?.Invoke();
             return new(Granted, true, new HashSet<string>(), new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>());
         }
