@@ -32,6 +32,7 @@ public sealed partial class SalesStore : ISalesCustomerReturnStore
         RequireEnvelope(envelope);
         RequireHash(requestHash);
         RequireCustomerReturnCommand(commandName);
+        RequireCustomerReturnDecisionCommand(envelope, requestHash, commandName, writes: false);
         RequireResolvedCompany();
         var attempt = await FindCustomerReturnAttemptAsync(commandName, IdempotencyKeyHash(envelope.IdempotencyKey), cancellationToken);
         if (attempt is null)
@@ -50,6 +51,7 @@ public sealed partial class SalesStore : ISalesCustomerReturnStore
         RequireCustomerReturnAudit(audit);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
+        RequireCustomerReturnDecisionCommand(envelope, requestHash, SalesCustomerReturnCommands.CreateV1, writes: true);
         var companyId = RequireResolvedCompany();
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
         var actorId = envelope.ActorId.Trim();
@@ -72,7 +74,7 @@ public sealed partial class SalesStore : ISalesCustomerReturnStore
         dbContext.CustomerReturnAttempts.Add(NewCustomerReturnAttempt(companyId, SalesCustomerReturnCommands.CreateV1, keyHash, requestHash,
             actorId, AttemptOutcomeRecorded, item.Id, item.Id, null, envelope.CorrelationId, now));
         EnqueueCustomerReturnAudit(envelope, companyId, audit, item, null, "{}");
-        await SaveAsync(cancellationToken);
+        await SaveCustomerReturnDecisionAsync(cancellationToken);
         return new SalesCustomerReturnStoreResult(item, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 
@@ -83,6 +85,7 @@ public sealed partial class SalesStore : ISalesCustomerReturnStore
         RequireEnvelope(envelope);
         RequireHash(requestHash);
         RequireCustomerReturnCommand(commandName);
+        RequireCustomerReturnDecisionCommand(envelope, requestHash, commandName, writes: true);
         var companyId = RequireResolvedCompany();
         if (refusal.Status is < 400 or > 599 || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null
             || refusal.Errors.Any(error => error is null || string.IsNullOrWhiteSpace(error.Field) || string.IsNullOrWhiteSpace(error.Code)))
@@ -99,7 +102,7 @@ public sealed partial class SalesStore : ISalesCustomerReturnStore
         dbContext.CustomerReturnAttempts.Add(NewCustomerReturnAttempt(companyId, commandName, keyHash, requestHash, envelope.ActorId.Trim(),
             AttemptOutcomeRefused, null, customerReturnId == Guid.Empty ? null : customerReturnId, JsonSerializer.Serialize(refusal, Json),
             envelope.CorrelationId, timeProvider.GetUtcNow()));
-        await SaveAsync(cancellationToken);
+        await SaveCustomerReturnDecisionAsync(cancellationToken, refusal);
     }
 
     public async Task<SalesCustomerReturnStoreResult?> DecideCustomerReturnAsync(SalesDraftWriteEnvelope envelope, string requestHash,
@@ -127,8 +130,8 @@ public sealed partial class SalesStore : ISalesCustomerReturnStore
     public async Task<SalesCustomerReturn?> FindCustomerReturnAsync(Guid customerReturnId, CancellationToken cancellationToken = default)
     {
         RequireResolvedCompany();
-        var row = await dbContext.CustomerReturns.AsNoTracking()
-            .SingleOrDefaultAsync(candidate => candidate.Id == customerReturnId, cancellationToken);
+        var row = await CustomerReturnDecisionReadAsync(() => dbContext.CustomerReturns.AsNoTracking()
+            .SingleOrDefaultAsync(candidate => candidate.Id == customerReturnId, cancellationToken), cancellationToken);
         return row is null ? null : SalesCustomerReturnRows.Restore(row);
     }
 
@@ -182,6 +185,7 @@ public sealed partial class SalesStore : ISalesCustomerReturnStore
         RequireCustomerReturnAudit(audit);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
+        RequireCustomerReturnDecisionCommand(envelope, requestHash, commandName, writes: true);
         var companyId = RequireResolvedCompany();
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
         var actorId = envelope.ActorId.Trim();
@@ -196,7 +200,7 @@ public sealed partial class SalesStore : ISalesCustomerReturnStore
             return null;
         }
 
-        var row = await dbContext.CustomerReturns.SingleOrDefaultAsync(candidate => candidate.Id == customerReturnId, cancellationToken);
+        var row = await CustomerReturnDecisionReadAsync(() => dbContext.CustomerReturns.SingleOrDefaultAsync(candidate => candidate.Id == customerReturnId, cancellationToken), cancellationToken);
         if (row is null)
         {
             return null;
@@ -266,14 +270,14 @@ public sealed partial class SalesStore : ISalesCustomerReturnStore
         dbContext.CustomerReturnAttempts.Add(NewCustomerReturnAttempt(companyId, commandName, keyHash, requestHash, actorId,
             AttemptOutcomeRecorded, item.Id, item.Id, null, envelope.CorrelationId, now));
         EnqueueCustomerReturnAudit(envelope, companyId, audit, item, versionBefore, before);
-        await SaveAsync(cancellationToken);
+        await SaveCustomerReturnDecisionAsync(cancellationToken);
         return new SalesCustomerReturnStoreResult(item, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 
     private Task<CustomerReturnAttemptRow?> FindCustomerReturnAttemptAsync(string commandName, string keyHash,
         CancellationToken cancellationToken) =>
-        dbContext.CustomerReturnAttempts.AsNoTracking()
-            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken);
+        CustomerReturnDecisionReadAsync(() => dbContext.CustomerReturnAttempts.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken), cancellationToken);
 
     private static CustomerReturnAttemptRow NewCustomerReturnAttempt(Guid companyId, string commandName, string keyHash, string requestHash,
         string actorId, int outcome, Guid? customerReturnId, Guid? targetId, string? refusalJson, string correlationId, DateTimeOffset now) =>
@@ -351,8 +355,8 @@ public sealed partial class SalesStore : ISalesCustomerReturnStore
     {
         if (attempt.Outcome == AttemptOutcomeRecorded && attempt.CustomerReturnId is { } customerReturnId)
         {
-            var row = await dbContext.CustomerReturns.AsNoTracking()
-                .SingleOrDefaultAsync(candidate => candidate.Id == customerReturnId, cancellationToken)
+            var row = await CustomerReturnDecisionReadAsync(() => dbContext.CustomerReturns.AsNoTracking()
+                .SingleOrDefaultAsync(candidate => candidate.Id == customerReturnId, cancellationToken), cancellationToken)
                 ?? throw new InvalidOperationException("Kayıtlı deneme kaydının iade faturası bulunamadı.");
             return new SalesCustomerReturnReplay(SalesCustomerReturnRows.Restore(row), null, attempt.CorrelationId);
         }

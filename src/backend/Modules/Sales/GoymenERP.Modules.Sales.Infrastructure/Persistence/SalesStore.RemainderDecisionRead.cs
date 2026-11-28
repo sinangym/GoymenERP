@@ -43,7 +43,7 @@ public sealed partial class SalesStore : ISalesRemainderDecisionReadStoreV1
     }
     private void EnterRemainderRead(Func<CancellationToken, Task> fence)
     {
-        if (remainderDecisionReadFence is not null || ownedRemainderDecision is not null || ownedRequestApproval is not null || ownedQuoteApproval is not null
+        if (remainderDecisionReadFence is not null || ownedRemainderDecision is not null || ownedCustomerReturnDecision is not null || ownedRequestApproval is not null || ownedQuoteApproval is not null
             || ownedPriceFloorApproval is not null || ownedDiscountApproval is not null || ownedOverDeliveryRequestApproval is not null || ownedRiskExceptionDecision is not null
             || quoteDecisionReadFence is not null || overDeliveryRequestDecisionReadFence is not null || riskExceptionDecisionReadFence is not null || ownedContractDiscountDecision is not null)
             throw new InvalidOperationException("Satır kalanı okuması başka sahip işlemine giremez.");

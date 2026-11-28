@@ -30,7 +30,7 @@ namespace GoymenERP.Modules.Sales.Application;
 /// </list>
 /// No stock movement is written and no other module's table is touched (SAT-D293 (2)).
 /// </summary>
-public sealed class SalesCustomerReturnService(
+public sealed partial class SalesCustomerReturnService(
     ICompanyContext companyContext,
     ICurrentUser currentUser,
     IErpAuthorityRevalidationService authority,
@@ -366,7 +366,14 @@ public sealed class SalesCustomerReturnService(
         return new SalesCustomerReturnListResponse([.. items.Select(Summary)]);
     }
 
-    private async Task<SalesCustomerReturnCommandResult> DecideAsync(Guid customerReturnId, SalesDraftStateCommandRequest request,
+    private Task<SalesCustomerReturnCommandResult> DecideAsync(Guid customerReturnId, SalesDraftStateCommandRequest request,
+        string commandName, string permission, SalesCommandMetadata metadata,
+        Action<SalesCustomerReturn, string, long, DateTimeOffset> decide, SalesDraftStateAudit audit, CancellationToken cancellationToken,
+        bool withReason = false) => customerReturnDecisionSafety && commandName is (SalesCustomerReturnCommands.ApproveV1 or SalesCustomerReturnCommands.RejectV1)
+            ? RunCustomerReturnDecisionAsync(customerReturnId, request, commandName, permission, metadata, decide, audit, cancellationToken, withReason)
+            : DecideCoreAsync(customerReturnId, request, commandName, permission, metadata, decide, audit, cancellationToken, withReason);
+
+    private async Task<SalesCustomerReturnCommandResult> DecideCoreAsync(Guid customerReturnId, SalesDraftStateCommandRequest request,
         string commandName, string permission, SalesCommandMetadata metadata,
         Action<SalesCustomerReturn, string, long, DateTimeOffset> decide, SalesDraftStateAudit audit, CancellationToken cancellationToken,
         bool withReason = false)

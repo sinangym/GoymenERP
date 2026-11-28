@@ -19,7 +19,7 @@ namespace GoymenERP.Sales.UnitTests;
 /// the actor, the key, both versions and the user's installment selection; a partial return without a selection is refused before
 /// any offer (FNS-D81: the automatic nearest-due order is never applied).
 /// </summary>
-public sealed class SalesCustomerReturnServiceTests
+public sealed partial class SalesCustomerReturnServiceTests
 {
     private static readonly Guid ReturnId = Guid.Parse("acacacac-acac-4cac-8cac-acacacacacac");
 
