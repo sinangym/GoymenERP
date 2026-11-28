@@ -46,6 +46,7 @@ public sealed partial class SalesDraftService
             // Receipt reads and release fences may revoke PriceRead after the native core chose its response.
             // Only reduce visibility; a newly granted PriceRead never upgrades the first Withheld answer.
             var finalPrice = await DiscloseAsync(scope, token); token.ThrowIfCancellationRequested();
+            if (!Matches(scope.CompanyId, scope.ActorId)) throw new SalesDraftServiceException(403, "forbidden");
             if (disclosure.Disclosure == SalesPriceDisclosure.Withheld || finalPrice == SalesPriceDisclosure.Withheld)
             {
                 var hidden = result.OriginalFloorApprovalReceipt?.OriginalResult.Withheld

@@ -128,6 +128,42 @@ public sealed partial class SalesPriceFloorApprovalSqlServerRelationalAcceptance
         Assert.Equal(0, await FloorDecisionCount(run, draft.Id)); Assert.Equal(0, await FloorAuditCount(run, draft.Id));
     }
 
+    [SqlServerFact]
+    public async Task Selected_floor_last_price_await_identity_drift_denies_release_after_commit_and_retries_only_the_original_answer()
+    {
+        await using var run = await Run.StartAsync();
+        foreach (var drift in new[] { "actor", "company" })
+        {
+            var draft = await SeedSafeFloor(run); var request = SafeFloorRequest(draft);
+            var key = "SENTETIK-final-floor-identity-" + drift; var commit = new FloorCommitProbe();
+            await using var safe = SafeFloorScope(run, commit);
+            var authority = new FloorDecisionAuthority(); var service = FloorDecisionService(safe, authority);
+            var postCommitPriceReads = 0; var fired = false;
+            authority.AfterRead = permission =>
+            {
+                // Actual commit happened. ReplayDisclosure's price read is first; final DiscloseAsync is second.
+                if (commit.Commits == 0 || permission != SalesPermissionManifestV1.OrdersPriceRead || ++postCommitPriceReads != 2) return;
+                fired = true;
+                if (drift == "actor") safe.User.Actor = "SENTETIK-other-actor";
+                else safe.Company.Set(Guid.Parse("8e34d0a9-0000-4000-8000-0000000000b2"));
+                // Normal completion, without throwing: DiscloseAsync returns Withheld on identity drift.
+            };
+            var denied = await Assert.ThrowsAsync<SalesDraftServiceException>(() => service.ApprovePriceFloorExceptionsAsync(
+                draft.Id, request, SafeFloorMetadata(key)));
+            Assert.Equal((403, "forbidden"), (denied.Status, denied.Code)); Assert.True(fired);
+            Assert.Equal(2, postCommitPriceReads); Assert.Equal(1, commit.Commits);
+            Assert.Null(safe.Db.Database.CurrentTransaction); Assert.False(safe.Db.ChangeTracker.HasChanges()); Assert.False(safe.Writer.HasPendingDrafts);
+            // Release failed after commit; the native decision was not rolled back and the key remains consumed.
+            Assert.Equal(draft.Version + 1, await run.ScalarAsync<long>("SELECT Version FROM sales.Drafts WHERE Id=@id", ("@id", draft.Id)));
+            Assert.Equal(1, await FloorDecisionCount(run, draft.Id)); Assert.Equal(1, await FloorAuditCount(run, draft.Id));
+            authority.AfterRead = null; safe.User.Actor = Approver; safe.Company.Set(Company);
+            var replay = await service.ApprovePriceFloorExceptionsAsync(draft.Id, request, SafeFloorMetadata(key, "SENTETIK-restored-identity"));
+            Assert.True(replay.IsReplay); Assert.Equal((draft.Version + 1).ToString(CultureInfo.InvariantCulture), replay.Detail.Draft.Version);
+            Assert.Equal("SENTETIK-floor-original", replay.OriginalCorrelationId); Assert.NotNull(replay.OriginalFloorApprovalReceipt);
+            Assert.Equal(1, await FloorDecisionCount(run, draft.Id)); Assert.Equal(1, await FloorAuditCount(run, draft.Id));
+        }
+    }
+
     private static SalesDraftService FloorDecisionService(FloorScope safe, FloorDecisionAuthority authority) =>
         new SalesDraftService(safe.Company, safe.User, authority, new FloorRoles(), new FloorCorrelation(), null!, null!, null,
             new SalesStore(safe.Db, safe.Company, safe.Collector, TimeProvider.System, officialCancellationAuditWriter: safe.Writer),
@@ -135,11 +171,13 @@ public sealed partial class SalesPriceFloorApprovalSqlServerRelationalAcceptance
     private sealed class FloorDecisionAuthority : IErpAuthorityRevalidationService
     {
         internal bool ApproveGranted = true; internal bool PriceGranted = true; internal List<string> Measured = [];
+        internal Action<string>? AfterRead;
         public Task<PermissionScope> RevalidatePermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested(); Assert.Equal(Company, companyId); Measured.Add(permission);
             var granted = permission == SalesPermissionManifestV1.OrdersPriceRead ? PriceGranted
                 : permission == SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove && ApproveGranted;
+            AfterRead?.Invoke(permission);
             return Task.FromResult(new PermissionScope(granted, true, new HashSet<string>(), new HashSet<Guid>(), new HashSet<Guid>(), new HashSet<Guid>()));
         }
     }
