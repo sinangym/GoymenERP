@@ -97,7 +97,9 @@ describe('paired company VKN generic Work page',()=>{
   fireEvent.click(screen.getByRole('button',{name:approve?W.approve:W.reject}));await screen.findByText(W.done)
   expect(calls.filter(c=>c.method==='POST').map(c=>c.body)).toEqual([{expectedVersion:'9007199254740993',approve,reason:null,delegationId:null}])
   expect(calls.filter(c=>c.url.includes(ownerPath)&&c.method==='GET')).toHaveLength(1);expect(screen.queryByRole('region',{name:T.title})).toBeNull()
-  expect(calls.some(c=>c.url.includes('/organization/'))).toBe(false)
+  // The shell still needs its authorized company directory; the purpose must not call a native tax-id read.
+  expect(calls.filter(c=>c.url.includes('/organization/')&&!c.url.endsWith('/organization/companies'))).toEqual([])
+  expect(calls.some(c=>c.url.endsWith('/organization/companies'))).toBe(true)
  })
  it.each([true,false])('keeps a full1000-character note and permits it on approve=%s',async approve=>{
   const calls=installFetch({capabilities:[cap],respond:(url,init)=>url.includes(ownerPath)?init?.method==='POST'?result(approve):json(fixture(COMPANY_A)):undefined})
@@ -155,7 +157,8 @@ describe('paired company VKN generic Work page',()=>{
  })
  it.each([401,403,404,503])('does not render a partial human view or decision after HTTP %s',async status=>{
   const calls=installFetch({capabilities:[cap],respond:url=>url.includes(ownerPath)?problem(status):undefined});mountCompanyTaxId()
-  await waitFor(()=>expect(document.querySelector(`[data-state="${status===401?'unauthenticated':status===403?'forbidden':status===404?'not-found':'service-unavailable'}"]`)).not.toBeNull());expect(screen.queryByRole('region',{name:T.title})).toBeNull();expect(screen.queryByRole('button',{name:W.approve})).toBeNull();expect(calls.some(c=>c.method==='POST')).toBe(false)
+  // A current403 re-fences the shell capability; the existing route boundary then hides the page.
+  await waitFor(()=>expect(document.querySelector(`[data-state="${status===401?'unauthenticated':status===403||status===404?'not-found':'service-unavailable'}"]`)).not.toBeNull());expect(screen.queryByRole('region',{name:T.title})).toBeNull();expect(screen.queryByRole('button',{name:W.approve})).toBeNull();expect(calls.some(c=>c.method==='POST')).toBe(false)
  })
  it.each(['foreign','missing','private','wrongSupport'] as const)('refuses malformed/foreign current human %s',async fault=>{
   const v=fixture(COMPANY_A);if(fault==='foreign')v.organizationCompanyTaxId.companyId=COMPANY_B;if(fault==='missing')Reflect.deleteProperty(v,'organizationCompanyTaxId')
