@@ -230,7 +230,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         var revisions = await read.Database.ServiceOrderRevisions.AsNoTracking().Where(x => x.OrderId == f.Service.OrderId).OrderBy(x => x.Version).ToArrayAsync();
         var hash = PurchasingRequestHash.Compute(PurchasingCommands.OrderApproveV1, id, request);
         Assert.NotNull(PurchasingStore.RestoreMixedOrderReceipt(attempt, [parentAudit], revisions, [childAudit], id, request, envelope, hash));
-        foreach (var fault in new[] { "actor", "version", "unknown", "prepared", "frozen", "hidden", "headerCompany", "time", "membership", "childCorrelation", "revision", "key", "beforeStatus", "frozenCanonicalHash" })
+        foreach (var fault in new[] { "actor", "version", "unknown", "prepared", "frozen", "hidden", "headerCompany", "time", "membership", "childCorrelation", "revision", "key", "beforeStatus", "frozenCanonicalHash", "missingApproval", "missingCurrency", "missingLineId" })
         {
             var root = JsonNode.Parse(parentAudit.AfterJson)!.AsObject(); var parentEnvelope = parentAudit.ToIntegrityEnvelope();
             var childEnvelope = childAudit.ToIntegrityEnvelope(); var requestRead = request; var copied = revisions.Select(x => new PurchaseServiceOrderRevisionRow {
@@ -238,6 +238,9 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             if (fault == "actor") parentEnvelope = parentEnvelope with { ActorId = run.Actor };
             if (fault == "version") parentEnvelope = parentEnvelope with { EntityVersionAfter = 5 };
             if (fault == "unknown") root["unknownReceipt"] = true;
+            if (fault == "missingApproval") root["nativeOrder"]!.AsObject().Remove("approval");
+            if (fault == "missingCurrency") root["nativeOrder"]!.AsObject().Remove("currency");
+            if (fault == "missingLineId") root["nativeOrder"]!["lines"]![0]!.AsObject().Remove("lineId");
             if (fault == "prepared") root["mixedApproval"]!["children"]![0]!["prepared"]!["partyVersion"] = "changed";
             if (fault == "frozen") root["mixedApproval"]!["frozenRequest"]!["mixedServices"]![0]!["expectedVersion"] = "2";
             if (fault == "hidden") root["mixedApproval"]!["withheld"]!["lines"]![0]!["productId"] = Guid.NewGuid().ToString("D");

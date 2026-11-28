@@ -149,14 +149,14 @@ public sealed partial class PurchasingStore
                 || original.Visible.Lines.Count != header.LineCount || original.Withheld.Lines.Count != header.LineCount
                 || original.Withheld.PricePending is not null || original.Withheld.KgPrice is not null || original.Withheld.Realization is not null
                 || original.Withheld.Lines.Any(x => x is null || x.Price is not null || x.KgPrice is not null || x.Realization is not null)
-                || after.NativeOrder.GetProperty("preparedBy").GetString() is not { Length: > 0 } maker || maker == actor
-                || JsonSerializer.Deserialize<JsonElement>(audit.BeforeJson).GetProperty("version").GetInt64() != before
-                || JsonSerializer.Deserialize<JsonElement>(audit.BeforeJson).GetProperty("status").GetString() != "Draft"
-                || after.NativeOrder.GetProperty("lines").GetArrayLength() != header.LineCount
-                || after.NativeOrder.GetProperty("version").GetInt64() != before + 1
-                || after.NativeOrder.GetProperty("status").GetString() != "Approved"
-                || after.NativeOrder.GetProperty("approval").GetProperty("approvedBy").GetString() != attempt.ActorId
-                || after.NativeOrder.GetProperty("approval").GetProperty("approvedAtUtc").GetDateTimeOffset() != attempt.RecordedAtUtc
+                || MixedRequiredField(after.NativeOrder, "preparedBy").GetString() is not { Length: > 0 } maker || maker == actor
+                || MixedRequiredField(JsonSerializer.Deserialize<JsonElement>(audit.BeforeJson), "version").GetInt64() != before
+                || MixedRequiredField(JsonSerializer.Deserialize<JsonElement>(audit.BeforeJson), "status").GetString() != "Draft"
+                || MixedRequiredField(after.NativeOrder, "lines").GetArrayLength() != header.LineCount
+                || MixedRequiredField(after.NativeOrder, "version").GetInt64() != before + 1
+                || MixedRequiredField(after.NativeOrder, "status").GetString() != "Approved"
+                || MixedRequiredField(MixedRequiredField(after.NativeOrder, "approval"), "approvedBy").GetString() != attempt.ActorId
+                || MixedRequiredField(MixedRequiredField(after.NativeOrder, "approval"), "approvedAtUtc").GetDateTimeOffset() != attempt.RecordedAtUtc
                 || original.Children is not { Count: > 0 } || original.Membership is null
                 || original.Children.Any(x => x is null || !MixedChildShape(x.OriginalBefore) || !MixedChildShape(x.Prepared) || !MixedChildShape(x.After))
                 || original.Membership.Any(x => x is null)
@@ -168,15 +168,15 @@ public sealed partial class PurchasingStore
             var masked = original.Visible with { PriceDisclosure = PurchasingPriceDisclosureV1.Withheld, PricePending = null,
                 KgPrice = null, Realization = null, Lines = original.Visible.Lines.Select(x => x with { Price = null, KgPrice = null, Realization = null }).ToArray() };
             if (!MixedJsonEqual(JsonSerializer.Serialize(masked, PurchasingJson.Options), JsonSerializer.Serialize(original.Withheld, PurchasingJson.Options))
-                || after.NativeOrder.GetProperty("supplierPartyId").GetGuid() != header.SupplierPartyId
-                || (after.NativeOrder.GetProperty("sourceRequestId").ValueKind == JsonValueKind.Null
-                    ? header.SourceRequestId is not null : header.SourceRequestId != after.NativeOrder.GetProperty("sourceRequestId").GetGuid())
-                || original.Visible.Currency is not { } currency || currency.CurrencyId != after.NativeOrder.GetProperty("currency").GetProperty("currencyId").GetGuid()
-                || currency.CurrencyCode != after.NativeOrder.GetProperty("currency").GetProperty("currencyCode").GetString()
-                || currency.Scale != after.NativeOrder.GetProperty("currency").GetProperty("scale").GetInt32()
+                || MixedRequiredField(after.NativeOrder, "supplierPartyId").GetGuid() != header.SupplierPartyId
+                || (MixedRequiredField(after.NativeOrder, "sourceRequestId").ValueKind == JsonValueKind.Null
+                    ? header.SourceRequestId is not null : header.SourceRequestId != MixedRequiredField(after.NativeOrder, "sourceRequestId").GetGuid())
+                || original.Visible.Currency is not { } currency || currency.CurrencyId != MixedRequiredField(MixedRequiredField(after.NativeOrder, "currency"), "currencyId").GetGuid()
+                || currency.CurrencyCode != MixedRequiredField(MixedRequiredField(after.NativeOrder, "currency"), "currencyCode").GetString()
+                || currency.Scale != MixedRequiredField(MixedRequiredField(after.NativeOrder, "currency"), "scale").GetInt32()
                 || original.Membership.Any(x => x.SupplierPartyId != header.SupplierPartyId || x.CompanyAccountId != header.CompanyAccountId
-                    || x.CurrencyId != after.NativeOrder.GetProperty("currency").GetProperty("currencyId").GetGuid())
-                || !original.Visible.Lines.Select(x => x.LineId).ToHashSet().SetEquals(after.NativeOrder.GetProperty("lines").EnumerateArray().Select(x => x.GetProperty("lineId").GetGuid()))) return null;
+                    || x.CurrencyId != MixedRequiredField(MixedRequiredField(after.NativeOrder, "currency"), "currencyId").GetGuid())
+                || !original.Visible.Lines.Select(x => x.LineId).ToHashSet().SetEquals(MixedRequiredField(after.NativeOrder, "lines").EnumerateArray().Select(x => MixedRequiredField(x, "lineId").GetGuid()))) return null;
             foreach (var child in original.Children)
             {
                 var old = child.OriginalBefore; var prepared = child.Prepared; var next = child.After;
@@ -210,6 +210,13 @@ public sealed partial class PurchasingStore
         catch (Exception failure) when (failure is JsonException or InvalidOperationException or ArgumentException
             or FormatException or OverflowException or KeyNotFoundException or PurchaseServiceOrderException)
         { return null; }
+    }
+
+    private static JsonElement MixedRequiredField(JsonElement value, string name)
+    {
+        if (value.ValueKind != JsonValueKind.Object || !value.TryGetProperty(name, out var field))
+            throw new InvalidOperationException("The original mixed receipt is missing a required field.");
+        return field;
     }
 
     private static bool MixedChildShape(PurchaseServiceOrderState? value) => value is not null && value.Money is not null
