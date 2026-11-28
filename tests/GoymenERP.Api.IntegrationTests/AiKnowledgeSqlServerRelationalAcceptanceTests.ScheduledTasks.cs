@@ -125,7 +125,15 @@ public sealed partial class AiKnowledgeSqlServerRelationalAcceptanceTests
     {
         var services = new ServiceCollection();
         services.AddScoped<ICompanyContext>(_ => new CompanyContext());
-        services.AddAuditModule(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?> { ["DB_CONNECTION_STRING"] = connection }).Build());
+        services.AddAuditModule(new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["DB_CONNECTION_STRING"] = connection,
+            // Reuse the actual AddAuditModule synthetic fixture inputs from AccountingNormalApprovalCompositionTests.
+            ["Audit:RefusedAttempts:Retention:Period"] = "P2Y",
+            ["Audit:RefusedAttempts:Retention:PolicyRef"] = "policy-ref-1",
+            ["Audit:RefusedAttempts:Retention:AutoDisposalEnabled"] = "false",
+            ["Audit:RefusedAttempts:StandaloneWrite:Timeout"] = "00:00:02",
+        }).Build());
         if (observer is not null) services.AddDbContext<AuditDbContext>(options => options.AddInterceptors(observer));
         return services.BuildServiceProvider();
     }
