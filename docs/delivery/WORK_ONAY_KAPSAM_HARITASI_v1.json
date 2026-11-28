@@ -7947,6 +7947,18 @@
       "result": "Two selected original-period retry cases passed;447 other cases excluded by explicit filter. Not full-suite acceptance or proof of root cause. Existing full-cohort failure retained."
     },
     "C5_migration": "20261128090056_AddAiScheduledTasks: EF generated snapshot; four additive ai tables; Downfirst52354 refuses any retained task/command/run/event. Source peer unread0/no open P0/P1/P2; not formal K3. Architecture/recovery/release pins pending aggregate close.",
-    "limits": "ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3/business acceptance remain pending. Runtime verified flows0. No grants/roles/Critical/providers/secrets/deployment/AI activation. No new package or reference catalog expansion."
+    "limits": "ActualSQL/normalHTTP/browser/fullCI/two independent exact-head K3/business acceptance remain pending. Runtime verified flows0. No grants/roles/Critical/providers/secrets/deployment/AI activation. No new package or reference catalog expansion.",
+    "quick_creation_need_paired": {
+      "source_commit": "ef0b449bd12a7733670925e526ede2461f035067",
+      "artifact": "quick-cari-need-paired-20261128",
+      "result": "66/66 passed;failed0/pending0;69.4419498s;TSC0/63.5359288s;lint0/0.118719s. Five scoped files including existing native quick create and Work collaboration regressions; controlled component/transport evidence, not actual HTTP/SQL/browser.",
+      "reuse": "Existing Work CreateTaskBody/postWorkCommand/decodeWorkTask/searchWorkPeople and native QuickCreate branch. No new create/activation permission. Actual server-session recovery binding; missing binding allows active-component frozen retry only. Recipient create admission is pre/post, not an atomic task-commit guarantee.",
+      "bounded_peer": "Initial session-recovery P2 corrected in two-file delta, unread0/no new P1/P2; formal K3 not performed."
+    },
+    "period_page_recovery": {
+      "source_commit": "ef0b449bd12a7733670925e526ede2461f035067",
+      "artifact": "period-page-user-retry-recovery-20261128/frontend",
+      "result": "449/449 passed;failed0/pending0;63.0556223s. Whole WorkDecisionPage cohort after user-event retry and early frozen POST/body/key assertions; no production retry logic or timeout changed. Previous1158-case failure retained, not relabelled PASS; no full1158/full frontend rerun."
+    }
   }
 }

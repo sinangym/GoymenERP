@@ -404,3 +404,7 @@ cari birleştirme ayrı bekleyen onay üretmeyen native işlemdir. Bu sayım 64 
 Kontrollü backend 1.655/1.655, AI model/komut kohortu 68/68 geçti (farklı kayıtlı kaynak sürümleri).
 Frontend 1.158 koşusunda 1 hata korunur; iki seçili tanılama geçişi tam koşunun yerine sayılmaz.
 C5 migration/snapshot üretildi; gerçek SQL, normal HTTP/tarayıcı, birleşik pinler, CI ve iki bağımsız K3 bekliyor.
+
+Aynı kapanış grubunun sonraki kayıtları: cari talebi/API bileşenleri 66/66, Work karar sayfası tam grubu 449/449 geçti.
+Bunlar kaydedilen yeni kaynak sürümündeki ayrı kohortlardır; geçmiş 1.158 koşusunu veya tam frontend kabulünü değiştirmez.
+Gerçek oturum değişiminde talep kurtarma P2 bulgusu kaynak ve regresyonla kapandı; K3 değildir.
