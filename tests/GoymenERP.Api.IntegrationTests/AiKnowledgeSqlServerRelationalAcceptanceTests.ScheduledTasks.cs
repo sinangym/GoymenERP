@@ -9,6 +9,8 @@ using GoymenERP.Modules.Audit.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -196,6 +198,67 @@ public sealed partial class AiKnowledgeSqlServerRelationalAcceptanceTests
                     Assert.Equal("0", await ScalarAsync(connection, "SELECT COUNT(*) FROM ai.CommandRecords"));
                     owner.Database.Entry(canary).State = EntityState.Detached;
                 }
+            });
+        }
+    }
+
+    [SqlServerFact]
+    public async Task Scheduled_task_Down_allows_empty_tables_and_refuses_52354_with_each_retained_artifact_family()
+    {
+        await WithDatabaseAsync(async connection =>
+        {
+            await using var db = Db(connection, TestCompanyIds.CompanyA);
+            var migrations = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
+            var scheduled = Assert.Single(migrations, id => id.EndsWith("_AddAiScheduledTasks", StringComparison.Ordinal));
+            var index = Array.IndexOf(migrations, scheduled); Assert.True(index > 0);
+            var previous = migrations[index - 1]; var migrator = db.GetService<IMigrator>();
+            await migrator.MigrateAsync(previous);
+            Assert.Equal("0", await ScalarAsync(connection, "SELECT COUNT(*) FROM sys.tables t JOIN sys.schemas s ON s.schema_id=t.schema_id "
+                + "WHERE s.name=N'ai' AND t.name IN (N'ScheduledTasks',N'ScheduledTaskCommands',N'ScheduledTaskRuns',N'ScheduledTaskEvents')"));
+            Assert.Equal("1", await ScalarAsync(connection, "SELECT COUNT(*) FROM sys.tables t JOIN sys.schemas s ON s.schema_id=t.schema_id "
+                + "WHERE s.name=N'ai' AND t.name=N'CommandRecords'"));
+            await migrator.MigrateAsync();
+            Assert.Equal("4", await ScalarAsync(connection, "SELECT COUNT(*) FROM sys.tables t JOIN sys.schemas s ON s.schema_id=t.schema_id "
+                + "WHERE s.name=N'ai' AND t.name IN (N'ScheduledTasks',N'ScheduledTaskCommands',N'ScheduledTaskRuns',N'ScheduledTaskEvents')"));
+        });
+        foreach (var family in new[] { "task", "command", "run", "event" })
+        {
+            await WithDatabaseAsync(async connection =>
+            {
+                await using var db = Db(connection, TestCompanyIds.CompanyA);
+                var migrations = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
+                var scheduled = Assert.Single(migrations, id => id.EndsWith("_AddAiScheduledTasks", StringComparison.Ordinal));
+                var index = Array.IndexOf(migrations, scheduled); Assert.True(index > 0); var previous = migrations[index - 1];
+                var id = Guid.NewGuid();
+                // Schema-preservation seed only, not a fabricated native business approval/receipt.
+                // A run has a real FK to its task, so that family retains its required task parent too.
+                if (family is "task" or "run") db.ScheduledTasks.Add(new()
+                {
+                    CompanyId = TestCompanyIds.CompanyA, TaskId = id, OwnerActorId = "SENTETIK-owner",
+                    Purpose = AiScheduledTaskPurposesV1.MorningSummary, Effect = 1, State = 1, Version = 1,
+                    ScheduleVersion = "settings-1", CreatedAtUtc = ScheduledAt, UpdatedAtUtc = ScheduledAt,
+                });
+                if (family == "command") db.ScheduledTaskCommands.Add(new()
+                {
+                    CompanyId = TestCompanyIds.CompanyA, ActorId = "SENTETIK-owner", KeyHash = new string('a', 64), TaskId = id,
+                    Command = "create", PayloadHash = new string('b', 64), ResponseJson = "{}", CorrelationId = "SENTETIK-retained",
+                });
+                if (family == "run") db.ScheduledTaskRuns.Add(new() { CompanyId = TestCompanyIds.CompanyA, TaskId = id,
+                    SlotUtc = ScheduledAt, ReceiptJson = "{}" });
+                if (family == "event") db.ScheduledTaskEvents.Add(new() { CompanyId = TestCompanyIds.CompanyA, EventId = Guid.NewGuid(),
+                    TaskId = id, ActorId = "SENTETIK-owner", Kind = "created", CorrelationId = "SENTETIK-retained", RecordedAtUtc = ScheduledAt });
+                await db.SaveChangesAsync(); db.ChangeTracker.Clear();
+                var before = (await db.ScheduledTasks.CountAsync(), await db.ScheduledTaskCommands.CountAsync(),
+                    await db.ScheduledTaskRuns.CountAsync(), await db.ScheduledTaskEvents.CountAsync());
+                Assert.Equal(family is "task" or "run" ? 1 : 0, before.Item1);
+                Assert.Equal(family == "command" ? 1 : 0, before.Item2);
+                Assert.Equal(family == "run" ? 1 : 0, before.Item3);
+                Assert.Equal(family == "event" ? 1 : 0, before.Item4);
+                var error = Sql(await Assert.ThrowsAnyAsync<Exception>(() => db.GetService<IMigrator>().MigrateAsync(previous)));
+                Assert.Equal(52354, error.Number);
+                Assert.Equal(before, (await db.ScheduledTasks.CountAsync(), await db.ScheduledTaskCommands.CountAsync(),
+                    await db.ScheduledTaskRuns.CountAsync(), await db.ScheduledTaskEvents.CountAsync()));
+                Assert.Contains(scheduled, await db.Database.GetAppliedMigrationsAsync());
             });
         }
     }

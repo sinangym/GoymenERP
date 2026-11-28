@@ -14,8 +14,9 @@ public sealed partial class AiKnowledgeSqlServerRelationalAcceptanceTests
         {
             await using var db = Db(connection, TestCompanyIds.CompanyA);
             var migrations = (await db.Database.GetAppliedMigrationsAsync()).ToArray();
-            Assert.EndsWith("_AddAiAnswerFeedback", migrations[^1]);
-            var previous = migrations[^2]; var migrator = db.GetService<IMigrator>();
+            var feedback = Assert.Single(migrations, id => id.EndsWith("_AddAiAnswerFeedback", StringComparison.Ordinal));
+            var index = Array.IndexOf(migrations, feedback); Assert.True(index > 0);
+            var previous = migrations[index - 1]; var migrator = db.GetService<IMigrator>();
             await migrator.MigrateAsync(previous); await migrator.MigrateAsync();
             var answer = AnswerReceipt(); await StoreFeedbackAnswer(connection, answer);
             Assert.Equal(AiFeedbackWriteStatusV1.Recorded, (await FeedbackStore(db, answer.CompanyId).AppendAsync(FeedbackCommand(answer), _ => Task.CompletedTask)).Status);

@@ -8,6 +8,9 @@ using GoymenERP.Modules.AiKnowledge.Infrastructure.ScheduledTasks;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.EntityFrameworkCore.Migrations.Operations;
+using GoymenERP.Modules.AiKnowledge.Infrastructure.Persistence.Migrations;
 
 namespace GoymenERP.Api.IntegrationTests;
 
@@ -147,6 +150,24 @@ public sealed class AiScheduledTaskServiceTests
             var entity = model.FindEntityType(type)!; Assert.Equal("ai", entity.GetSchema()); Assert.NotEmpty(entity.GetDeclaredQueryFilters());
             Assert.All(entity.GetForeignKeys(), key => Assert.Equal(DeleteBehavior.Restrict, key.DeleteBehavior));
         }
+        var snapshot = db.GetService<IMigrationsAssembly>().ModelSnapshot!.Model;
+        var scheduledTables = new[] { "ScheduledTasks", "ScheduledTaskCommands", "ScheduledTaskRuns", "ScheduledTaskEvents" };
+        foreach (var type in new[] { typeof(AiScheduledTaskRow), typeof(AiScheduledTaskCommandRow), typeof(AiScheduledTaskRunRow), typeof(AiScheduledTaskEventRow) })
+        {
+            var actual = model.FindEntityType(type)!;
+            var retained = snapshot.FindEntityType(type.FullName!)!;
+            Assert.Equal("ai", retained.GetSchema()); Assert.Equal(actual.GetTableName(), retained.GetTableName());
+            Assert.Equal(actual.FindPrimaryKey()!.Properties.Select(property => property.Name), retained.FindPrimaryKey()!.Properties.Select(property => property.Name));
+        }
+        var migration = new AddAiScheduledTasks();
+        Assert.Equal(scheduledTables.Order(StringComparer.Ordinal), migration.UpOperations.OfType<CreateTableOperation>()
+            .Select(table => { Assert.Equal("ai", table.Schema); return table.Name; }).Order(StringComparer.Ordinal));
+        var downGuard = Assert.IsType<SqlOperation>(migration.DownOperations[0]);
+        Assert.Contains("THROW 52354", downGuard.Sql, StringComparison.Ordinal); Assert.False(downGuard.SuppressTransaction);
+        foreach (var table in scheduledTables) Assert.Contains("[ai].[" + table + "]", downGuard.Sql, StringComparison.Ordinal);
+        Assert.Single(migration.DownOperations.OfType<SqlOperation>());
+        Assert.Equal(scheduledTables.Order(StringComparer.Ordinal), migration.DownOperations.OfType<DropTableOperation>()
+            .Select(table => { Assert.Equal("ai", table.Schema); return table.Name; }).Order(StringComparer.Ordinal));
         Assert.True(model.FindEntityType(typeof(AiScheduledTaskRow))!.FindProperty("Version")!.IsConcurrencyToken);
         Assert.Equal(new[] { "CompanyId", "TaskId", "SlotUtc" }, model.FindEntityType(typeof(AiScheduledTaskRunRow))!.FindPrimaryKey()!.Properties.Select(p => p.Name));
     }
