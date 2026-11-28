@@ -146,7 +146,7 @@ describe('mixed price panel controlled DOM and native attempt protocol (NOT_BROW
     const later: MixedServicePricePreview = { ...original, services: original.services.map(entry => ({ ...entry,
       service: { ...entry.service, lines: entry.service.lines.map(line => ({ ...line, serviceName: 'SENTETIK refreshed human service' })) } })) }
     act(() => view.client.setQueryData([p.fenceKey, 'mixed-service-price-preview', p.order.id, p.order.version], { type: 'ok-single', data: later }))
-    expect((screen.getByLabelText(`${later.services[0].service.documentNumber} — SENTETIK refreshed human service — ${T.revised}`) as HTMLInputElement).value).toBe('')
+    expect((await screen.findByLabelText(`${later.services[0].service.documentNumber} — SENTETIK refreshed human service — ${T.revised}`) as HTMLInputElement).value).toBe('')
     expect((screen.getByLabelText(T.reason) as HTMLTextAreaElement).value).toBe('')
     fireEvent.click(screen.getByRole('button', { name: T.save })); expect(sendMixedServicePriceRevision).not.toHaveBeenCalled()
   })
