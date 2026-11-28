@@ -60,6 +60,8 @@ public static class OrganizationModuleExtensions
         services.AddScoped<IOrganizationCompanyTaxIdService>(sp =>
             ((OrganizationMasterDataService)sp.GetRequiredService<IOrganizationMasterDataService>())
                 .WithCompanyTaxIdApprovalSafety(sp.GetService<GoymenERP.Modules.Audit.Application.Contracts.IAuditTransactionWriterV1>()));
+        services.AddScoped<IOrganizationCompanyTaxIdDecisionReadV1>(sp =>
+            (IOrganizationCompanyTaxIdDecisionReadV1)sp.GetRequiredService<IOrganizationCompanyTaxIdService>());
         services.TryAddScoped<IOrganizationLocationOperatorEligibilityPortV1, UnavailableOrganizationLocationOperatorEligibilityPortV1>();
         services.AddScoped<IOrganizationTransferDestinationSourceV1, OrganizationTransferDestinationSourceV1>();
         // The module read for other modules' commands: company-scoped, no user permission gate.

@@ -36,6 +36,7 @@ public sealed class OrganizationCompanyTaxIdApprovalCompositionTests
         Assert.IsType<OrganizationMasterDataService>(core); Assert.IsNotType<OrganizationMasterDataService>(guarded);
         Assert.NotSame(core, guarded); Assert.Same(core, scope.GetRequiredService<IOrganizationMasterDataService>());
         Assert.Same(guarded, scope.GetRequiredService<IOrganizationCompanyTaxIdService>());
+        Assert.Same(guarded, scope.GetRequiredService<IOrganizationCompanyTaxIdDecisionReadV1>());
         Assert.Null(scope.GetService<OrganizationMasterDataService>()); // No independent raw concrete runtime registration.
         var db = scope.GetRequiredService<OrganizationDbContext>(); Assert.Same(db, scope.GetRequiredService<OrganizationDbContext>());
         var collector = scope.GetRequiredService<AuditEventCollector>(); Assert.Same(collector, scope.GetRequiredService<IAuditEventCollector>());
