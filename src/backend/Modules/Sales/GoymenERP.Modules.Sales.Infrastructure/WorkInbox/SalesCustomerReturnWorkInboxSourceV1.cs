@@ -11,12 +11,13 @@ namespace GoymenERP.Modules.Sales.Infrastructure.WorkInbox;
 /// without both is Denied. D4: the owner refuses the preparer and the submitter. The item waits from its submission; its
 /// label is the customer's document number and the original sales invoice is a reference.
 /// </summary>
-internal sealed class SalesCustomerReturnWorkInboxSourceV1(
+internal sealed partial class SalesCustomerReturnWorkInboxSourceV1(
     ISalesWorkInboxApprovalStoreV1 store,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
-    IErpAuthorityRevalidationService authority)
-    : SalesWorkInboxSourceBaseV1(companyContext, currentUser, authority)
+    IErpAuthorityRevalidationService authority,
+    ISalesCustomerReturnDecisionReadV1? owner = null)
+    : SalesWorkInboxSourceBaseV1(companyContext, currentUser, authority), IWorkApprovalDecisionVersionSourceV1
 {
     public const string KindName = "sales.customer-return.v1";
     public const string ApprovalRule = "sales.customer-return-approval-required";

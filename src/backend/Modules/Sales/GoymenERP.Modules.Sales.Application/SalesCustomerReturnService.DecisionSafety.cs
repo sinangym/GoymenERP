@@ -28,15 +28,18 @@ public sealed partial class SalesCustomerReturnService
         try
         {
             var answer = await boundary.RunCustomerReturnDecisionAsync(envelope, hash, command, cleanBeforeAuthority,
-                ct => DecideCoreAsync(id, request, command, permission, metadata, decide, audit, ct, withReason),
+                async ct => await Attach(await DecideCoreAsync(id, request, command, permission, metadata, decide, audit, ct, withReason), ct),
                 async ct =>
                 {
                     var replay = await FindReplayAsync(scope, envelope, hash, command, ct, permission);
-                    return replay is null ? null : Replayed(replay);
+                    return replay is null ? null : await Attach(Replayed(replay), ct);
                 }, ct => RequireStillAsync(scope, permission, ct), token);
             await RequireStillAsync(scope, permission, token); token.ThrowIfCancellationRequested();
             if (!Matches(scope.CompanyId, scope.ActorId)) throw new SalesDraftServiceException(403, "forbidden");
             return answer;
+            async Task<SalesCustomerReturnCommandResult> Attach(SalesCustomerReturnCommandResult response, CancellationToken ct) =>
+                returns is ISalesCustomerReturnDecisionReadStoreV1 reader
+                    ? await reader.AttachCustomerReturnOriginalReceiptAsync(response, id, request, ct) : response;
         }
         catch (SalesDraftStoreException failure) { throw Store(failure); }
     }

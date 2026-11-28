@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.CustomerReturns;
@@ -220,7 +221,8 @@ public sealed record SalesCustomerReturnSummaryView(
 public sealed record SalesCustomerReturnListResponse(IReadOnlyList<SalesCustomerReturnSummaryView> Items);
 
 /// <summary>The command's answer to the route: the return, whether it was replayed, and the first correlation (replay header).</summary>
-public sealed record SalesCustomerReturnCommandResult(SalesCustomerReturnView CustomerReturn, bool IsReplay, string OriginalCorrelationId);
+public sealed record SalesCustomerReturnCommandResult(SalesCustomerReturnView CustomerReturn, bool IsReplay, string OriginalCorrelationId)
+{ [JsonIgnore] public SalesCustomerReturnOriginalReceiptV1? OriginalDecisionReceipt { get; init; } }
 
 /// <summary>The strict reader of the API-40 bodies: unknown members, a null body, an empty id or a malformed quantity is a 400.</summary>
 public static class SalesCustomerReturnJson

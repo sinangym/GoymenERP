@@ -11,7 +11,7 @@ public sealed partial class SalesStore : ISalesCustomerReturnDecisionSafetyStore
     private OwnedCustomerReturnDecision? ownedCustomerReturnDecision;
 
     public bool CustomerReturnDecisionEntryIsClean => officialCancellationAuditWriter is not null
-        && ownedCustomerReturnDecision is null && ownedContractDiscountDecision is null && ownedRemainderDecision is null && ownedPriceFloorApproval is null && ownedDiscountApproval is null && ownedOverDeliveryRequestApproval is null && ownedRiskExceptionDecision is null && overDeliveryRequestDecisionReadFence is null && riskExceptionDecisionReadFence is null && contractDiscountDecisionReadFence is null && remainderDecisionReadFence is null && ownedRequestApproval is null && ownedQuoteApproval is null && quoteDecisionReadFence is null && dbContext.Database.IsRelational()
+        && customerReturnDecisionReadFence is null && ownedCustomerReturnDecision is null && ownedContractDiscountDecision is null && ownedRemainderDecision is null && ownedPriceFloorApproval is null && ownedDiscountApproval is null && ownedOverDeliveryRequestApproval is null && ownedRiskExceptionDecision is null && overDeliveryRequestDecisionReadFence is null && riskExceptionDecisionReadFence is null && contractDiscountDecisionReadFence is null && remainderDecisionReadFence is null && ownedRequestApproval is null && ownedQuoteApproval is null && quoteDecisionReadFence is null && dbContext.Database.IsRelational()
         && System.Transactions.Transaction.Current is null && dbContext.Database.CurrentTransaction is null
         && !dbContext.ChangeTracker.HasChanges() && !officialCancellationAuditWriter.HasPendingDrafts;
 
@@ -126,7 +126,11 @@ public sealed partial class SalesStore : ISalesCustomerReturnDecisionSafetyStore
 
     private async Task CustomerReturnDecisionFenceAsync(CancellationToken token)
     {
-        if (ownedCustomerReturnDecision is not { } state) return;
+        if (ownedCustomerReturnDecision is not { } state)
+        {
+            if (customerReturnDecisionReadFence is { } read) { token.ThrowIfCancellationRequested(); await read(token); token.ThrowIfCancellationRequested(); }
+            return;
+        }
         token.ThrowIfCancellationRequested(); RequireCompany(state.CompanyId);
         await state.FreshFence(token);
         token.ThrowIfCancellationRequested(); RequireCompany(state.CompanyId);
@@ -136,7 +140,7 @@ public sealed partial class SalesStore : ISalesCustomerReturnDecisionSafetyStore
     {
         // A different owned decision or a purpose read cannot smuggle a legacy return write into its transaction.
         // With no approval/read marker this remains the unchanged native nonapproval path.
-        if (writes && (ownedContractDiscountDecision is not null || ownedRemainderDecision is not null || ownedPriceFloorApproval is not null
+        if (writes && (customerReturnDecisionReadFence is not null || ownedContractDiscountDecision is not null || ownedRemainderDecision is not null || ownedPriceFloorApproval is not null
             || ownedDiscountApproval is not null || ownedOverDeliveryRequestApproval is not null || ownedRiskExceptionDecision is not null
             || ownedRequestApproval is not null || ownedQuoteApproval is not null || overDeliveryRequestDecisionReadFence is not null
             || riskExceptionDecisionReadFence is not null || remainderDecisionReadFence is not null || contractDiscountDecisionReadFence is not null || quoteDecisionReadFence is not null))
