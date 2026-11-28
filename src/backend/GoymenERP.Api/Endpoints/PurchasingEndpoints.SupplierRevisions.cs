@@ -23,7 +23,7 @@ public static partial class PurchasingEndpoints
             .ProducesErpBadRequest("validation_failed").ProducesErpCodeLessNotFound().ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
         MapRevisionMutation(group.MapPost("/{id:guid}/supplier-revisions", (Guid id, HttpContext context,
             [FromServices] IPurchasingSupplierRevisionServiceV1 service, ICorrelationContext correlation, CancellationToken token) =>
-            MutateAsync(context, correlation, PurchaseSupplierRevisionJsonV1.ReadRevision,
+            MutateAsync(context, correlation, PurchaseMixedOrderJsonV1.ReadSupplierRevision,
                 (body, metadata) => service.ReviseOrderSupplierAsync(id, body, metadata, token), token))
             .WithName("RevisePurchaseOrderSupplierV1").Accepts<RevisePurchaseOrderSupplierRequest>("application/json"),
             // F-017 §3.4 / ALS-D126: an active future allocation refuses an unconfirmed revision; a confirmed set must be the active set.

@@ -44,6 +44,7 @@ public static partial class PurchasingEndpoints
         MapRequests(endpoints);
         MapOrders(endpoints);
         MapSupplierRevisions(endpoints);
+        MapMixedOrders(endpoints);
         MapIncomingInvoices(endpoints);
         MapInvoiceImports(endpoints);
         MapCurrencyCandidates(endpoints);
@@ -337,7 +338,7 @@ public static partial class PurchasingEndpoints
 
         group.MapPost("/{id:guid}/approval", (Guid id, HttpContext httpContext, [FromServices] IPurchasingService service,
             ICorrelationContext correlation, CancellationToken cancellationToken) =>
-            MutateAsync(httpContext, correlation, PurchasingJson.ReadApprove,
+            MutateAsync(httpContext, correlation, PurchaseMixedOrderJsonV1.ReadApprove,
                 (body, metadata) => service.ApproveOrderAsync(id, body, metadata, cancellationToken), cancellationToken))
             .WithName("ApprovePurchaseOrderV1")
             .WithIdempotencyContract(PurchasingApiV1.MutationStatus, StatusCodes.Status409Conflict)

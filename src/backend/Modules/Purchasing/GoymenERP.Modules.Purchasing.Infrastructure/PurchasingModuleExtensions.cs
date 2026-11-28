@@ -59,7 +59,10 @@ public static class PurchasingModuleExtensions
         services.AddScoped<IPurchaseServiceOrderStoreV1>(sp => sp.GetRequiredService<PurchaseServiceOrderStoreV1>());
         services.AddScoped<IPurchaseSubcontractOrderReadPortV1>(sp => sp.GetRequiredService<PurchaseServiceOrderStoreV1>());
         services.AddScoped<IPurchaseServiceAcceptanceReadPortV1>(sp => sp.GetRequiredService<PurchaseServiceOrderStoreV1>());
-        services.AddScoped<IPurchaseServiceOrderServiceV1, PurchaseServiceOrderServiceV1>();
+        services.AddScoped<PurchaseServiceOrderServiceV1>();
+        services.AddScoped<IPurchaseServiceOrderServiceV1>(sp => sp.GetRequiredService<PurchaseServiceOrderServiceV1>());
+        // Both aliases use the same native owner and its scoped store/audit boundary; this grants no permission.
+        services.AddScoped<IPurchaseServiceOrderApprovalPreparationV1>(sp => sp.GetRequiredService<PurchaseServiceOrderServiceV1>());
         services.AddScoped<IPurchaseAdditionalCostStoreV1, PurchaseAdditionalCostStoreV1>();
         services.AddScoped<IPurchaseAdditionalCostServiceV1, PurchaseAdditionalCostServiceV1>();
         // Direct ALC-S8 answer: the existing purchase-order reviser records expenses. Registration grants nothing.
@@ -84,6 +87,8 @@ public static class PurchasingModuleExtensions
         services.TryAddSingleton(new PurchasingServiceBindings());
         services.AddScoped<PurchasingService>(CreatePurchasingService);
         services.AddScoped<IPurchasingService>(provider => provider.GetRequiredService<PurchasingService>());
+        services.AddScoped<IPurchaseMixedOrderMembershipServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
+        services.AddScoped<IPurchaseMixedOrderApprovalPreviewV1>(provider => provider.GetRequiredService<PurchasingService>());
         services.AddScoped<IPurchasingSupplierRevisionServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
         services.AddScoped<IPurchasingOrderRecordReadSourceV1>(provider => provider.GetRequiredService<PurchasingService>());
         services.AddScoped<IPurchasingOrderReadServiceV1, PurchasingOrderReadServiceV1>();
@@ -178,7 +183,8 @@ public static class PurchasingModuleExtensions
         // AK-3 (SAT-D437): the host's Product theoretical kg/piece adapter; unwired, an order with a piece line is not approved (503).
         serviceProvider.GetService<IPurchaseTheoreticalKilogramsPerUnitPortV1>(),
         // AK-8 (SAT-D433/SAT-D445): the host's adapter of Inventory's label lineage; unwired, a foreign-label return is 503.
-        serviceProvider.GetService<IPurchaseSupplierReturnLineageReadPortV1>());
+        serviceProvider.GetService<IPurchaseSupplierReturnLineageReadPortV1>(),
+        serviceProvider.GetRequiredService<IPurchaseServiceOrderApprovalPreparationV1>());
 
     /// <summary>Applies Purchasing's migrations. Its foreign keys need Organization's tables first.</summary>
     public static async Task InitializePurchasingModuleAsync(this IServiceProvider services, CancellationToken cancellationToken = default)

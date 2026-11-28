@@ -46,6 +46,11 @@ public static partial class PurchasingEndpoints
             ICorrelationContext correlation, CancellationToken token) => ServiceMutateAsync<RevisePurchaseServiceOrderPricesV1>(http, correlation,
                 (request, metadata) => service.RevisePricesAsync(id, request, metadata, token), token))
             .WithName("RevisePurchaseServiceOrderPricesV1").Accepts<RevisePurchaseServiceOrderPricesV1>("application/json"));
+        // Only the native owner can admit this Draft setter after a genuine linked supplier-revision receipt.
+        ServiceWrite(group.MapPost("/{id:guid}/supplier-revision-prices", (Guid id, HttpContext http, [FromServices] IPurchaseServiceOrderServiceV1 service,
+            ICorrelationContext correlation, CancellationToken token) => ServiceMutateAsync<RevisePurchaseServiceOrderPricesV1>(http, correlation,
+                (request, metadata) => service.SetSupplierRevisionPricesAsync(id, request, metadata, token), token))
+            .WithName("SetPurchaseServiceSupplierRevisionPricesV1").Accepts<RevisePurchaseServiceOrderPricesV1>("application/json"));
         return endpoints;
     }
     private static async Task<IResult> ServiceReadAsync<T>(HttpContext http, ICorrelationContext correlation, Func<Task<T>> action)
