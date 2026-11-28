@@ -11,7 +11,7 @@ public sealed partial class SalesStore : ISalesCustomerReturnDecisionSafetyStore
     private OwnedCustomerReturnDecision? ownedCustomerReturnDecision;
 
     public bool CustomerReturnDecisionEntryIsClean => officialCancellationAuditWriter is not null
-        && ownedCustomerReturnDecision is null && ownedContractDiscountDecision is null && ownedRemainderDecision is null && ownedPriceFloorApproval is null && ownedDiscountApproval is null && ownedOverDeliveryRequestApproval is null && ownedRiskExceptionDecision is null && overDeliveryRequestDecisionReadFence is null && riskExceptionDecisionReadFence is null && remainderDecisionReadFence is null && ownedRequestApproval is null && ownedQuoteApproval is null && quoteDecisionReadFence is null && dbContext.Database.IsRelational()
+        && ownedCustomerReturnDecision is null && ownedContractDiscountDecision is null && ownedRemainderDecision is null && ownedPriceFloorApproval is null && ownedDiscountApproval is null && ownedOverDeliveryRequestApproval is null && ownedRiskExceptionDecision is null && overDeliveryRequestDecisionReadFence is null && riskExceptionDecisionReadFence is null && contractDiscountDecisionReadFence is null && remainderDecisionReadFence is null && ownedRequestApproval is null && ownedQuoteApproval is null && quoteDecisionReadFence is null && dbContext.Database.IsRelational()
         && System.Transactions.Transaction.Current is null && dbContext.Database.CurrentTransaction is null
         && !dbContext.ChangeTracker.HasChanges() && !officialCancellationAuditWriter.HasPendingDrafts;
 

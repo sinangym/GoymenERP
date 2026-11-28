@@ -180,7 +180,9 @@ public static class SalesModuleExtensions
         // S-11 (SAT-D28, NS-13, SAT-D346): the sales contract over the Sales store. The discount limit source is the Settings
         // owner's and is NOT composed here: without it no limit is defined and every discount goes to approval (SAT-D346).
         services.AddScoped<ISalesContractStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());
-        services.AddScoped<ISalesContractService>(CreateContractService);
+        services.AddScoped<SalesContractService>(CreateContractService);
+        services.AddScoped<ISalesContractService>(serviceProvider => serviceProvider.GetRequiredService<SalesContractService>());
+        services.AddScoped<ISalesContractDiscountDecisionReadV1>(serviceProvider => serviceProvider.GetRequiredService<SalesContractService>());
         // WP13 (YOL-D11): the order's signed approval records over the Sales store. The Document Vault port is the host's (Api) and
         // is NOT composed here: without it a record is 503 before anything is written (fail-closed).
         services.AddScoped<ISalesOrderSignedApprovalStore>(serviceProvider => serviceProvider.GetRequiredService<SalesStore>());

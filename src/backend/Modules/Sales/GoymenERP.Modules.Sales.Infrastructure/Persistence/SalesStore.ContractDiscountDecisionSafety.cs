@@ -11,7 +11,7 @@ public sealed partial class SalesStore : ISalesContractDiscountDecisionSafetySto
     private OwnedContractDiscountDecision? ownedContractDiscountDecision;
 
     public bool ContractDiscountDecisionEntryIsClean => officialCancellationAuditWriter is not null
-        && ownedContractDiscountDecision is null && ownedRemainderDecision is null && ownedCustomerReturnDecision is null && ownedPriceFloorApproval is null && ownedDiscountApproval is null && ownedOverDeliveryRequestApproval is null && ownedRiskExceptionDecision is null && overDeliveryRequestDecisionReadFence is null && riskExceptionDecisionReadFence is null && remainderDecisionReadFence is null && ownedRequestApproval is null && ownedQuoteApproval is null && quoteDecisionReadFence is null && dbContext.Database.IsRelational()
+        && ownedContractDiscountDecision is null && ownedRemainderDecision is null && ownedCustomerReturnDecision is null && ownedPriceFloorApproval is null && ownedDiscountApproval is null && ownedOverDeliveryRequestApproval is null && ownedRiskExceptionDecision is null && overDeliveryRequestDecisionReadFence is null && riskExceptionDecisionReadFence is null && contractDiscountDecisionReadFence is null && remainderDecisionReadFence is null && ownedRequestApproval is null && ownedQuoteApproval is null && quoteDecisionReadFence is null && dbContext.Database.IsRelational()
         && System.Transactions.Transaction.Current is null && dbContext.Database.CurrentTransaction is null
         && !dbContext.ChangeTracker.HasChanges() && !officialCancellationAuditWriter.HasPendingDrafts;
 
@@ -126,7 +126,7 @@ public sealed partial class SalesStore : ISalesContractDiscountDecisionSafetySto
 
     private async Task ContractDiscountDecisionFenceAsync(CancellationToken token)
     {
-        if (ownedContractDiscountDecision is not { } state) return;
+        if (ownedContractDiscountDecision is not { } state) { await ContractDiscountDecisionSourceFenceAsync(token); return; }
         token.ThrowIfCancellationRequested(); RequireCompany(state.CompanyId);
         await state.FreshFence(token);
         token.ThrowIfCancellationRequested(); RequireCompany(state.CompanyId);
@@ -134,6 +134,8 @@ public sealed partial class SalesStore : ISalesContractDiscountDecisionSafetySto
 
     private void RequireContractDiscountDecisionCommand(SalesDraftWriteEnvelope envelope, string hash, string command, bool writes)
     {
+        if (writes && contractDiscountDecisionReadFence is not null)
+            throw new InvalidOperationException("Selected contract discount read cannot dispatch a mutation.");
         if (ownedContractDiscountDecision is not { } state) return;
         if (state.Command != command || state.Hash != hash || state.Envelope.PermissionCode != envelope.PermissionCode || state.Envelope.ActorId != envelope.ActorId
             || state.Envelope.CorrelationId != envelope.CorrelationId
