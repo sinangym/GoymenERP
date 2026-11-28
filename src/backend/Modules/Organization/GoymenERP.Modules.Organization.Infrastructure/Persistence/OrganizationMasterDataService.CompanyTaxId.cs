@@ -234,32 +234,15 @@ internal sealed partial class OrganizationMasterDataService
         CommandMetadata metadata,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(command);
-        ValidateCommandMetadata(metadata);
-        if (requestId == Guid.Empty)
-        {
-            throw new ArgumentException("VKN değişiklik talebi kimliği boş olamaz.", nameof(requestId));
-        }
-
-        if (!OrganizationCompanyTaxIdRules.IsDecision(command.Decision))
-        {
-            throw new ArgumentException("Karar 'approve' veya 'reject' olmalıdır.", nameof(command));
-        }
-
-        if (!OrganizationCompanyTaxIdRules.IsValidNote(command.Note))
-        {
-            throw new ArgumentException("Karar notu tanımlı sınırlar içinde olmalıdır.", nameof(command));
-        }
-
-        RequireExpectedVersion(command.ExpectedVersion);
+        ValidateCompanyTaxIdDecisionEntry(requestId, command, metadata);
         var approve = string.Equals(
             command.Decision,
             OrganizationCompanyTaxIdRules.ApproveDecision,
             StringComparison.Ordinal);
         var note = string.IsNullOrWhiteSpace(command.Note) ? null : command.Note.Trim();
         const string permission = OrganizationCompanyTaxIdPermissionsV1.Approve;
-        var scope = await authorityRevalidationService.RevalidatePermissionScopeAsync(
-            permission, metadata.CompanyId, cancellationToken);
+        var scope = await CompanyTaxIdDecisionAwaitAsync(
+            token => authorityRevalidationService.RevalidatePermissionScopeAsync(permission, metadata.CompanyId, token), metadata, cancellationToken);
         var request = CreateRequest(
             DecideCompanyTaxIdChangeCommandName,
             metadata,
@@ -270,7 +253,8 @@ internal sealed partial class OrganizationMasterDataService
                 command.ExpectedVersion,
                 note));
 
-        var existing = await FindCommandExecutionAsync(request, cancellationToken);
+        var existing = await CompanyTaxIdDecisionAwaitAsync(
+            token => FindCommandExecutionAsync(request, token), metadata, cancellationToken);
         if (existing is not null)
         {
             return IsCompanyWideGrant(scope)
@@ -278,25 +262,28 @@ internal sealed partial class OrganizationMasterDataService
                 : NotRecordedNotFound(metadata);
         }
 
+        // A clean race recovery may read the original key once, never retry a mutation or record another refusal.
+        if (ownedCompanyTaxIdDecision?.ReplayOnly == true) return await ReconcileCompanyTaxIdDecisionAsync(metadata, cancellationToken);
+
         if (!IsCompanyWideGrant(scope))
         {
-            return await CompleteAsync(request, metadata, CommandResponses.For(CommandResult.NotFound), cancellationToken);
+            return await CompleteCompanyTaxIdDecisionAsync(request, metadata, CommandResponses.For(CommandResult.NotFound), cancellationToken);
         }
 
         // Tenant query filter: a request id of another company is simply not found.
-        var changeRequest = await dbContext.CompanyTaxIdChangeRequests
-            .SingleOrDefaultAsync(x => x.Id == requestId, cancellationToken);
+        var changeRequest = await CompanyTaxIdDecisionAwaitAsync(
+            token => dbContext.CompanyTaxIdChangeRequests.SingleOrDefaultAsync(x => x.Id == requestId, token), metadata, cancellationToken);
         var companyId = metadata.CompanyId;
-        var company = await dbContext.Companies
-            .SingleOrDefaultAsync(x => x.Id == companyId, cancellationToken);
+        var company = await CompanyTaxIdDecisionAwaitAsync(
+            token => dbContext.Companies.SingleOrDefaultAsync(x => x.Id == companyId, token), metadata, cancellationToken);
         if (changeRequest is null || company is null)
         {
-            return await CompleteAsync(request, metadata, CommandResponses.For(CommandResult.NotFound), cancellationToken);
+            return await CompleteCompanyTaxIdDecisionAsync(request, metadata, CommandResponses.For(CommandResult.NotFound), cancellationToken);
         }
 
         if (!changeRequest.IsPending)
         {
-            return await CompleteAsync(
+            return await CompleteCompanyTaxIdDecisionAsync(
                 request,
                 metadata,
                 CommandResponses.For(CommandResult.TaxIdChangeNotPending),
@@ -306,7 +293,7 @@ internal sealed partial class OrganizationMasterDataService
         if (changeRequest.IsRequestedBy(metadata.ActorId))
         {
             // Hazırlayan ≠ onaylayan: the preparer can neither approve nor reject their own request (KIM-D28).
-            return await CompleteAsync(
+            return await CompleteCompanyTaxIdDecisionAsync(
                 request,
                 metadata,
                 CommandResponses.For(CommandResult.TaxIdSelfDecision),
@@ -315,7 +302,7 @@ internal sealed partial class OrganizationMasterDataService
 
         if (company.Version != command.ExpectedVersion)
         {
-            return await CompleteAsync(
+            return await CompleteCompanyTaxIdDecisionAsync(
                 request,
                 metadata,
                 CommandResponses.VersionConflict(command.ExpectedVersion, company.Version),
@@ -326,16 +313,16 @@ internal sealed partial class OrganizationMasterDataService
         {
             if (!changeRequest.IsCurrentFor(company))
             {
-                return await CompleteAsync(
+                return await CompleteCompanyTaxIdDecisionAsync(
                     request,
                     metadata,
                     CommandResponses.For(CommandResult.TaxIdChangeStale),
                     cancellationToken);
             }
 
-            if (await IsCompanyTaxIdInUseAsync(changeRequest.ProposedVkn, companyId, cancellationToken))
+            if (await CompanyTaxIdDecisionAwaitAsync(token => IsCompanyTaxIdInUseAsync(changeRequest.ProposedVkn, companyId, token), metadata, cancellationToken))
             {
-                return await CompleteAsync(
+                return await CompleteCompanyTaxIdDecisionAsync(
                     request,
                     metadata,
                     CommandResponses.For(CommandResult.TaxIdInUse),
@@ -343,7 +330,8 @@ internal sealed partial class OrganizationMasterDataService
             }
         }
 
-        var freshScope = await ReadFreshCompanyTaxIdMutationScopeAsync(metadata, permission, cancellationToken);
+        var freshScope = await CompanyTaxIdDecisionAwaitAsync(
+            token => ReadFreshCompanyTaxIdMutationScopeAsync(metadata, permission, token), metadata, cancellationToken);
         if (freshScope is null) return NotRecordedNotFound(metadata);
 
         var now = DateTimeOffset.UtcNow;
@@ -391,17 +379,17 @@ internal sealed partial class OrganizationMasterDataService
 
         var expectedVersion = command.ExpectedVersion;
         var proposedVkn = changeRequest.ProposedVkn;
-        return await CompleteMutationAsync(
+        return await CompleteCompanyTaxIdDecisionMutationAsync(
             request,
             metadata,
             CommandResponses.For(CommandResult.Succeeded),
             async (exception, token) =>
             {
-                var status = await dbContext.CompanyTaxIdChangeRequests
+                var status = await CompanyTaxIdDecisionAwaitAsync(readToken => dbContext.CompanyTaxIdChangeRequests
                     .AsNoTracking()
                     .Where(x => x.Id == requestId)
                     .Select(x => (CompanyTaxIdChangeStatus?)x.Status)
-                    .SingleOrDefaultAsync(token);
+                    .SingleOrDefaultAsync(readToken), metadata, token);
                 if (status is null)
                 {
                     return CommandResponses.For(CommandResult.NotFound);
@@ -413,12 +401,12 @@ internal sealed partial class OrganizationMasterDataService
                 }
 
                 // The unique VKN index decides a race between two companies approving the same VKN.
-                if (approve && await IsCompanyTaxIdInUseAsync(proposedVkn, companyId, token))
+                if (approve && await CompanyTaxIdDecisionAwaitAsync(readToken => IsCompanyTaxIdInUseAsync(proposedVkn, companyId, readToken), metadata, token))
                 {
                     return CommandResponses.For(CommandResult.TaxIdInUse);
                 }
 
-                var currentVersion = await ReadCompanyVersionAsync(companyId, token);
+                var currentVersion = await CompanyTaxIdDecisionAwaitAsync(readToken => ReadCompanyVersionAsync(companyId, readToken), metadata, token);
                 if (currentVersion is null)
                 {
                     return CommandResponses.For(CommandResult.NotFound);
