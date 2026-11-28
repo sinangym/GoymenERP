@@ -31,6 +31,10 @@ describe('staged organization company VKN Work core',()=>{
  it.each(['12345678901','1234567891','9876543217\n','9876543217\r','9876543217\r\n',' 9876543217','9876543217 ','９８７６５４３２１７'])('requires exact native VKN checksum and ASCII shape %s',proposedVkn=>{
   const h=human(COMPANY_A);h.request={...h.request,proposedVkn};expect(decode(h)).toBeNull()
  })
+ it('rejects an unchanged request VKN without comparing an approved company current VKN to the old request',()=>{
+  const h=human(COMPANY_A);h.request={...h.request,currentVkn:h.request.proposedVkn};h.companyVkn=h.request.proposedVkn
+  expect(decode(h)).toBeNull();expect(decodeTaxIdChange(h.request)).toBeNull()
+ })
  it('does not invent a new checksum requirement for legacy current VKN',()=>{
   const h=human(COMPANY_A);h.companyVkn='1234567891';h.request={...h.request,currentVkn:h.companyVkn};expect(decode(h)).toEqual(h)
  })
