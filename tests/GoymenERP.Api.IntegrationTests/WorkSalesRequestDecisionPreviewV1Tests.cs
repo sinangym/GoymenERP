@@ -37,7 +37,7 @@ public sealed class WorkSalesRequestDecisionPreviewV1Tests
             "source-digest" => d with { SourceFactsDigest = new('a', 64) }, "preview-digest" => d with { PreviewDigest = new('b', 64) },
             "flags" => Seal(d with { ApprovalSupported = false }),
             "line-count" => Seal(d with { Detail = d.Detail with { Request = d.Detail.Request with { LineCount = 1 } } }),
-            _ => Seal(d with { Detail = d.Detail with { Lines = null! } }),
+            _ => d with { Detail = d.Detail with { Lines = null! } },
         };
         Assert.Equal(503, Assert.Throws<WorkDecisionException>(() => WorkSalesRequestDecisionPreviewV1.FromNative(d)).Status);
     }

@@ -194,8 +194,8 @@ public sealed class WorkSalesRequestDecisionHostTests
     private sealed class Rig
     {
         internal readonly MutableCompany Company = new(); internal readonly MutableUser User = new(); internal readonly Authority Authority = new(); internal readonly Delegations Delegations = new();
-        internal readonly Native Native; internal readonly SourceProxy Source; internal readonly WorkDecisionHostV1 Host;
-        private readonly CorrelationContext correlation = new(); private readonly WorkDecisionExecutionFenceV1 execution = new(); private readonly WorkDecisionAuthorityV1 scopedAuthority;
+        internal readonly Native Native; internal readonly SourceProxy Source; internal WorkDecisionHostV1 Host;
+        private CorrelationContext correlation = new(); private readonly WorkDecisionExecutionFenceV1 execution = new(); private readonly WorkDecisionAuthorityV1 scopedAuthority;
         internal Rig()
         {
             Company.Set(WorkSalesRequestDecisionPreviewV1Tests.Company); correlation.Set(Correlation, "SENTETIK-cause", "Web", null, null); scopedAuthority = new(Authority, execution);
@@ -204,7 +204,13 @@ public sealed class WorkSalesRequestDecisionHostTests
             Source = new(new SalesRequestWorkInboxSourceV1(null!, Company, User, scopedAuthority, Native)); Host = BuildHost(Native);
         }
         internal WorkDecisionHostV1 BuildHost(ISalesRequestService? owner) => new(Company, User, correlation, scopedAuthority, [Source], Delegations, execution, null!, null!, salesRequests: owner);
-        internal void SetCorrelation(string value) => correlation.Set(value, "SENTETIK-cause", "Web", null, null);
+        internal void SetCorrelation(string value)
+        {
+            // A retry is a new HTTP scope. The real correlation context remains immutable within each request.
+            correlation = new();
+            correlation.Set(value, "SENTETIK-cause", "Web", null, null);
+            Host = BuildHost(Native);
+        }
         internal Task<WorkDecisionPreviewV1> Preview() => Host.PreviewAsync(Kind, Id, default);
         internal Task<WorkDecisionResultV1> Decide(WorkDecisionRequestV1 request, string key = Key, CancellationToken token = default) => Host.DecideAsync(Kind, Id, request, key, token);
     }
