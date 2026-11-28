@@ -1206,7 +1206,8 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
                 line.SourceDocumentId ?? throw new InvalidOperationException("Kayıtlı talep satırı kaynağının belgesi yok."),
                 line.SourceDocumentLineId ?? throw new InvalidOperationException("Kayıtlı talep satırı kaynağının belge satırı yok."));
 
-    private async Task<IReadOnlyList<StoredPurchaseOrder>> RestoreOrdersAsync(IReadOnlyList<PurchaseOrderRow> rows, CancellationToken cancellationToken)
+    private async Task<IReadOnlyList<StoredPurchaseOrder>> RestoreOrdersAsync(IReadOnlyList<PurchaseOrderRow> rows, CancellationToken cancellationToken,
+        Func<CancellationToken, Task>? ownerFence = null)
     {
         if (rows.Count == 0)
         {
@@ -1214,15 +1215,15 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
         }
 
         var ids = rows.Select(row => row.Id).ToArray();
-        var membership = await ReadServiceMembershipsAsync(ids, cancellationToken);
-        var lines = await dbContext.OrderLines.AsNoTracking().Where(line => ids.Contains(line.OrderId)).ToListAsync(cancellationToken);
-        var acceptances = await dbContext.Acceptances.AsNoTracking().Where(acceptance => ids.Contains(acceptance.OrderId)).ToListAsync(cancellationToken);
-        var slices = await dbContext.DeliverySlices.AsNoTracking().Where(slice => ids.Contains(slice.OrderId)).ToListAsync(cancellationToken);
-        var closures = await dbContext.LineClosureEvents.AsNoTracking().Where(closure => ids.Contains(closure.OrderId)).ToListAsync(cancellationToken);
-        var rates = await dbContext.ExchangeRateChanges.AsNoTracking().Where(rate => ids.Contains(rate.OrderId)).ToListAsync(cancellationToken);
-        var adjustments = await dbContext.ReceiptAdjustments.AsNoTracking().Where(item => ids.Contains(item.OrderId)).ToListAsync(cancellationToken);
-        var cancellations = await dbContext.CancellationHistory.AsNoTracking().Where(item => ids.Contains(item.OrderId)).ToListAsync(cancellationToken);
-        var batches = await dbContext.ReceiptAdjustmentBatches.AsNoTracking().Where(item => ids.Contains(item.OrderId)).ToListAsync(cancellationToken);
+        var membership = await ReadServiceMembershipsAsync(ids, cancellationToken, ownerFence);
+        var lines = await ReadMixedOwnerAsync(() => dbContext.OrderLines.AsNoTracking().Where(line => ids.Contains(line.OrderId)).ToListAsync(cancellationToken), ownerFence, cancellationToken);
+        var acceptances = await ReadMixedOwnerAsync(() => dbContext.Acceptances.AsNoTracking().Where(acceptance => ids.Contains(acceptance.OrderId)).ToListAsync(cancellationToken), ownerFence, cancellationToken);
+        var slices = await ReadMixedOwnerAsync(() => dbContext.DeliverySlices.AsNoTracking().Where(slice => ids.Contains(slice.OrderId)).ToListAsync(cancellationToken), ownerFence, cancellationToken);
+        var closures = await ReadMixedOwnerAsync(() => dbContext.LineClosureEvents.AsNoTracking().Where(closure => ids.Contains(closure.OrderId)).ToListAsync(cancellationToken), ownerFence, cancellationToken);
+        var rates = await ReadMixedOwnerAsync(() => dbContext.ExchangeRateChanges.AsNoTracking().Where(rate => ids.Contains(rate.OrderId)).ToListAsync(cancellationToken), ownerFence, cancellationToken);
+        var adjustments = await ReadMixedOwnerAsync(() => dbContext.ReceiptAdjustments.AsNoTracking().Where(item => ids.Contains(item.OrderId)).ToListAsync(cancellationToken), ownerFence, cancellationToken);
+        var cancellations = await ReadMixedOwnerAsync(() => dbContext.CancellationHistory.AsNoTracking().Where(item => ids.Contains(item.OrderId)).ToListAsync(cancellationToken), ownerFence, cancellationToken);
+        var batches = await ReadMixedOwnerAsync(() => dbContext.ReceiptAdjustmentBatches.AsNoTracking().Where(item => ids.Contains(item.OrderId)).ToListAsync(cancellationToken), ownerFence, cancellationToken);
         return [.. rows.Select(row =>
         {
             var own = lines.Where(line => line.OrderId == row.Id).OrderBy(line => line.LineNo).ToList();
@@ -1240,6 +1241,7 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
                 VersionsOf(own)) { DocumentNumber = row.DocumentNumber };
         })];
     }
+
 
     /// <summary>
     /// Rebuilds the order through the domain in recording order (general lines, technical slices, approval, acceptance shares);

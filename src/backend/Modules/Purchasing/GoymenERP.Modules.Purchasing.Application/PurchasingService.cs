@@ -63,7 +63,8 @@ public sealed partial class PurchasingService(
     IPurchaseReceiptReversalBatchTransactionV1? receiptReversalBatches = null,
     IPurchaseSupplierReturnCostSourceReadPortV1? returnCostSources = null,
     IPurchaseTheoreticalKilogramsPerUnitPortV1? theoreticalKilograms = null,
-    IPurchaseSupplierReturnLineageReadPortV1? returnLineage = null) : IPurchasingService, IPurchasingOrderRecordReadSourceV1,
+    IPurchaseSupplierReturnLineageReadPortV1? returnLineage = null,
+    IPurchaseServiceOrderApprovalPreparationV1? serviceApprovalPreparation = null) : IPurchasingService, IPurchasingOrderRecordReadSourceV1,
     IPurchaseGoodsReceiptServiceV1, IPurchaseGoodsReceiptQuantityComparisonServiceV1, IPurchaseGoodsReceiptBatchServiceV1,
     IPurchaseSupplierReturnServiceV1, IPurchaseReceiptReversalServiceV1, IPurchaseReceiptReversalBatchServiceV1
 {
@@ -376,6 +377,7 @@ public sealed partial class PurchasingService(
         ArgumentNullException.ThrowIfNull(metadata);
         cancellationToken.ThrowIfCancellationRequested();
         var scope = await RequireAsync(bindings.ApprovePermission, cancellationToken);
+        if (request.MixedServices is not null) throw new PurchasingServiceException(503, "service_unavailable");
         var disclosure = await DiscloseAsync(scope, cancellationToken);
         var expectedVersion = ParseVersion(request.ExpectedVersion);
         var requestHash = PurchasingRequestHash.Compute(PurchasingCommands.OrderApproveV1, orderId, request);

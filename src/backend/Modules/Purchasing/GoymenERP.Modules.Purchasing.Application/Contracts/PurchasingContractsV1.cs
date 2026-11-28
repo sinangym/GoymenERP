@@ -97,7 +97,12 @@ public sealed record PurchaseOrderLinePriceRequest(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? DeferralAmount = null);
 
 /// <summary>POST …/orders/{id}/approval: Draft → Approved at the expected version; the Σ-shares rule is measured in the same save.</summary>
-public sealed record ApprovePurchaseOrderRequest(string ExpectedVersion);
+public sealed record ApprovePurchaseOrderRequest(string ExpectedVersion)
+{
+    // Absent/null preserves the original one-field wire and hash. Admission remains closed until the owned receipt participant is connected.
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<PurchaseMixedOrderApprovalSelectionV1>? MixedServices { get; init; }
+}
 
 /// <summary>
 /// A1-3 (plan API-10; No.161 §2): POST …/orders/{id}/cancellation — Approved → Cancelled at the expected version: the WHOLE

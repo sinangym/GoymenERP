@@ -76,6 +76,9 @@ public sealed partial class PurchaseServiceOrderServiceV1
         return value with { PartyVersion = supplier.PartyVersion, AccountVersion = supplier.AccountVersion };
     }
 
+    // Reuse the actual native disclosure/quantity/tax/money formatter without a second priced projection.
+    internal static PurchaseServiceOrderViewV1 ApprovalPreviewView(PurchaseServiceOrderState value, bool prices) => View(value, prices);
+
     private static PurchaseServiceOrderState FreezeOwner(PurchaseServiceOrderState value)
     {
         if (value.Money is null || value.Lines is null || value.Materials is null || value.ExpectedOutputs is null || value.Acceptances is null

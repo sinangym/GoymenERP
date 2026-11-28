@@ -58,18 +58,18 @@ public sealed partial class PurchasingStore
     }
 
     private async Task<(List<PurchaseOrderServiceMembershipRow> Members, List<PurchaseServiceOrderRevisionRow> Prepared)>
-        ReadServiceMembershipsAsync(Guid[] parentIds, CancellationToken cancellationToken)
+        ReadServiceMembershipsAsync(Guid[] parentIds, CancellationToken cancellationToken, Func<CancellationToken, Task>? ownerFence = null)
     {
-        var members = await dbContext.OrderServiceMemberships.AsNoTracking()
-            .Where(x => parentIds.Contains(x.OrderId)).ToListAsync(cancellationToken);
+        var members = await ReadMixedOwnerAsync(() => dbContext.OrderServiceMemberships.AsNoTracking()
+            .Where(x => parentIds.Contains(x.OrderId)).ToListAsync(cancellationToken), ownerFence, cancellationToken);
         if (members.Count == 0) return (members, []);
         // Exact FK revisions only: one batch query, neither current child state nor an unbounded history scan.
-        var prepared = await (from member in dbContext.OrderServiceMemberships.AsNoTracking()
+        var prepared = await ReadMixedOwnerAsync(() => (from member in dbContext.OrderServiceMemberships.AsNoTracking()
             join revision in dbContext.ServiceOrderRevisions.AsNoTracking()
                 on new { member.CompanyId, OrderId = member.ServiceOrderId, Version = member.PreparedVersion }
                 equals new { revision.CompanyId, revision.OrderId, revision.Version }
             where parentIds.Contains(member.OrderId)
-            select revision).ToListAsync(cancellationToken);
+            select revision).ToListAsync(cancellationToken), ownerFence, cancellationToken);
         return (members, prepared);
     }
 
