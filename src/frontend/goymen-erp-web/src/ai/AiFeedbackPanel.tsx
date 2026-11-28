@@ -19,7 +19,10 @@ export function AiFeedbackPanel({companyId,answerId}:{readonly companyId:string;
 function Feedback({company,answerId,namespace,generation}:{readonly company:string;readonly answerId:string;readonly namespace:string;readonly generation:number}) {
  const boundary=useAuthBoundary()
  const [selected,setSelected]=useState<AiFeedbackKind|''>(''),[reason,setReason]=useState<AiFeedbackReason|''>('')
- const attempt=useScopedCommandAttempt<AiFeedbackRequest,AiFeedbackReceipt>(`ai-answer-feedback:${answerId}`,(body,key)=>sendAiFeedback(company,answerId,body,key),isAiFeedbackRequest)
+ const attempt=useScopedCommandAttempt<AiFeedbackRequest,AiFeedbackReceipt>(`ai-answer-feedback:${answerId}`,(body,key)=>{
+  const captured=boundary.capture()
+  return sendAiFeedback(company,answerId,body,key,status=>boundary.report(status,captured))
+ },isAiFeedbackRequest)
  const read=useQuery({queryKey:[namespace,generation,'ai-answer-feedback',answerId],retry:false,staleTime:0,gcTime:0,queryFn:async({signal})=>{
   const captured=boundary.capture(),result=await fetchAiFeedback(company,answerId,signal)
   if(result.type==='http')boundary.report(result.status,captured)
