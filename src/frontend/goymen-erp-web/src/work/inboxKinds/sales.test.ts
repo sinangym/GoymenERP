@@ -75,3 +75,11 @@ describe('WP4 Sales inbox kinds', () => {
     expect([formatWithUnit('10', '%'), formatWithUnit('12.5', '%'), formatWithUnit('2.5', '%')]).toEqual(['%10', '%12,5', '%2,5'])
   })
 })
+
+
+it('publishes Floor under its standalone purpose while leaving the native detail control independent',()=>{
+ const floor=WORK_INBOX_KINDS.filter(x=>x.kind==='sales.price-floor-exception.v1')
+ expect(floor).toEqual([{kind:'sales.price-floor-exception.v1',module:'sales',capability:SALES_WORK_DECISION_CAPABILITY.priceFloor}])
+ expect(WORK_INBOX_CAPABILITIES).toContain(SALES_WORK_DECISION_CAPABILITY.priceFloor)
+ expect(WORK_INBOX_CAPABILITIES).not.toContain('sales.orders.price-floor-exception.approve')
+})

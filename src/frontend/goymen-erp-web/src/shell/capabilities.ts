@@ -159,6 +159,7 @@ export const CAPABILITY = {
   salesDraftsList: 'sales.drafts.list',
   /** Sales-owned purpose routes mounted by Work; no browse grant required. */
   identityAccessGrantWorkDecision: 'identity.access-grant-request.work-decision',
+  salesPriceFloorWorkDecision: 'sales.price-floor-exception.work-decision',
   salesQuoteConversionWorkDecision: 'sales.quote-conversion-request.work-decision',
   salesRequestWorkDecision: 'sales.request.work-decision',
   salesOrderWorkDecision: 'sales.order-draft.work-decision',
@@ -544,6 +545,7 @@ export const CAPABILITY_ROUTE: Record<CapabilityId, string> = {
   [CAPABILITY.organizationCompanyTaxIdWorkDecision]: '/onaylarim/organization.company-tax-id-change.v1/:approvalId',
   [CAPABILITY.salesDraftsList]: '/satis/siparisler',
   [CAPABILITY.identityAccessGrantWorkDecision]: '/onaylarim/identity.access-grant-request.v1/:approvalId',
+  [CAPABILITY.salesPriceFloorWorkDecision]: '/onaylarim/sales.price-floor-exception.v1/:approvalId',
   [CAPABILITY.salesQuoteConversionWorkDecision]: '/onaylarim/sales.quote-conversion-request.v1/:approvalId',
   [CAPABILITY.salesRequestWorkDecision]: '/onaylarim/sales.request.v1/:approvalId',
   [CAPABILITY.salesOrderWorkDecision]: '/onaylarim/sales.order-draft.v1/:approvalId',

@@ -107,7 +107,7 @@ public sealed partial class SalesDraftServiceTests
         Assert.False(SalesPriceFloorDecisionBindingV1.MatchesDecisionSnapshot(snapshot, detail with { DocumentNo = "other" }));
         var source = FloorPurposeSource(world); var current = await source.ReadDecisionVersionAsync(FloorPurposeContext(world), id, detail.Version, default);
         Assert.NotNull(current); Assert.True(current.Pending); Assert.False(current.SalesPriceFloorProof!.Historical);
-        Assert.Equal(SalesWorkInboxItemsV1.OrderLink(id), current.Item.Link);
+        Assert.Equal(SalesPriceFloorExceptionWorkInboxSourceV1.WorkDecisionPath + $"/{id:D}", current.Item.Link);
     }
 
     [Fact]

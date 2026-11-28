@@ -33,7 +33,7 @@ public sealed class SalesPriceFloorExceptionWorkInboxSourceV1Tests
         var item = Assert.Single(result.Items!);
         Assert.Equal(Draft(1, []).Id, item.ItemId);
         Assert.Equal("SO-SNT-0001", item.DocumentLabel);
-        Assert.Equal($"/satis/siparisler/{Draft(1, []).Id:D}", item.Link);
+        Assert.Equal(SalesPriceFloorExceptionWorkInboxSourceV1.WorkDecisionPath + $"/{Draft(1, []).Id:D}", item.Link);
         Assert.Equal(T0.ToUniversalTime(), item.WaitingSinceUtc);
         Assert.Single(item.Rules);
         Assert.False(result.HasMore);

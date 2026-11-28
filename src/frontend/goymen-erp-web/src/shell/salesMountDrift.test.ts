@@ -170,3 +170,13 @@ it('retains the native quote detail path and separates its browse capability fro
  expect(SALES_WORK_DECISION_CAPABILITY.quoteConversion).not.toBe(SALES_POOL_CAPABILITY_ID.quotesDetail)
  expect(matchRoutes(shellRoutes,'/satis/teklifler/cccccccc-0000-4000-8000-0000000000f1')?.at(-1)?.route.path).toBe('satis/teklifler/:quoteId')
 })
+
+
+it('mounts one standalone Floor purpose beside its unchanged native detail route without navigation grants',()=>{
+ expect(SALES_WORK_DECISION_CAPABILITY.priceFloor).toBe('sales.price-floor-exception.work-decision')
+ expect(SALES_WORK_DECISION_ROUTE.priceFloor).toBe('/onaylarim/sales.price-floor-exception.v1/:approvalId')
+ expect(CAPABILITY_ROUTE[CAPABILITY.salesPriceFloorWorkDecision]).toBe(SALES_WORK_DECISION_ROUTE.priceFloor)
+ expect(NAV_CAPABILITIES).not.toContain(CAPABILITY.salesPriceFloorWorkDecision)
+ expect(matchRoutes(shellRoutes,'/onaylarim/sales.price-floor-exception.v1/cccccccc-0000-4000-8000-0000000000f1')?.at(-1)?.route.path).toBe('onaylarim/sales.price-floor-exception.v1/:approvalId')
+ expect(matchRoutes(shellRoutes,'/satis/siparisler/cccccccc-0000-4000-8000-0000000000f1')?.at(-1)?.route.path).toBe('satis/siparisler/:draftId')
+})

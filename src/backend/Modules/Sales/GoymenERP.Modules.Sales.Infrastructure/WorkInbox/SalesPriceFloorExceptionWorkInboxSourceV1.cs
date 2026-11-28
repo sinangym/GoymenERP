@@ -23,6 +23,7 @@ internal sealed partial class SalesPriceFloorExceptionWorkInboxSourceV1(
     : SalesWorkInboxSourceBaseV1(companyContext, currentUser, authority)
 {
     public const string KindName = "sales.price-floor-exception.v1";
+    public const string WorkDecisionPath = "/onaylarim/sales.price-floor-exception.v1";
     public const string BelowFloorRule = "sales.price-below-floor";
 
     public override string Kind => KindName;
@@ -91,7 +92,7 @@ internal sealed partial class SalesPriceFloorExceptionWorkInboxSourceV1(
             id,
             documentNo,
             first.RequestedAtUtc.ToUniversalTime(),
-            SalesWorkInboxItemsV1.OrderLink(id),
+            WorkDecisionPath + $"/{id:D}",
             SalesWorkInboxItemsV1.RequireActor(first.RequestedBy),
             rules,
             references,

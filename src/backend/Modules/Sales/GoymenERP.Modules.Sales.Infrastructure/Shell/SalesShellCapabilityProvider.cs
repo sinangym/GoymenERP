@@ -55,8 +55,9 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    // 1.31: selected quote conversion decisions reuse their native permission and price disclosure.
-    public const string OwnerContractVersion = "1.31";
+    // 1.32: the Floor purpose uses only its native approval authority; price disclosure remains optional.
+    public const string OwnerContractVersion = "1.32";
+    public const string PriceFloorWorkDecisionCapabilityId = "sales.price-floor-exception.work-decision";
     public const string QuoteConversionWorkDecisionCapabilityId = "sales.quote-conversion-request.work-decision";
     public const string RequestWorkDecisionCapabilityId = "sales.request.work-decision";
     public const string OrderWorkDecisionCapabilityId = "sales.order-draft.work-decision";
@@ -305,6 +306,10 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
         return
         [
         // WP8: purpose decision routes require the native command names, with no browse/read grant added.
+        new ShellCapabilityDeclaration(PriceFloorWorkDecisionCapabilityId,"sales-price-floor-exception-work-decision",
+            "/onaylarim/sales.price-floor-exception.v1/:approvalId","W-SALES-PRICE-FLOOR-01",ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            ShellCapabilityContextRequirement.SingleCompany,ShellCapabilityScopeRequirement.CompanyWide,
+            [SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove],ImplementationAvailable:true),
         new ShellCapabilityDeclaration(QuoteConversionWorkDecisionCapabilityId,"sales-quote-conversion-request-work-decision",
             "/onaylarim/sales.quote-conversion-request.v1/:approvalId","W-SALES-QUOTE-CONVERSION-REQUEST-01",ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
             ShellCapabilityContextRequirement.SingleCompany,ShellCapabilityScopeRequirement.CompanyWide,

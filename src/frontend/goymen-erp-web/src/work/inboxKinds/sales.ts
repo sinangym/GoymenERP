@@ -1,7 +1,6 @@
 import {
   SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY,
   SALES_OVER_DELIVERY_APPROVE_CAPABILITY,
-  SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY,
   SALES_RISK_EXCEPTION_APPROVE_CAPABILITY,
   SALES_WORK_DECISION_CAPABILITY,
 } from '../../sales/capabilities'
@@ -9,7 +8,7 @@ import type { WorkInboxKind } from './types'
 
 /** Sales approval kinds of the Work inbox (one file per module so packages add their kinds without touching the others). */
 export const SALES_INBOX_KINDS: readonly WorkInboxKind[] = [
-  { kind: 'sales.price-floor-exception.v1', module: 'sales', capability: SALES_PRICE_FLOOR_EXCEPTION_APPROVE_CAPABILITY },
+  { kind: 'sales.price-floor-exception.v1', module: 'sales', capability: SALES_WORK_DECISION_CAPABILITY.priceFloor },
   // No frontend capability for `sales.orders.discount-exception.approve` yet.
   { kind: 'sales.discount-exception.v1', module: 'sales', capability: null },
   { kind: 'sales.risk-exception.v1', module: 'sales', capability: SALES_RISK_EXCEPTION_APPROVE_CAPABILITY },
