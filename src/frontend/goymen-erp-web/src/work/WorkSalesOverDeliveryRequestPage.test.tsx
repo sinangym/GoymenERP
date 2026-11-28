@@ -51,8 +51,15 @@ describe('quantity-only numbered over-delivery Work human and frozen native deci
   const calls=installFetch({capabilities:[cap],respond:url=>url.includes(ownerPath)?json(fixture(COMPANY_A,'2',status)):undefined});mount();await screen.findByRole('region',{name:T.title})
   expect(screen.queryByRole('button',{name:W.approve})).toBeNull();expect(screen.queryByRole('button',{name:W.reject})).toBeNull();expect(screen.queryByRole('textbox')).toBeNull();expect(calls.some(c=>c.method==='POST')).toBe(false)
  })
- it('keeps full max-version pending human visible but both new decisions disabled',async()=>{
-  installFetch({capabilities:[cap],respond:url=>url.includes(ownerPath)?json(fixture(COMPANY_A,'9223372036854775807')):undefined});mount();await screen.findByRole('region',{name:T.title});expect(screen.getByRole('button',{name:W.approve}).matches(':disabled')).toBe(true);expect(screen.getByRole('button',{name:W.reject}).matches(':disabled')).toBe(true)
+ it('keeps max-version human visible while the server disables approval and offers no rejection action',async()=>{
+  const calls=installFetch({capabilities:[cap],respond:url=>url.includes(ownerPath)?json(fixture(COMPANY_A,'9223372036854775807')):undefined})
+  mount();await screen.findByRole('region',{name:T.title})
+  const approve=screen.getByRole('button',{name:W.approve})
+  expect(approve.matches(':disabled')).toBe(true)
+  expect(screen.queryByRole('button',{name:W.reject})).toBeNull()
+  expect(screen.queryByRole('textbox',{name:W.reason})).toBeNull()
+  fireEvent.click(approve)
+  expect(calls.some(c=>c.method==='POST')).toBe(false)
  })
  it.each([true,false])('recovers unknown on remount with the identical four-field body/key and no current GET approve=%s',async approve=>{
   Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-over-recovery'});let posts=0
@@ -97,7 +104,8 @@ describe('quantity-only numbered over-delivery Work human and frozen native deci
   else{cleanup();if(change==='actor')Object.assign(IDENTITY,{userId:'88888888-8888-4888-8888-888888888888'});else Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-over-new'});mount()}
   await screen.findByRole('region',{name:T.title});expect(screen.queryByRole('button',{name:W.retry})).toBeNull();expect(posts).toBe(1);expect(calls.filter(c=>c.method==='POST')).toHaveLength(1)
  })
+ // A business 403 invalidates shell capabilities; the real route uses its neutral non-disclosure block.
  it.each([403,404,503])('shows native read refusal %s without exposing cached human facts or a command',async status=>{
-  const calls=installFetch({capabilities:[cap],respond:url=>url.includes(ownerPath)?problem(status):undefined});mount();const state=status===403?'forbidden':status===404?'not-found':'service-unavailable';await waitFor(()=>expect(document.querySelector(`[data-state="${state}"]`)).not.toBeNull());expect(calls.filter(c=>c.url.includes(ownerPath)&&c.method==='GET')).toHaveLength(1);expect(screen.queryByRole('region',{name:T.title})).toBeNull();expect(calls.some(c=>c.method==='POST')).toBe(false)
+  const calls=installFetch({capabilities:[cap],respond:url=>url.includes(ownerPath)?problem(status):undefined});mount();const state=status===403||status===404?'not-found':'service-unavailable';await waitFor(()=>expect(document.querySelector(`[data-state="${state}"]`)).not.toBeNull());expect(calls.filter(c=>c.url.includes(ownerPath)&&c.method==='GET')).toHaveLength(1);expect(screen.queryByRole('region',{name:T.title})).toBeNull();expect(calls.some(c=>c.method==='POST')).toBe(false)
  })
 })
