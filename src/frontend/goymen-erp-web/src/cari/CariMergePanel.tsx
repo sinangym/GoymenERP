@@ -96,7 +96,7 @@ function MergePanel({ partyId, companyId, namespace, contractContext, onChanged,
       return answer
     },
   })
-  const impact = !locked && !read.isFetching && !impactQuery.isFetching && selectedCandidate !== null && impactQuery.data?.type === 'ok'
+  const impact = !locked && !read.isFetching && !read.isError && !impactQuery.isFetching && !impactQuery.isError && selectedCandidate !== null && impactQuery.data?.type === 'ok'
     ? impactQuery.data.data : null
 
   if (read.isPending && !(locked && commandView !== null)) {
