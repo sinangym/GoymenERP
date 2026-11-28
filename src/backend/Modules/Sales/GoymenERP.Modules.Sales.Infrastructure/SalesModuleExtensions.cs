@@ -228,7 +228,7 @@ public static class SalesModuleExtensions
         serviceProvider.GetRequiredService<ISalesCustomerReturnStore>(),
         serviceProvider.GetRequiredService<ISalesInvoiceStore>(),
         serviceProvider.GetRequiredService<TimeProvider>(),
-        serviceProvider.GetService<ISalesCustomerReturnFinancePortV1>());
+        serviceProvider.GetService<ISalesCustomerReturnFinancePortV1>()).WithCustomerReturnDecisionSafety();
 
     // Named for the same architecture guard as the factories below: the company context is resolved, never registered.
     private static SalesRiskExceptionService CreateRiskExceptionService(IServiceProvider serviceProvider) => new SalesRiskExceptionService(

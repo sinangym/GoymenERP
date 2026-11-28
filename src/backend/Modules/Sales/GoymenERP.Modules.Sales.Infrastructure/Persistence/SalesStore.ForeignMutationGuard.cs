@@ -9,7 +9,8 @@ public sealed partial class SalesStore
     {
         if (ownedCustomerReturnDecision is not null || quoteDecisionReadFence is not null
             || overDeliveryRequestDecisionReadFence is not null || riskExceptionDecisionReadFence is not null
-            || contractDiscountDecisionReadFence is not null || remainderDecisionReadFence is not null)
+            || contractDiscountDecisionReadFence is not null || remainderDecisionReadFence is not null
+            || customerReturnDecisionReadFence is not null)
             throw new InvalidOperationException("Selected decision or read cannot dispatch a foreign Sales mutation.");
     }
 }
