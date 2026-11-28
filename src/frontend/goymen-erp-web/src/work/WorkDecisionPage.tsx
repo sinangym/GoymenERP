@@ -249,7 +249,8 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       ...(overage ? { inventoryTransferOverage: { requestNumber: preview.inventoryTransferOverage!.requestNumber, decidedAtUtc: workDecisionLocalUtc(decisionTime)! } } : {}),
       ...(loss ? { inventoryTransferLoss: { requestNumber: preview.inventoryTransferLoss!.requestNumber, decidedAtUtc: workDecisionLocalUtc(decisionTime)! } } : {}),
       ...(kind === 'manufacturing.plan.v1' && options !== undefined ? { manufacturingPlanReapproval: { selectedLabelIds: [...selectedLabels] } } : {}) })
-    if (salesPriceFloor && answer.type === 'refused') { setFloorReasons({}); setFloorReasonBinding(null); if (answer.status === 409) void query.refetch() }
+    // Re-enabling the stale query may already have started the fresh read; join it instead of cancelling/restarting it.
+    if (salesPriceFloor && answer.type === 'refused') { setFloorReasons({}); setFloorReasonBinding(null); if (answer.status === 409) void query.refetch({cancelRefetch:false}) }
     if (normalJournal && answer.type === 'refused') { setJournalPeriod('');setJournalPeriodVersion(null);setPeriodReadRevision(value=>value+1) }
     if (answer.type === 'applied') {
       if (salesPriceFloor || identityAccessGrant || salesQuoteConversion || salesRequest || organizationCompanyTaxId || sourceVoucher || inventoryCostCancellation || inventoryCost || invoiceLineCogs || manufacturingCost || mapping || catalog || journalReversal || accountingPeriod || normalJournal || nativeFinance || expensePayment || reversal || officialSales || officialImport || partyCreditLimit || ibanChange || priceList) setReconcilingHistorical(true)
