@@ -1876,14 +1876,16 @@
         "tests/GoymenERP.Api.IntegrationTests/InventoryCostWorkDecisionHostTests.cs",
         "tests/GoymenERP.Api.IntegrationTests/WorkInventoryCostDecisionPreviewV1Tests.cs",
         "tests/GoymenERP.Api.IntegrationTests/AccountingInvoiceLineCogsSqlServerRelationalAcceptanceTests.InventoryCostDecisionRead.cs",
-        "tests/GoymenERP.Api.IntegrationTests/AccountingInvoiceLineCogsSqlServerRelationalAcceptanceTests.InventoryCostDecisionRead.ClaimSuccession.cs"
+        "tests/GoymenERP.Api.IntegrationTests/AccountingInvoiceLineCogsSqlServerRelationalAcceptanceTests.InventoryCostDecisionRead.ClaimSuccession.cs",
+        "src/frontend/goymen-erp-web/src/work/workInventoryCostDecision.test.ts",
+        "src/frontend/goymen-erp-web/src/work/WorkInventoryCostPage.test.tsx"
       ],
       "inbox_read_semantics": "NOT_VERIFIED",
       "owner_decision_semantics": "NOT_VERIFIED",
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Both native purpose Host adapters have bounded local evidence; paired frontend remains pending. Actual SQL/runtime/CI/K3 acceptance NOT_RUN."
+      "limitation": "Both cost purposes paired owner/Host/UI in source with bounded local evidence; all64 runtime semantics remain NOT_VERIFIED/NOT_RUN. Actual SQL/browser/CI/K3 pending."
     },
     {
       "flow": 56,
@@ -1927,7 +1929,7 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "Permission occurrences are navigation candidates, not proof this flow has a working inbox adapter or owner decision command."
+      "limitation": "Native owned approval safety prerequisite and scoped audit composition locally verified; purpose owner/read/receipt/Work/UI not yet integrated. No actual SQL/browser/CI/K3 acceptance."
     },
     {
       "flow": 58,
@@ -3169,53 +3171,50 @@
   },
   "current_checkpoint_ref": "invoice_and_inventory_cost_work_checkpoint",
   "invoice_and_inventory_cost_work_checkpoint": {
-    "source_commit": "f35e223a84f388a7a76ee897ecaf07daaff5377f",
+    "source_commit": "8772734ae27f9897185f9f829c0d9139a4639596",
     "status": "SOURCE_AND_BOUNDED_LOCAL_TESTS_ONLY",
     "backend_supported_kinds": 51,
-    "frontend_paired_kinds": 49,
-    "staged_frontend_kinds": [
-      "accounting.invoiced-shipment-cost.v1",
-      "accounting.purchase-cost-difference.v1"
-    ],
+    "frontend_paired_kinds": 51,
+    "staged_frontend_kinds": [],
     "flow54": "Retained invoice-line COGS owner, private original Commands receipt, full human Work5/25 transport and paired purpose under the existing company-wide journal reversal approval. Native proposal1→2 remains separate from current invoice-line revision. No new permission. Work-only empty return-list and exact Int32 boundaries source-reviewed; native numeric decoder defaults unchanged.",
-    "flow55": "Both cost kinds have retained owner reads, genuine original receipt and typed Host preview with all native business/claim/rounding/attribution facts; nested Int64 values are lossless text. Native Posted/RoundedNoCost remain success and Stale remains genuine409. Opaque EconomicKey and raw proof JSON/hash data are excluded from this new human whitelist. Frontend pair is pending.",
+    "flow55": "Both native cost kinds now have paired purpose-only Work UI, provider1.19/40 declarations, exact canonical record links and separate existing approval permissions. Old native screens remain;12 Accounting and69 unique global Inbox rows remain. Existing nested human whitelist, Int64 text, genuine Posted/RoundedNoCost/Stale outcomes and original-key unknown recovery preserved.",
     "flow56_prerequisite": "Native component cancellation now uses the existing exact owned command boundary, same Db/collector/actual audit writer, all-await fences including nested claim/evidence reads, late-refusal rollback and one readonly original-key reconciliation. Outer cost version is unchanged; only cancellation version increments. Owner/read/receipt/Work purpose remains pending. No schema/formula/permission policy changed.",
     "local_evidence": {
       "accounting": {
-        "freeGiB": 3.8304176330566406,
+        "seconds": 35.367425,
         "exit": 0,
-        "seconds": 35.3984781,
-        "source_commit": "4ddc779b286bb95d50621a1503433c56816b7ad5",
-        "artifact": "inventory-cost-host-cancellation-native-20261128",
-        "total": 1622,
-        "passed": 1622,
+        "freeGiB": 3.7802658081054688,
+        "source_commit": "8772734ae27f9897185f9f829c0d9139a4639596",
+        "artifact": "inventory-cost-work-link-fixed-20261128",
+        "total": 1647,
+        "passed": 1647,
         "failed": 0,
         "skipped": 0
       },
       "api_refresh": {
-        "freeGiB": 3.9328269958496094,
+        "seconds": 21.4933997,
         "exit": 0,
-        "seconds": 21.4159939,
-        "source_commit": "4ddc779b286bb95d50621a1503433c56816b7ad5",
-        "artifact": "inventory-cost-host-cancellation-native-20261128"
+        "freeGiB": 3.7493438720703125,
+        "source_commit": "8772734ae27f9897185f9f829c0d9139a4639596",
+        "artifact": "inventory-cost-work-link-fixed-20261128"
       },
       "controlled_host": {
-        "freeGiB": 3.9026832580566406,
-        "seconds": 70.4838698,
+        "seconds": 71.4582544,
         "exit": 0,
-        "source_commit": "f35e223a84f388a7a76ee897ecaf07daaff5377f",
-        "artifact": "inventory-cost-host-source-tests-fixed-20261128",
-        "total": 1815,
-        "passed": 1815,
+        "freeGiB": 3.704174041748047,
+        "source_commit": "8772734ae27f9897185f9f829c0d9139a4639596",
+        "artifact": "inventory-cost-work-link-fixed-20261128",
+        "total": 1816,
+        "passed": 1816,
         "failed": 0,
         "skipped": 0
       },
       "work": {
-        "freeGiB": 3.8244705200195312,
-        "seconds": 21.2668909,
         "exit": 0,
-        "source_commit": "f35e223a84f388a7a76ee897ecaf07daaff5377f",
-        "artifact": "inventory-cost-host-source-tests-fixed-20261128",
+        "freeGiB": 3.7243576049804688,
+        "seconds": 12.6558205,
+        "source_commit": "c0c95e6a04fbb14c34c26757eec87d5886b74244",
+        "artifact": "source-voucher-native-safety-20261128",
         "total": 195,
         "passed": 195,
         "failed": 0,
@@ -3230,19 +3229,19 @@
       },
       "frontend_tsc": {
         "exit": 0,
-        "seconds": 51.6385215,
-        "freeGiB": 3.663494110107422,
-        "source_commit": "6550a4913029576fb8cd5b816d12d4161e6d24cf",
-        "artifact": "invoice-cogs-work-types-fixed-20261128"
+        "freeGiB": 3.7810211181640625,
+        "seconds": 51.2231341,
+        "source_commit": "ba5b5af29804632492d147e7a957580f4a47fd87",
+        "artifact": "inventory-cost-work-fixture-fixed-20261128"
       },
       "frontend_lint": {
         "exit": 0,
-        "seconds": 0.809243,
-        "freeGiB": 3.627269744873047,
-        "source_commit": "6550a4913029576fb8cd5b816d12d4161e6d24cf",
-        "artifact": "invoice-cogs-work-types-fixed-20261128"
+        "freeGiB": 3.778026580810547,
+        "seconds": 0.2444765,
+        "source_commit": "ba5b5af29804632492d147e7a957580f4a47fd87",
+        "artifact": "inventory-cost-work-fixture-fixed-20261128"
       },
-      "frontend": {
+      "previous_frontend_before_inventory_pairing": {
         "exit": 0,
         "seconds": 117.0059644,
         "freeGiB": 3.606945037841797,
@@ -3253,9 +3252,34 @@
         "passed": 1469,
         "failed": 0,
         "skipped": 0
+      },
+      "changed_frontend_retest": {
+        "exit": 0,
+        "freeGiB": 3.7643890380859375,
+        "seconds": 9.8126541,
+        "source_commit": "ba5b5af29804632492d147e7a957580f4a47fd87",
+        "artifact": "inventory-cost-work-fixture-fixed-20261128",
+        "files": 2,
+        "total": 98,
+        "passed": 98,
+        "failed": 0,
+        "skipped": 0
+      },
+      "frontend_regression_before_fixture_fix": {
+        "freeGiB": 3.7517738342285156,
+        "seconds": 131.5823951,
+        "exit": 1,
+        "source_commit": "ea477c1ecf9c47ea625dd439dc48d4706dec49e0",
+        "artifact": "inventory-cost-work-import-fixed-20261128",
+        "files": 25,
+        "total": 1624,
+        "passed": 1623,
+        "failed": 1,
+        "skipped": 0,
+        "scope": "24 unchanged files passed; the changed succession fixture aliased its two physical claim objects. Corrected fixture affects the two new Work files;98 cases rerun separately, not a claimed whole25-file PASS on the later head."
       }
     },
-    "evidence_scope": "Each phase retains its own exact source SHA; these are distinct artifacts, not a fresh full-CI result at this head. Frontend files are byte-identical to tested6550 at this source. Controlled host compiled all SQL test sources but did not execute SQL tests. API refresh disables project-reference rebuild after Accounting dependencies were rebuilt; the separate full API build is explicitly prior-source.",
+    "evidence_scope": "Every artifact retains its exact source SHA. Current Accounting1647/Host1816/API refresh belong to877; Work195 belongs toc0c95. TSC/lint and two changed frontend files98PASS belong toba5, whose frontend bytes remain unchanged at877. Prior25-file run remains1623PASS/1FAIL and is not reported as later-head fullPASS. Full API prior-source build remains separate. ActualSQL/normalHTTP/browser/fullCI/pins/K3 remain pending.",
     "retained_failures": [
       {
         "source_commit": "8ad468ad6a98affade9f125cc9174efd43e9003c",
@@ -3279,10 +3303,45 @@
         "source_commit": "4ddc779b286bb95d50621a1503433c56816b7ad5",
         "artifact": "inventory-cost-host-cancellation-native-20261128",
         "reason": "Test-source CS8602 and two xUnit2031 errors; explicit nonnull assertion and Assert.Single predicate overload retain/strengthen assertions. Host execution and Work were NOT_RUN in this failed phase."
+      },
+      {
+        "seconds": 58.8664259,
+        "exit": 2,
+        "freeGiB": 3.8491592407226562,
+        "source_commit": "bc2bdd203e65b09b072c176101eda0f7255a685c",
+        "artifact": "inventory-cost-work-paired-20261128",
+        "reason": "Unused test-only type import; import removed. Lint/tests NOT_RUN in this failed phase."
+      },
+      {
+        "freeGiB": 3.7517738342285156,
+        "seconds": 131.5823951,
+        "exit": 1,
+        "source_commit": "ea477c1ecf9c47ea625dd439dc48d4706dec49e0",
+        "artifact": "inventory-cost-work-import-fixed-20261128",
+        "files": 25,
+        "total": 1624,
+        "passed": 1623,
+        "failed": 1,
+        "skipped": 0,
+        "scope": "24 unchanged files passed; the changed succession fixture aliased its two physical claim objects. Corrected fixture affects the two new Work files;98 cases rerun separately, not a claimed whole25-file PASS on the later head.",
+        "reason": "Fixture aliases made a negative mismatch mutation change both sides; independent claim objects plus unchanged-counterpart assertion restore the intended test."
+      },
+      {
+        "exit": 1,
+        "freeGiB": 3.791645050048828,
+        "seconds": 36.260932,
+        "source_commit": "ba5b5af29804632492d147e7a957580f4a47fd87",
+        "artifact": "inventory-cost-work-fixture-fixed-20261128",
+        "total": 1647,
+        "passed": 1643,
+        "failed": 4,
+        "skipped": 0,
+        "reason": "Four old native-screen link expectations remained after purpose pairing; exact canonical purpose links and separate unchanged native-screen assertions corrected. API/Host NOT_RUN in this failed phase."
       }
     ],
-    "sql": "243 unique ordinal-sorted Accounting source names;16 added Fact sources since227 (4 COGS decision-read,4 inventory decision-read including nested succession fence,8 native cancellation safety). All new sources compiled in the terminal controlled Host run. Actual SQL execution NOT_RUN; injected1205 does not establish a natural simultaneous deadlock.",
-    "bounded_source_peers": "Full bounded native54 owner/Host/UI, native55 owner/Host, native56 safety/source tests and publication/integration deltas were read. Two frontend P2 and two Host/test P2 findings were source-closed with followup regressions; actual local results are recorded separately. Some reviewers authored dependency pieces; this is not the two independent exact-head K3 acceptance.",
-    "limits": "41 packages/50 references/64 flow rows retained; verified_runtime_flows=0 and all64 runtime NOT_RUN/semantics NOT_VERIFIED. ActualSQL/normalHTTP/browser/fullCI/pins/two independent K3/business acceptance remain pending. No grants/roles/Critical/provider/secrets/deployment/AI activation. Token telemetry unavailable; measured local phase durations are retained."
+    "sql": "251 unique ordinal-sorted Accounting source names;24 new Fact sources since227 (previous16 plus8 source-voucher native safety). All compiled in controlled Host; actual SQL NOT_RUN. Injected1205 is not natural-deadlock acceptance.",
+    "bounded_source_peers": "Full bounded native54 owner/Host/UI, native55 owner/Host, native56 safety/source tests and publication/integration deltas were read. Two frontend P2 and two Host/test P2 findings were source-closed with followup regressions; actual local results are recorded separately. Some reviewers authored dependency pieces; this is not the two independent exact-head K3 acceptance. Inventory cost core nine-file independent bounded peer found one unsupported matcher, fixed with existing native DOM disabled assertion; root later fixed unused import, aliased fixture and four link assertions without weakening behavior. Publication ten existing test files preserve all other assertions; native five validator bodies/default decoder remain unchanged.",
+    "limits": "41 packages/50 references/64 flow rows retained; verified_runtime_flows=0 and all64 runtime NOT_RUN/semantics NOT_VERIFIED. ActualSQL/normalHTTP/browser/fullCI/pins/two independent K3/business acceptance remain pending. No grants/roles/Critical/provider/secrets/deployment/AI activation. Token telemetry unavailable; measured local phase durations are retained.",
+    "native_source_voucher_safety": "Existing exact owned approval runner and actual scoped audit writer now guard native source voucher approval.23 new unit cases and8 new SQL Fact sources; real module clean-entry composition case included. Source actor remains invoice finalizer; existing native result8/view25 unchanged. Owner read/receipt/Work adapter pending. Actual SQL NOT_RUN."
   }
 }
