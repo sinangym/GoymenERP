@@ -1,6 +1,5 @@
 using GoymenERP.Modules.Purchasing.Domain.Orders;
 using GoymenERP.Modules.Purchasing.Domain.Services;
-using Quantity = GoymenERP.BuildingBlocks.Quantities.Quantity<GoymenERP.Modules.Purchasing.Domain.Quantities.PurchasingQuantityRefusals>;
 
 namespace GoymenERP.Purchasing.UnitTests;
 
