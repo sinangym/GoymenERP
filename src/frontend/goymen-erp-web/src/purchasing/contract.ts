@@ -928,11 +928,16 @@ export function decodePurchaseOrderCancelImpact(value: unknown): PurchaseOrderCa
   return source as unknown as PurchaseOrderCancelImpact
 }
 
+/** Native command-style detail shared by the narrow mixed preview. No read-header coercion or synthetic envelope. */
+export function decodePurchaseOrderCommandDetail(value: unknown): PurchaseOrderDetail | null {
+  return decodeDetailWith(value, decodeSummary)
+}
+
 export function decodePurchaseOrderCommandResponse(value: unknown): PurchaseOrderCommandResponse | null {
   const source = record(value)
   if (source === null || !exact(source, ['detail', 'isReplay', 'originalCorrelationId'])) return null
   // Create/approve answer the legacy detail (no `supplierDisplay`); a read-shaped body is not a command response.
-  const detail = decodeDetailWith(source.detail, decodeSummary)
+  const detail = decodePurchaseOrderCommandDetail(source.detail)
   if (detail === null || typeof source.isReplay !== 'boolean' || !text(source.originalCorrelationId)) return null
   return { detail, isReplay: source.isReplay, originalCorrelationId: source.originalCorrelationId }
 }
