@@ -31,6 +31,6 @@ public sealed class OrganizationCompanyTaxIdWorkDecisionCapabilityTests
         var native = Assert.Single(registry.Registrations, x => x.Declaration.CapabilityId == OrganizationShellCapabilityProvider.CompanyTaxIdCapabilityId).Declaration;
         Assert.Equal("/ayarlar/organizasyon/sirket-vergi-no", native.RoutePath);
         Assert.Equal([ErpPermissions.OrganizationContextRead], native.RequiredPermissions);
-        Assert.Equal(native.RoutePath, OrganizationCompanyTaxIdChangeWorkInboxSourceV1.ScreenPath);
+        Assert.Equal(OrganizationCompanyTaxIdChangeWorkInboxSourceV1.ScreenPath, native.RoutePath);
     }
 }
