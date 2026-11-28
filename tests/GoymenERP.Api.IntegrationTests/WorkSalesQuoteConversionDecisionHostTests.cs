@@ -15,6 +15,22 @@ namespace GoymenERP.Api.IntegrationTests;
 // Real Work host/source/WP3 decorator with a controlled native protocol. Counters below are not SQL/Audit/TX acceptance.
 public sealed class WorkSalesQuoteConversionDecisionHostTests
 {
+    [Theory] [InlineData(true)] [InlineData(false)]
+    public async Task Foreign_floor_private_carrier_is_refused_before_any_native_decision(bool post)
+    {
+        var r = new Rig();
+        r.Source.Change = s => s with { SalesPriceFloorProof = new(Company, Id, "SENTETIK-FLOOR", "1",
+            true, false, false, [], "", "", null, null) };
+        var failure = await Assert.ThrowsAsync<WorkDecisionException>(async () =>
+        {
+            if (post) _ = await r.Decide(Request(true));
+            else _ = await r.Preview();
+        });
+        Assert.Equal(503, failure.Status);
+        Assert.Equal(0, r.Native.Calls);
+        Assert.Equal(0, r.Native.Effects);
+    }
+
     private const string Kind="sales.quote-conversion-request.v1",Key="SENTETIK-quote-work-key",Correlation="SENTETIK-quote-work-original",Reason="  SENTETIK ret  ";
 
     [Theory] [InlineData(true)] [InlineData(false)]
