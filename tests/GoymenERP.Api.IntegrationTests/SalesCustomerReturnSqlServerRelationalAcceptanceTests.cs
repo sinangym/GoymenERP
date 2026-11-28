@@ -30,7 +30,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// recorded return (THROW 51257, forward fix). SAT-D290 (2, 3): a pending return is rejected only by another actor, a draft or pending
 /// one is cancelled, both are terminal on the database too (TR 51255, CK maker-checker) and that migration's Down refuses (THROW 51259). No stock movement and no other module's table is written. SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class SalesCustomerReturnSqlServerRelationalAcceptanceTests
+public sealed partial class SalesCustomerReturnSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;

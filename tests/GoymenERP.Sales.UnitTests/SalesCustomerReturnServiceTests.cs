@@ -613,7 +613,7 @@ public sealed partial class SalesCustomerReturnServiceTests
         }
     }
 
-    private sealed class Store : ISalesCustomerReturnStore
+    private sealed partial class Store : ISalesCustomerReturnStore
     {
         public List<string> Calls { get; } = [];
         public SalesCustomerReturnReplay? Replay { get; set; }
