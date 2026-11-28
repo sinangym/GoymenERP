@@ -56,7 +56,8 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
     // 1.33: Discount uses its native approval authority; price disclosure remains optional.
-    public const string OwnerContractVersion = "1.33";
+    public const string OwnerContractVersion = "1.34";
+    public const string OverDeliveryRequestWorkDecisionCapabilityId = "sales.over-delivery-request.work-decision";
     public const string DiscountWorkDecisionCapabilityId = "sales.discount-exception.work-decision";
     public const string PriceFloorWorkDecisionCapabilityId = "sales.price-floor-exception.work-decision";
     public const string QuoteConversionWorkDecisionCapabilityId = "sales.quote-conversion-request.work-decision";
@@ -307,6 +308,10 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
         return
         [
         // WP8: purpose decision routes require the native command names, with no browse/read grant added.
+        new ShellCapabilityDeclaration(OverDeliveryRequestWorkDecisionCapabilityId,"sales-over-delivery-request-work-decision",
+            "/onaylarim/sales.over-delivery-request.v1/:approvalId","W-SALES-OVER-DELIVERY-REQUEST-01",ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            ShellCapabilityContextRequirement.SingleCompany,ShellCapabilityScopeRequirement.CompanyWide,
+            [SalesPermissionManifestV1.OrdersOverDeliveryApprove],ImplementationAvailable:true),
         new ShellCapabilityDeclaration(DiscountWorkDecisionCapabilityId,"sales-discount-exception-work-decision",
             "/onaylarim/sales.discount-exception.v1/:approvalId","W-SALES-DISCOUNT-01",ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
             ShellCapabilityContextRequirement.SingleCompany,ShellCapabilityScopeRequirement.CompanyWide,

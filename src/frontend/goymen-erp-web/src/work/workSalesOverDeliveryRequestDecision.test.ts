@@ -1,5 +1,5 @@
 import {afterEach,describe,expect,it,vi} from 'vitest'
-import {decodeWorkDecisionPreview,isWorkDecisionRequest,isWorkPackageEffectiveDate,exactNativeClrAmount,sendWorkDecision,workDecisionReasonLimit} from './workDecisionApi'
+import {decodeWorkDecisionPreview,isWorkDecisionRequest,isWorkPackageEffectiveDate,exactNativeClrAmount,sendWorkDecision,workDecisionReasonLimit,WORK_DECISION_KINDS} from './workDecisionApi'
 import {SALES_OVER_DELIVERY_REQUEST_WORK_KIND as kind,decodeWorkSalesOverDeliveryRequestPreview as human, salesOverDeliveryRequestTarget,salesOverDeliveryRequestWorkCommand} from './workSalesOverDeliveryRequestDecision'
 import {salesOverDeliveryRequestFixture as fixture,salesOverDeliveryRequestHuman,salesOverDeliveryRequestId as id} from './salesOverDeliveryRequestDecisionFixture'
 import {COMPANY_A,COMPANY_B,json,problem} from '../settings/testHarness'
@@ -8,6 +8,9 @@ afterEach(()=>vi.unstubAllGlobals())
 const decode=(v:unknown)=>decodeWorkDecisionPreview(v,COMPANY_A,kind,id)
 const record=(v:unknown)=>v as Record<string,unknown>
 describe('numbered over-delivery strict native human/Work transport',()=>{
+ it('publishes exactly one paired purpose beside all existing59 kinds',()=>{
+  expect(WORK_DECISION_KINDS).toHaveLength(60);expect(WORK_DECISION_KINDS.filter(x=>x===kind)).toEqual([kind])
+ })
  it('keeps full5/18/11/8 exact shapes, raw quantity strings and independent request/order versions',()=>{
   const v=fixture(COMPANY_A),before=JSON.stringify(v),d=decode(v);expect(d).not.toBeNull();expect(JSON.stringify(v)).toBe(before)
   const h=d!.salesOverDeliveryRequest!;expect(Object.keys(h)).toHaveLength(5);expect(Object.keys(h.request)).toHaveLength(18);expect(Object.keys(h.order)).toHaveLength(11);expect(Object.keys(h.order.line!)).toHaveLength(8)

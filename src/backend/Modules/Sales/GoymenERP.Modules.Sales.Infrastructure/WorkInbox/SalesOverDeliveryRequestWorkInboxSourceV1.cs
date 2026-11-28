@@ -23,6 +23,7 @@ internal sealed partial class SalesOverDeliveryRequestWorkInboxSourceV1(
     : SalesWorkInboxSourceBaseV1(companyContext, currentUser, authority)
 {
     public const string KindName = "sales.over-delivery-request.v1";
+    public const string WorkDecisionPath = "/onaylarim/sales.over-delivery-request.v1";
     public const string RequestedRule = "sales.over-delivery-requested";
 
     public override string Kind => KindName;
@@ -57,7 +58,7 @@ internal sealed partial class SalesOverDeliveryRequestWorkInboxSourceV1(
                 request.Id,
                 label,
                 request.RequestedAtUtc.ToUniversalTime(),
-                SalesWorkInboxItemsV1.OrderLink(request.OrderId),
+                WorkDecisionPath + "/" + request.Id.ToString("D"),
                 SalesWorkInboxItemsV1.RequireActor(request.RequestedBy),
                 [new WorkApprovalRuleResultV1(RequestedRule, WorkInboxRulesV1.Decimal(ordered), WorkInboxRulesV1.Decimal(total),
                     WorkInboxRulesV1.Decimal(total - ordered), null)],

@@ -47,7 +47,8 @@ public sealed class SalesRequestBasedWorkInboxSourcesV1Tests
         var item = Assert.Single(result.Items!);
         Assert.Equal(("sales.over-delivery-request.v1", SalesPermissionManifestV1.OrdersOverDeliveryApprove),
             (source.Kind, source.ApproverPermission));
-        Assert.Equal(("SO-SNT-0007 #1", $"/satis/siparisler/{Order:D}"), (item.DocumentLabel, item.Link));
+        Assert.Equal(("SO-SNT-0007 #1", $"{SalesOverDeliveryRequestWorkInboxSourceV1.WorkDecisionPath}/{OverDeliveryRequest(1, T0).Id:D}"), (item.DocumentLabel, item.Link));
+        Assert.Equal($"/satis/siparisler/{Order:D}", Assert.Single(item.References).Link);
         Assert.Equal(Maker, item.PreparedBy);
         Assert.True(item.Excludes(Maker));
         Assert.False(item.Excludes(Approver));

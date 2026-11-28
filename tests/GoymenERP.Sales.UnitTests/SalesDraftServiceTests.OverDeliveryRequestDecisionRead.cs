@@ -90,7 +90,7 @@ public sealed partial class SalesDraftServiceTests
         var context = new WorkInboxSourceContextV1(Company, Actor, "SENTETIK", null);
         var snapshot = await reader.ReadDecisionAsync(context, source.Request.Id, default); Assert.NotNull(snapshot);
         Assert.Equal("1", snapshot.SourceVersion); Assert.True(snapshot.Pending); Assert.NotNull(snapshot.SalesOverDeliveryRequestProof);
-        Assert.Equal($"/satis/siparisler/{source.Order.Id:D}", snapshot.Item.Link); Assert.Equal(Shipper, snapshot.Item.PreparedBy);
+        Assert.Equal($"{SalesOverDeliveryRequestWorkInboxSourceV1.WorkDecisionPath}/{source.Request.Id:D}", snapshot.Item.Link); Assert.Equal(Shipper, snapshot.Item.PreparedBy);
         Assert.True(snapshot.Item.Excludes(Shipper)); Assert.False(snapshot.Item.Excludes(Actor));
         Assert.Null(snapshot.Item.Rules[0].Unit); Assert.Single(snapshot.Item.References);
         using var wire = JsonDocument.Parse(JsonSerializer.Serialize(snapshot, SalesDraftJson.Options));

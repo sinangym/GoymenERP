@@ -1,6 +1,5 @@
 import {
   SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY,
-  SALES_OVER_DELIVERY_APPROVE_CAPABILITY,
   SALES_RISK_EXCEPTION_APPROVE_CAPABILITY,
   SALES_WORK_DECISION_CAPABILITY,
 } from '../../sales/capabilities'
@@ -24,5 +23,5 @@ export const SALES_INBOX_KINDS: readonly WorkInboxKind[] = [
   // SAT-D476 / SAT-D475: only a REQUEST waits — the conversion request of an expired quote (decided by the quote's own
   // expired-conversion approval) and the over-delivery request the shipment gate opened (decided on the order screen).
   { kind: 'sales.quote-conversion-request.v1', module: 'sales', capability: SALES_WORK_DECISION_CAPABILITY.quoteConversion },
-  { kind: 'sales.over-delivery-request.v1', module: 'sales', capability: SALES_OVER_DELIVERY_APPROVE_CAPABILITY },
+  { kind: 'sales.over-delivery-request.v1', module: 'sales', capability: SALES_WORK_DECISION_CAPABILITY.overDeliveryRequest },
 ]

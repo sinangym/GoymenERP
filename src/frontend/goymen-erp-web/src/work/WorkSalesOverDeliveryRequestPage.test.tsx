@@ -5,9 +5,7 @@ import {QueryClient} from '@tanstack/react-query'
 import userEvent from '@testing-library/user-event'
 import {AppShell} from '../shell/AppShell'
 import {ShellProvider} from '../shell/ShellProvider'
-import {CapabilityRoute} from '../shell/CapabilityRoute'
 import {workRoutes} from './workRoutes'
-import {WorkDecisionPage} from './WorkDecisionPage'
 import {WORK_DECISION_TEXT as W} from './workDecisionText'
 import {WorkSalesOverDeliveryRequestFacts} from './WorkSalesOverDeliveryRequestFacts'
 import {SALES_OVER_DELIVERY_REQUEST_WORK_TEXT as T} from './workSalesOverDeliveryRequestText'
@@ -18,8 +16,8 @@ const originalActor=IDENTITY.userId
 afterEach(()=>{cleanup();sessionStorage.clear();vi.unstubAllGlobals();vi.restoreAllMocks();Object.assign(IDENTITY,{authenticationSessionBinding:null,userId:originalActor})})
 const ownerPath=`/work/decisions/${kind}/${id}`
 function mount(client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})){
- // Staged leaf fallback only. After paired publication the identical production Work route precedes it.
- const router=createMemoryRouter([{path:'/',element:<AppShell/>,children:[...workRoutes,{path:`onaylarim/${kind}/:approvalId`,element:<CapabilityRoute capability={[cap]}><WorkDecisionPage kind={kind}/></CapabilityRoute>}]}],{initialEntries:[`/onaylarim/${kind}/${id}`]})
+ // Actual paired production route; no legacy or test-only route override.
+ const router=createMemoryRouter([{path:'/',element:<AppShell/>,children:workRoutes}],{initialEntries:[`/onaylarim/${kind}/${id}`]})
  render(<ShellProvider queryClient={client}><RouterProvider router={router}/></ShellProvider>);return client
 }
 function result(approve=true,replayed=false){return json({companyId:COMPANY_A,kind,itemId:id,state:approve?'Approved':'Rejected',replayed,originalCorrelationId:'SENTETIK-original-over'},200,replayed?{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'SENTETIK-original-over'}:undefined)}
