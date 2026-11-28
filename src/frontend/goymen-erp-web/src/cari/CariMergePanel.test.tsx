@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { CariMergePanel } from './CariMergePanel'
+import { MERGE_IMPACT_TEXT as I } from './mergeImpact'
 import { MERGE_REASON_MAX, MERGE_TEXT as T } from './merge'
 import { ShellDispatchContext } from '../shell/shellContext'
 import {
@@ -58,7 +59,16 @@ const view = (over: Record<string, unknown> = {}) => ({
   ...over,
 })
 
-function install(handler: (call: Call) => Response | Promise<Response>) {
+const impact = () => ({ companyId: COMPANY,
+  survivor: { partyId: PARTY, code: 'C-000001', legalName: 'Örnek Ticaret A.Ş.', version: '3', isActive: true, mergedIntoPartyId: null },
+  merged: { ...candidate, isActive: true, mergedIntoPartyId: null },
+  holdingAccounts: [
+    { companyId: COMPANY, accountId: '33333333-3333-3333-3333-333333333333', partyId: PARTY, version: '1', isActive: true },
+    { companyId: COMPANY, accountId: '44444444-4444-4444-4444-444444444444', partyId: DUPLICATE, version: '1', isActive: true },
+  ], changes: { partyId: DUPLICATE, mergedIntoPartyId: PARTY, isActive: false },
+})
+
+function install(handler: (call: Call) => Response | Promise<Response>, preview: (call: Call) => Response | Promise<Response> = () => json(impact())) {
   const calls: Call[] = []
   vi.stubGlobal(
     'fetch',
@@ -70,7 +80,7 @@ function install(handler: (call: Call) => Response | Promise<Response>) {
         body: typeof init?.body === 'string' ? JSON.parse(init.body) : null,
       }
       calls.push(call)
-      return handler(call)
+      return call.url.endsWith('/merge/preview') ? preview(call) : handler(call)
     }),
   )
   return calls
@@ -78,7 +88,7 @@ function install(handler: (call: Call) => Response | Promise<Response>) {
 
 function renderPanel(onChanged: () => void = () => undefined) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, gcTime: 0 } } })
-  render(
+  const rendered = render(
     <QueryClientProvider client={queryClient}>
       <ShellDispatchContext.Provider value={() => undefined}>
         <CariMergePanel
@@ -91,6 +101,7 @@ function renderPanel(onChanged: () => void = () => undefined) {
       </ShellDispatchContext.Provider>
     </QueryClientProvider>,
   )
+  return { ...rendered, queryClient }
 }
 
 const puts = (calls: readonly Call[]) => calls.filter((call) => call.method === 'PUT')
@@ -99,6 +110,7 @@ const reads = (calls: readonly Call[]) => calls.filter((call) => call.method ===
 async function fillAndApprove(user: ReturnType<typeof userEvent.setup>, reason = '  Aynı firma iki kez açılmış.  ') {
   await user.selectOptions(await screen.findByLabelText(T.candidateLabel), DUPLICATE)
   await user.type(screen.getByLabelText(T.reasonLabel), reason)
+  await screen.findByRole('region', { name: I.heading })
   await user.click(screen.getByLabelText(T.confirmLabel))
   await user.click(screen.getByRole('button', { name: T.approve }))
 }
@@ -164,6 +176,7 @@ describe('F-027 / EK-18 #76-#77 Cari duplicate merge', () => {
     expect(await screen.findByRole('alert')).toHaveProperty('textContent', T.candidateRequired)
 
     await user.selectOptions(screen.getByLabelText(T.candidateLabel), DUPLICATE)
+    await screen.findByRole('region', { name: I.heading })
     await user.type(screen.getByLabelText(T.reasonLabel), '   ')
     await user.click(screen.getByRole('button', { name: T.approve }))
     expect(await screen.findByRole('alert')).toHaveProperty('textContent', T.reasonRequired)
@@ -278,4 +291,93 @@ describe('F-027 / EK-18 #76-#77 Cari duplicate merge', () => {
     expect(await screen.findByText(T.loadError)).toBeTruthy()
     expect(screen.queryByLabelText(T.reasonLabel)).toBeNull()
   })
+  it('reads the exact selected pair and shows complete holding accounts and unchanged-history effects before confirmation', async () => {
+    const calls = install(() => json(view()))
+    renderPanel(); const user = userEvent.setup()
+    await user.selectOptions(await screen.findByLabelText(T.candidateLabel), DUPLICATE)
+    const region = await screen.findByRole('region', { name: I.heading })
+    expect(region.textContent).toContain(I.history); expect(region.textContent).toContain(I.effect)
+    for (const row of impact().holdingAccounts) expect(region.textContent).toContain(row.accountId)
+    const request = calls.find(call => call.url.endsWith('/preview'))!
+    expect(request.method).toBe('POST'); expect(request.headers['X-Company-Id']).toBe(COMPANY)
+    expect(request.headers['Idempotency-Key']).toBeUndefined()
+    expect(request.body).toEqual({ mergedPartyId: DUPLICATE, expectedVersion: '3', mergedPartyExpectedVersion: '5' })
+    expect(puts(calls)).toHaveLength(0)
+  })
+  it.each([403,409,503,204])('blocks NEW confirmation on preview HTTP %s, without treating it as an empty impact', async status => {
+    const calls = install(() => json(view()), () => status === 204 ? noContent() : json({}, status))
+    renderPanel(); const user = userEvent.setup()
+    await user.selectOptions(await screen.findByLabelText(T.candidateLabel), DUPLICATE)
+    await screen.findByText(I.unavailable)
+    expect((screen.getByLabelText(T.confirmLabel) as HTMLInputElement).disabled).toBe(true)
+    await user.type(screen.getByLabelText(T.reasonLabel), 'Mükerrer kayıt')
+    await user.click(screen.getByRole('button', { name: T.approve }))
+    expect(puts(calls)).toHaveLength(0)
+    if (status === 403) expect(authBoundary.report).toHaveBeenCalledWith(403, authBoundary.snapshot)
+  })
+  it.each(['foreign-company','stale-version','partial'])('refuses %s preview rather than allowing confirmation', async failure => {
+    const calls = install(() => json(view()), () => {
+      const body = impact()
+      return json(failure === 'foreign-company' ? { ...body, companyId: DUPLICATE }
+        : failure === 'stale-version' ? { ...body, merged: { ...body.merged, version: '6' } }
+          : { ...body, holdingAccounts: [] })
+    })
+    renderPanel(); const user = userEvent.setup()
+    await user.selectOptions(await screen.findByLabelText(T.candidateLabel), DUPLICATE)
+    await screen.findByText(I.unavailable)
+    expect((screen.getByLabelText(T.confirmLabel) as HTMLInputElement).disabled).toBe(true)
+    expect(puts(calls)).toHaveLength(0)
+  })
+  it('hides late/cached current preview and does not reread it to retry a frozen unknown PUT', async () => {
+    let attempts = 0
+    const calls = install(call => {
+      if (call.method !== 'PUT') return json(view({ candidates: attempts > 1 ? [] : [candidate] }))
+      attempts++; if (attempts === 1) throw new TypeError('lost reply')
+      return noContent()
+    })
+    renderPanel(); const user = userEvent.setup(); await fillAndApprove(user)
+    await screen.findByText(T.unknownOutcome)
+    expect(screen.queryByRole('region', { name: I.heading })).toBeNull()
+    const previewsBeforeRetry = calls.filter(call => call.url.endsWith('/preview')).length
+    await user.click(screen.getByRole('button', { name: T.retrySame }))
+    await screen.findByText(T.approved)
+    expect(calls.filter(call => call.url.endsWith('/preview'))).toHaveLength(previewsBeforeRetry)
+    expect(puts(calls)).toHaveLength(2)
+    expect(puts(calls)[1].body).toEqual(puts(calls)[0].body)
+    expect(puts(calls)[1].headers['Idempotency-Key']).toBe(puts(calls)[0].headers['Idempotency-Key'])
+  })
+
+  it('hides a cached current native response received after the original command became unknown', async () => {
+    const calls = install(call => {
+      if (call.method === 'PUT') throw new TypeError('lost response')
+      return json(view())
+    })
+    const { queryClient } = renderPanel(); const user = userEvent.setup(); await fillAndApprove(user)
+    await screen.findByText(T.unknownOutcome)
+    // A disabled query can still retain or receive cached data. It must not replace the attempted pair.
+    await act(async () => {
+      queryClient.setQueryData(['ns-test', 0, 'counterparty-party-merge', PARTY, COMPANY], { type: 'ok', data: view({ version: '999', candidates: [] }) })
+      queryClient.setQueryData(['ns-test', 0, 'counterparty-merge-impact', COMPANY, PARTY, '3', DUPLICATE, '5'], { type: 'ok', data: { ...impact(), merged: { ...impact().merged, legalName: 'SONRAKI CARİ' } } })
+    })
+    expect(screen.queryByRole('region', { name: I.heading })).toBeNull()
+    expect(screen.queryByText('SONRAKI CARİ')).toBeNull()
+    expect(screen.getByRole('button', { name: T.retrySame })).toBeTruthy()
+    expect(puts(calls)[0].body).toMatchObject({ expectedVersion: '3', mergedPartyExpectedVersion: '5' })
+  })
+
+  it('clears selected impact across company/session namespaces and does not reuse an old confirmation', async () => {
+    const calls = install(() => json(view()))
+    const { rerender, queryClient } = renderPanel(); const user = userEvent.setup()
+    await user.selectOptions(await screen.findByLabelText(T.candidateLabel), DUPLICATE)
+    await screen.findByRole('region', { name: I.heading })
+    await user.click(screen.getByLabelText(T.confirmLabel))
+    rerender(<QueryClientProvider client={queryClient}><ShellDispatchContext.Provider value={() => undefined}>
+      <CariMergePanel partyId={PARTY} companyId={DUPLICATE} namespace="different-company-session" entryGeneration={2} contractContext={null} />
+    </ShellDispatchContext.Provider></QueryClientProvider>)
+    expect(screen.queryByRole('region', { name: I.heading })).toBeNull()
+    await screen.findByText(T.loadError)
+    expect(screen.queryByLabelText(T.confirmLabel)).toBeNull()
+    expect(puts(calls)).toHaveLength(0)
+  })
+
 })

@@ -463,6 +463,7 @@ function CariDetail({ namespace }: { readonly namespace: string | null }) {
             unmerge). Its own read, bound to the selected company. */}
         {namespace !== null && activeCompanyId !== null ? (
           <CariMergePanel
+            entryGeneration={entryGeneration}
             partyId={detail.id}
             companyId={activeCompanyId}
             namespace={namespace}

@@ -13,6 +13,7 @@
 import { API_BASE, contractRequestHeader } from './clientContract'
 import { putVersionedCommand, type CommandContext, type CommandOutcome, type ReplayableFailures } from './commandApi'
 import { MERGE_PROBLEM_CODE, decodeMergeView, mergePath, mergeProblemCodeOf, type MergeView } from './merge'
+import { decodeMergeImpact, type MergeImpact, type MergeImpactSelection } from './mergeImpact'
 import { isLosslessVersion } from './wireGuards'
 
 const DEV_USER = (import.meta.env.VITE_DEV_USER as string | undefined) ?? 'company-a-user'
@@ -107,4 +108,28 @@ export function approveMerge(
     signal,
     MERGE_REPLAYABLE,
   )
+}
+
+export type MergeImpactOutcome = Exclude<MergeReadOutcome, { readonly type: 'ok' }> | { readonly type: 'ok'; readonly data: MergeImpact }
+/** Read-only selected-pair preflight, not an idempotent mutation or an atomic native PUT precondition. */
+export async function fetchMergeImpact(selection: MergeImpactSelection, signal?: AbortSignal): Promise<MergeImpactOutcome> {
+  if (signal?.aborted) return { type: 'aborted' }
+  try {
+    const response = await fetch(`${API_BASE}${mergePath(selection.partyId)}/preview`, {
+      method: 'POST', cache: 'no-store', signal,
+      headers: { ...devHeaders(), ...contractRequestHeader(), 'X-Company-Id': selection.companyId, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mergedPartyId: selection.mergedPartyId, expectedVersion: selection.expectedVersion, mergedPartyExpectedVersion: selection.mergedPartyExpectedVersion }),
+    })
+    let body: unknown = null
+    try { body = await response.json() } catch { /* No partial preview is released. */ }
+    if (signal?.aborted) return { type: 'aborted' }
+    if (response.status !== 200) return { type: 'http', status: response.status, code: null }
+    const data = decodeMergeImpact(body, selection)
+    return data === null ? { type: 'malformed' } : { type: 'ok', data }
+  } catch (error) {
+    if (signal?.aborted) return { type: 'aborted' }
+    if (!navigator.onLine) return { type: 'offline' }
+    if (error instanceof TypeError) return { type: 'network-error' }
+    throw error
+  }
 }

@@ -17,8 +17,9 @@
 import { useCallback, useId, useMemo, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { ContractContext } from './clientContract'
-import { MERGE_REASON_MAX, MERGE_TEXT as T, checkMergeReason } from './merge'
-import { approveMerge, fetchMerge } from './mergeApi'
+import { MERGE_REASON_MAX, MERGE_TEXT as T, checkMergeReason, type MergeView } from './merge'
+import { approveMerge, fetchMerge, fetchMergeImpact } from './mergeApi'
+import { MERGE_IMPACT_TEXT as I, type MergeImpact } from './mergeImpact'
 import { useMergeCommand } from './useMergeCommand'
 import { useAuthBoundary } from '../shell/useAuthBoundary'
 import styles from './CariTradeName.module.css'
@@ -26,13 +27,18 @@ import styles from './CariTradeName.module.css'
 interface Props {
   readonly partyId: string
   readonly companyId: string
+  readonly entryGeneration?: number
   readonly namespace: string
   readonly contractContext: ContractContext | null
   /** Called after an applied merge so the card's own read (which shows the party state) refreshes. */
   readonly onChanged?: () => void
 }
 
-export function CariMergePanel({ partyId, companyId, namespace, contractContext, onChanged }: Props) {
+export function CariMergePanel(props: Props) {
+  return <MergePanel key={`${props.namespace}:${props.companyId}:${props.partyId}`} {...props} />
+}
+
+function MergePanel({ partyId, companyId, namespace, contractContext, onChanged, entryGeneration = 0 }: Props) {
   const queryClient = useQueryClient()
   const boundary = useAuthBoundary()
   const candidateId = useId()
@@ -40,14 +46,30 @@ export function CariMergePanel({ partyId, companyId, namespace, contractContext,
   const hintId = useId()
   const errorId = useId()
   const confirmId = useId()
-  const queryKey = useMemo(() => [namespace, 'counterparty-party-merge', partyId, companyId], [
+  const queryKey = useMemo(() => [namespace, entryGeneration, 'counterparty-party-merge', partyId, companyId], [
     namespace,
+    entryGeneration,
     partyId,
     companyId,
   ])
 
+  const refresh = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey })
+    onChanged?.()
+  }, [onChanged, queryClient, queryKey])
+  const command = useMergeCommand(companyId, contractContext, `cari.party-merge:${partyId}`, refresh)
+  const [selected, setSelected] = useState('')
+  const [reason, setReason] = useState('')
+  const [confirmed, setConfirmed] = useState(false)
+  const [confirmedImpact, setConfirmedImpact] = useState<MergeImpact | null>(null)
+  const [commandView, setCommandView] = useState<MergeView | null>(null)
+  const [fieldError, setFieldError] = useState<string | null>(null)
+
+  const locked = command.busy || command.unresolved
+
   const read = useQuery({
     queryKey,
+    enabled: !locked,
     queryFn: async ({ signal }) => {
       const security = boundary.capture()
       const outcome = await fetchMerge(partyId, companyId, signal)
@@ -58,17 +80,26 @@ export function CariMergePanel({ partyId, companyId, namespace, contractContext,
     },
   })
 
-  const refresh = useCallback(() => {
-    void queryClient.invalidateQueries({ queryKey })
-    onChanged?.()
-  }, [onChanged, queryClient, queryKey])
-  const command = useMergeCommand(companyId, contractContext, `cari.party-merge:${partyId}`, refresh)
-  const [selected, setSelected] = useState('')
-  const [reason, setReason] = useState('')
-  const [confirmed, setConfirmed] = useState(false)
-  const [fieldError, setFieldError] = useState<string | null>(null)
 
-  if (read.isPending) {
+  const nativeView = read.data?.type === 'ok' ? read.data.data : null
+  const selectedCandidate = nativeView?.candidates.find(item => item.partyId === selected) ?? null
+  const impactQuery = useQuery({
+    queryKey: [namespace, entryGeneration, 'counterparty-merge-impact', companyId, partyId, nativeView?.version, selectedCandidate?.partyId, selectedCandidate?.version],
+    enabled: !locked && nativeView?.viewer.canApproveMerge === true && selectedCandidate !== null,
+    retry: false,
+    queryFn: async ({ signal }) => {
+      if (nativeView === null || selectedCandidate === null) throw new Error('Missing selected merge pair')
+      const security = boundary.capture()
+      const answer = await fetchMergeImpact({ companyId, partyId, mergedPartyId: selectedCandidate.partyId,
+        expectedVersion: nativeView.version, mergedPartyExpectedVersion: selectedCandidate.version }, signal)
+      if (answer.type === 'http' && (answer.status === 401 || answer.status === 403)) boundary.report(answer.status, security)
+      return answer
+    },
+  })
+  const impact = !locked && !read.isFetching && !impactQuery.isFetching && selectedCandidate !== null && impactQuery.data?.type === 'ok'
+    ? impactQuery.data.data : null
+
+  if (read.isPending && !(locked && commandView !== null)) {
     return (
       <div className={styles.panel} data-testid="cari-party-merge" data-state="loading">
         <h3 className={styles.title}>{T.heading}</h3>
@@ -79,7 +110,7 @@ export function CariMergePanel({ partyId, companyId, namespace, contractContext,
     )
   }
 
-  const outcome = read.data
+  const outcome = locked && commandView !== null ? { type: 'ok' as const, data: commandView } : read.data
   if (outcome === undefined || outcome.type !== 'ok') {
     const forbidden = outcome?.type === 'http' && outcome.status === 403
     const notFound = outcome?.type === 'http' && outcome.status === 404
@@ -143,7 +174,6 @@ export function CariMergePanel({ partyId, companyId, namespace, contractContext,
 
   // A selection that is no longer offered (the list was read again) is not sent.
   const candidate = view.candidates.find((item) => item.partyId === selected) ?? null
-  const locked = command.busy || command.unresolved
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
@@ -157,7 +187,11 @@ export function CariMergePanel({ partyId, companyId, namespace, contractContext,
       setFieldError(check.message)
       return
     }
-    if (!confirmed) {
+    if (impact === null) {
+      setFieldError(I.unavailable)
+      return
+    }
+    if (!confirmed || confirmedImpact !== impact) {
       setFieldError(T.confirmRequired)
       return
     }
@@ -167,6 +201,7 @@ export function CariMergePanel({ partyId, companyId, namespace, contractContext,
       mergedPartyExpectedVersion: candidate.version,
       reason: check.value,
     }
+    setCommandView(view)
     const ok = await command.run(
       `approve:${partyId}:${candidate.partyId}`,
       (context) => approveMerge(context, partyId, view.version, approval),
@@ -192,6 +227,8 @@ export function CariMergePanel({ partyId, companyId, namespace, contractContext,
             disabled={locked}
             onChange={(event) => {
               setSelected(event.target.value)
+              setConfirmed(false)
+              setConfirmedImpact(null)
               setFieldError(null)
             }}
           >
@@ -202,6 +239,16 @@ export function CariMergePanel({ partyId, companyId, namespace, contractContext,
               </option>
             ))}
           </select>
+          {locked ? <p role="status">{I.retained}</p> : selectedCandidate === null ? <p>{I.select}</p>
+            : impact === null ? <div><p role={impactQuery.isFetching ? 'status' : 'alert'}>{impactQuery.isFetching ? I.loading : I.unavailable}</p>
+              <button type="button" className={styles.button} disabled={impactQuery.isFetching} onClick={() => { setConfirmed(false); void impactQuery.refetch() }}>{I.retry}</button></div>
+            : <section aria-label={I.heading}>
+              <h4>{I.heading}</h4><dl className={styles.facts}><dt>{I.survivor}</dt><dd>{impact.survivor.code} — {impact.survivor.legalName}</dd>
+                <dt>{I.merged}</dt><dd>{impact.merged.code} — {impact.merged.legalName}</dd></dl>
+              <p>{I.effect}</p><p>{I.history}</p>
+              <table><caption>{I.accounts}</caption><thead><tr><th scope="col">{I.company}</th><th scope="col">{I.account}</th><th scope="col">{I.party}</th><th scope="col">{I.state}</th></tr></thead>
+                <tbody>{impact.holdingAccounts.map(account => <tr key={account.accountId}><td>{account.companyId}</td><td>{account.accountId}</td><td>{account.partyId.toLowerCase() === impact.survivor.partyId.toLowerCase() ? impact.survivor.code : impact.merged.code}</td><td>{account.isActive ? I.active : I.passive}</td></tr>)}</tbody></table>
+            </section>}
           <label htmlFor={reasonId}>{T.reasonLabel}</label>
           <textarea
             id={reasonId}
@@ -227,10 +274,11 @@ export function CariMergePanel({ partyId, companyId, namespace, contractContext,
             <input
               id={confirmId}
               type="checkbox"
-              checked={confirmed}
-              disabled={locked}
+              checked={confirmed && confirmedImpact === impact && impact !== null}
+              disabled={locked || impact === null}
               onChange={(event) => {
                 setConfirmed(event.target.checked)
+                setConfirmedImpact(event.target.checked ? impact : null)
                 setFieldError(null)
               }}
             />{' '}
