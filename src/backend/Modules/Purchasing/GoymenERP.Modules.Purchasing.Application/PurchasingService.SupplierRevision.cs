@@ -11,6 +11,7 @@ public sealed partial class PurchasingService : IPurchasingSupplierRevisionServi
         PurchasingCommandMetadata metadata, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+        if (request.MixedServices is not null) return ReviseMixedSupplierAsync(orderId, request, metadata, cancellationToken);
         return SupplierRevisionCommandAsync(orderId, PurchasingCommands.OrderSupplierReviseV1, request.ExpectedVersion,
             PurchasingRequestHash.Compute(PurchasingCommands.OrderSupplierReviseV1, orderId, request), metadata,
             request, null, Guid.Empty, cancellationToken);

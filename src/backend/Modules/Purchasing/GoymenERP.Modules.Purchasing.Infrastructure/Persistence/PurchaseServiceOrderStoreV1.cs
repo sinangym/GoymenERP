@@ -117,6 +117,14 @@ public sealed partial class PurchaseServiceOrderStoreV1(PurchasingDbContext data
         if (database.Database.CurrentTransaction is not null || System.Transactions.Transaction.Current is not null
             || database.ChangeTracker.HasChanges() || auditWriter.HasPendingDrafts) throw new InvalidOperationException("Hizmet komutu kendi temiz işlemini gerektirir.");
         var scope = Company();
+        var linkedPrices = command == PurchaseServiceOrderCommandsV1.SetSupplierRevisionPrices;
+        var linkedCommitted = false;
+        if (linkedPrices)
+        {
+            token.ThrowIfCancellationRequested(); await requireStill(token); token.ThrowIfCancellationRequested();
+            if (Company() != scope || database.Database.CurrentTransaction is not null || System.Transactions.Transaction.Current is not null
+                || database.ChangeTracker.HasChanges() || auditWriter.HasPendingDrafts) throw new PurchasingServiceException(503, "service_unavailable");
+        }
         await using var transaction = await database.Database.BeginTransactionAsync(IsolationLevel.Serializable, token);
         try
         {
@@ -129,8 +137,17 @@ public sealed partial class PurchaseServiceOrderStoreV1(PurchasingDbContext data
                     .AnyAsync(x => x.CompanyId == scope && x.ServiceOrderId == orderId, token), requireStill, token);
                 if (bound) throw new PurchasingServiceException(503, "service_unavailable");
             }
-            var before = await ReadAsync(orderId, token);
+            var before = command == PurchaseServiceOrderCommandsV1.SetSupplierRevisionPrices
+                ? await ReadOwnerAsync(orderId, requireStill, token) : await ReadAsync(orderId, token);
             if (before is null && command != PurchaseServiceOrderCommandsV1.Create) return null;
+            if (command == PurchaseServiceOrderCommandsV1.SetSupplierRevisionPrices)
+            {
+                // Read-only reuse of the same parent's original-artifact codec, with the SAME Db/collector/writer/TX.
+                // The child-snapshot locator alone grants nothing; no parent command or second transaction is invoked.
+                var originalOwner = new PurchasingStore(database, company, audit, TimeProvider.System, decisionAuditWriter: auditWriter);
+                await originalOwner.RequireMixedSupplierOriginAsync(before!, requireStill, token);
+                await requireStill(token);
+            }
             PurchaseServiceOrderState? after = null; PurchasingTerminalRefusal? refusal = null;
             try { after = await mutate(before, token); }
             catch (PurchaseServiceOrderException exception) { refusal = new PurchasingTerminalRefusal(409, exception.Code, []); }
@@ -156,30 +173,35 @@ public sealed partial class PurchaseServiceOrderStoreV1(PurchasingDbContext data
                         throw new InvalidOperationException("Numara kaynağı doğrulanamadı.");
                     after = after with { DocumentNumber = reserved.Number };
                 }
-                snapshot = await StageStateAsync(database, scope, orderId, before, after, token, null);
+                snapshot = await StageStateAsync(database, scope, orderId, before, after, token, linkedPrices ? requireStill : null);
             }
             database.ServiceOrderAttempts.Add(new PurchaseServiceOrderAttemptRow() { CompanyId = scope, Command = command, KeyHash = Hash(envelope.IdempotencyKey),
                 RequestHash = hash, ActorId = envelope.ActorId, CorrelationId = envelope.CorrelationId,
                 SnapshotJson = snapshot, RefusalJson = refusal is null ? null : JsonSerializer.Serialize(refusal, Json) });
             await requireStill(token);
+            if (linkedPrices) token.ThrowIfCancellationRequested();
             await database.SaveChangesAsync(token);
+            if (linkedPrices) { token.ThrowIfCancellationRequested(); await requireStill(token); token.ThrowIfCancellationRequested(); }
             audit.Enqueue(new AuditEventDraft(scope, command.Replace(".v1", ".recorded.v1", StringComparison.Ordinal),
                 "Purchasing.ServiceOrder", orderId.ToString("D"), refusal is null ? command : "Refuse", before?.Version,
                 after?.Version ?? before?.Version ?? 0, AuditActorTypes.User, envelope.ActorId, envelope.PermissionCode,
                 envelope.RoleCodes, before is null ? "{}" : JsonSerializer.Serialize(before, Json), snapshot ?? JsonSerializer.Serialize(refusal, Json),
                 reason, null, AuditAiInvolvement.None, null, envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent,
                 envelope.CorrelationId, envelope.CausationId, envelope.IdempotencyKey));
+            if (linkedPrices) { await requireStill(token); token.ThrowIfCancellationRequested(); }
             await auditWriter.WritePendingAsync(transaction.GetDbTransaction(), token);
             await requireStill(token);
+            if (linkedPrices) token.ThrowIfCancellationRequested();
             await transaction.CommitAsync(token);
+            if (linkedPrices) { linkedCommitted = true; token.ThrowIfCancellationRequested(); await requireStill(token); token.ThrowIfCancellationRequested(); }
             return new PurchaseServiceOrderWriteV1(after, refusal, false, envelope.CorrelationId);
         }
         catch (DbUpdateConcurrencyException)
-        { await transaction.RollbackAsync(CancellationToken.None); database.ChangeTracker.Clear(); auditWriter.DiscardPending(); throw new PurchasingServiceException(409, PurchasingProblemCodesV1.ConcurrentChange); }
+        { if (!linkedCommitted) await transaction.RollbackAsync(CancellationToken.None); database.ChangeTracker.Clear(); auditWriter.DiscardPending(); throw new PurchasingServiceException(409, PurchasingProblemCodesV1.ConcurrentChange); }
         catch (DbUpdateException exception) when (exception.InnerException is SqlException { Number: 2601 or 2627 })
-        { await transaction.RollbackAsync(CancellationToken.None); database.ChangeTracker.Clear(); auditWriter.DiscardPending(); throw new PurchasingServiceException(409, PurchasingProblemCodesV1.ConcurrentChange); }
+        { if (!linkedCommitted) await transaction.RollbackAsync(CancellationToken.None); database.ChangeTracker.Clear(); auditWriter.DiscardPending(); throw new PurchasingServiceException(409, PurchasingProblemCodesV1.ConcurrentChange); }
         catch
-        { await transaction.RollbackAsync(CancellationToken.None); database.ChangeTracker.Clear(); auditWriter.DiscardPending(); throw; }
+        { if (!linkedCommitted) await transaction.RollbackAsync(CancellationToken.None); database.ChangeTracker.Clear(); auditWriter.DiscardPending(); throw; }
     }
     public async Task<PurchaseSubcontractOrderAnswerV1> GetAsync(Guid companyId, Guid orderId, CancellationToken token = default)
     {

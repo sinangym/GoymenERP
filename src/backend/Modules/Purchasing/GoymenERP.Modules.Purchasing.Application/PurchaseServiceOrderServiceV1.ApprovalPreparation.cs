@@ -52,12 +52,13 @@ public sealed partial class PurchaseServiceOrderServiceV1
         }
     }
 
-    private async Task<PurchaseServiceOrderState> PrepareApprovalStateAsync(Scope scope, PurchaseServiceOrderState value, CancellationToken ct)
+    private async Task<PurchaseServiceOrderState> PrepareApprovalStateAsync(Scope scope, PurchaseServiceOrderState value, CancellationToken ct,
+        string permission = PurchasingPermissionManifestV1.OrdersApprove)
     {
-        var supplier = await SupplierAsync(scope, value.SupplierPartyId, value.CompanyAccountId, value.Kind, PurchasingPermissionManifestV1.OrdersApprove, ct);
+        var supplier = await SupplierAsync(scope, value.SupplierPartyId, value.CompanyAccountId, value.Kind, permission, ct);
         foreach (var line in value.PriceRevision == 0 ? value.Lines : [])
         {
-            var type = await ReadAsync(scope, PurchasingPermissionManifestV1.OrdersApprove,
+            var type = await ReadAsync(scope, permission,
                 () => referenceLists.GetAsync(scope.Company, SettingsReferenceListKindV1.ServiceType, line.ServiceTypeId, ct), ct);
             if (type.Outcome == SettingsReferenceListLookupOutcomeV1.Unavailable) throw Failure(503);
             if (type.Outcome != SettingsReferenceListLookupOutcomeV1.Found || type.Entry?.Active != true || type.Entry.Id != line.ServiceTypeId)
@@ -66,13 +67,13 @@ public sealed partial class PurchaseServiceOrderServiceV1
         }
         // A price-only revision retains the original approved material identities. A later stock movement
         // cannot invalidate already performed service or require the same label to be physically sent again.
-        if (!await ReadAsync(scope, PurchasingPermissionManifestV1.OrdersApprove,
+        if (!await ReadAsync(scope, permission,
             () => store.HasApprovedPhysicalReferencesAsync(value, ct), ct))
         {
-            await VerifyPhysicalAsync(scope, PurchasingPermissionManifestV1.OrdersApprove, value.BusinessDate, value.Materials, value.ExpectedOutputs, ct);
+            await VerifyPhysicalAsync(scope, permission, value.BusinessDate, value.Materials, value.ExpectedOutputs, ct);
         }
         if (value.Kind == PurchaseServiceOrderKind.OwnMaterialSubcontract)
-            await VerifyTaxSnapshotsAsync(scope, value, ct);
+            await VerifyTaxSnapshotsAsync(scope, value, ct, permission);
         return value with { PartyVersion = supplier.PartyVersion, AccountVersion = supplier.AccountVersion };
     }
 

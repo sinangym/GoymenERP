@@ -27,13 +27,14 @@ public sealed record PurchaseServiceOrderState(Guid CompanyId, Guid OrderId, lon
     DateOnly BusinessDate, string PreparedBy, string? ApprovedBy, DateTimeOffset CreatedAtUtc, DateTimeOffset UpdatedAtUtc,
     PurchaseServiceMoney Money, IReadOnlyList<PurchaseServiceLine> Lines, IReadOnlyList<PurchaseServiceMaterial> Materials,
     IReadOnlyList<PurchaseServiceOutput> ExpectedOutputs, IReadOnlyList<PurchaseServiceAcceptance> Acceptances, string? DocumentNumber = null,
-    int PriceRevision = 0)
+    int PriceRevision = 0,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] PurchaseServiceSupplierRevisionOrigin? SupplierRevisionOrigin = null)
 {
     public bool IsOpen => Status == PurchaseServiceOrderStatus.Approved && Lines.Any(x => x.AcceptedQuantity < x.Quantity);
 }
 
 /// <summary>ALS-D29/D40, API70–72. Commercial service facts only; neither stock nor ownership is mutated here.</summary>
-public static class PurchaseServiceOrder
+public static partial class PurchaseServiceOrder
 {
     public const string VersionConflict = "purchasing_service_order_version_conflict";
     public const string StateConflict = "purchasing_service_order_state_conflict";

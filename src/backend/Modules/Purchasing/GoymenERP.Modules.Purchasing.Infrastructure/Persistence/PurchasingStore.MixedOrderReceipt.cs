@@ -41,7 +41,7 @@ public sealed partial class PurchasingStore
 
     private async Task<PurchaseMixedOrderApprovalStoreAnswerV1> ReadMixedArtifactsAsync(PurchaseAttemptRow attempt, Guid orderId,
         ApprovePurchaseOrderRequest request, string actor, string permission, string key, string hash,
-        Func<CancellationToken, Task>? fence, CancellationToken token)
+        Func<CancellationToken, Task>? fence, CancellationToken token, long ceiling = long.MaxValue)
     {
         var company = RequireResolvedCompany();
         var entity = orderId.ToString("D");
@@ -83,7 +83,18 @@ public sealed partial class PurchasingStore
         var childEvents = await ReadMixedOwnerAsync(() => dbContext.Set<AuditEvent>().AsNoTracking().Where(x => x.CompanyId == company
             && x.EntityType == "Purchasing.ServiceOrder" && childIds.Contains(x.EntityId) && x.IdempotencyKeyHash == key
             && x.EventType == "purchasing.service-order.approve.recorded.v1").Take(childIds.Length + 1).ToArrayAsync(token), fence, token);
-        var receipt = RestoreMixedOrderReceiptCore(attempt, events, revisions, childEvents, orderId, request, actor, permission, key, hash)
+        var nativeRevisions = MixedRequiredField(after!.NativeOrder, "supplierRevisions");
+        PurchaseMixedSupplierRevisionReceiptV1? supplier = null;
+        if (nativeRevisions.GetArrayLength() > 0)
+        {
+            var last = JsonSerializer.Deserialize<GoymenERP.Modules.Purchasing.Domain.Orders.PurchaseSupplierRevision>(nativeRevisions.EnumerateArray().Last(), Json)
+                ?? throw MixedSupplierUnavailable();
+            if (last.OrderVersionAfter >= PurchaseMixedOrderApprovalIntentV1.Version(request.ExpectedVersion) + 1
+                || last.OrderVersionAfter >= ceiling) throw MixedSupplierUnavailable();
+            supplier = await ReadMixedSupplierVersionAsync(orderId, last.OrderVersionAfter, fence, token,
+                Math.Min(ceiling, PurchaseMixedOrderApprovalIntentV1.Version(request.ExpectedVersion) + 1));
+        }
+        var receipt = RestoreMixedOrderReceiptCore(attempt, events, revisions, childEvents, orderId, request, actor, permission, key, hash, supplier)
             ?? throw new PurchasingServiceException(503, "service_unavailable");
         return new(receipt, null, true, attempt.CorrelationId);
     }
@@ -121,7 +132,8 @@ public sealed partial class PurchasingStore
 
     private static PurchaseMixedOrderApprovalReceiptV1? RestoreMixedOrderReceiptCore(PurchaseAttemptRow attempt, IReadOnlyList<AuditEvent> events,
         IReadOnlyList<PurchaseServiceOrderRevisionRow> revisions, IReadOnlyList<AuditEvent> childEvents, Guid orderId,
-        ApprovePurchaseOrderRequest request, string actor, string permission, string key, string hash)
+        ApprovePurchaseOrderRequest request, string actor, string permission, string key, string hash,
+        PurchaseMixedSupplierRevisionReceiptV1? supplier = null)
     {
         try
         {
@@ -181,7 +193,9 @@ public sealed partial class PurchasingStore
                 || original.Visible.Currency is not { } currency || currency.CurrencyId != MixedRequiredField(MixedRequiredField(after.NativeOrder, "currency"), "currencyId").GetGuid()
                 || currency.CurrencyCode != MixedRequiredField(MixedRequiredField(after.NativeOrder, "currency"), "currencyCode").GetString()
                 || currency.Scale != MixedRequiredField(MixedRequiredField(after.NativeOrder, "currency"), "scale").GetInt32()
-                || original.Membership.Any(x => x.SupplierPartyId != header.SupplierPartyId || x.CompanyAccountId != header.CompanyAccountId
+                || original.Membership.Any(x => (supplier is null ? x.SupplierPartyId != header.SupplierPartyId || x.CompanyAccountId != header.CompanyAccountId
+                        : supplier.CompanyId != attempt.CompanyId || supplier.OrderId != orderId || supplier.ResultVersion > before
+                            || supplier.FrozenRequest.SupplierPartyId != header.SupplierPartyId || supplier.CompanyAccountId != header.CompanyAccountId)
                     || x.CurrencyId != MixedRequiredField(MixedRequiredField(after.NativeOrder, "currency"), "currencyId").GetGuid())
                 || !original.Visible.Lines.Select(x => x.LineId).ToHashSet().SetEquals(MixedRequiredField(after.NativeOrder, "lines").EnumerateArray().Select(x => MixedRequiredField(x, "lineId").GetGuid()))) return null;
             foreach (var child in original.Children)
@@ -191,8 +205,10 @@ public sealed partial class PurchasingStore
                 var selected = request.MixedServices.SingleOrDefault(x => x.ServiceOrderId == old.OrderId);
                 var membership = original.Membership.SingleOrDefault(x => x.ServiceOrderId == old.OrderId);
                 if (selected is null || membership is null || old.CompanyId != attempt.CompanyId || membership.CompanyId != old.CompanyId
-                    || membership.PurchaseOrderId != orderId || old.SupplierPartyId != membership.SupplierPartyId
-                    || old.CompanyAccountId != membership.CompanyAccountId || old.Money.CurrencyId != membership.CurrencyId
+                    || membership.PurchaseOrderId != orderId || old.SupplierPartyId != header.SupplierPartyId
+                    || old.CompanyAccountId != header.CompanyAccountId
+                    || (supplier is not null && (old.SupplierRevisionOrigin != new PurchaseServiceSupplierRevisionOrigin(orderId, supplier.ResultVersion, supplier.KeyHash)
+                        || supplier.Children.Count(x => x.Revised.OrderId == old.OrderId && x.Revised.Version <= old.Version) != 1)) || old.Money.CurrencyId != membership.CurrencyId
                     || selected.ExpectedVersion != old.Version.ToString(CultureInfo.InvariantCulture)
                     || selected.LineIds is null || selected.LineIds.Count != old.Lines.Count
                     || selected.LineIds.Distinct().Count() != selected.LineIds.Count

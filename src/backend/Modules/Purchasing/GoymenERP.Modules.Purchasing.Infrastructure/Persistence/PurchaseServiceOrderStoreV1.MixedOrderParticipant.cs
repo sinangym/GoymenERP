@@ -27,6 +27,24 @@ public sealed partial class PurchaseServiceOrderStoreV1
             null, envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent, envelope.CorrelationId.Trim(), envelope.CausationId, envelope.IdempotencyKey));
     }
 
+    internal static async Task StageMixedSupplierRevisionAsync(PurchasingDbContext database, IAuditEventCollector audit,
+        IAuditTransactionWriterV1 auditWriter, PurchasingStore.MixedSupplierRevisionExecution owner, PurchaseServiceOrderState before,
+        PurchaseServiceOrderState after, PurchasingWriteEnvelope envelope, string reason, CancellationToken token)
+    {
+        owner.RequireParticipant(database, audit, auditWriter); PurchaseServiceOrder.Validate(before); PurchaseServiceOrder.Validate(after);
+        if (before.CompanyId != after.CompanyId || before.OrderId != after.OrderId || after.Version != checked(before.Version + 1)
+            || after.Status != PurchaseServiceOrderStatus.Draft || after.ApprovedBy is not null || after.PreparedBy != envelope.ActorId.Trim()
+            || after.Lines.Any(x => x.UnitPrice is not null) || after.SupplierRevisionOrigin is null)
+            throw new InvalidOperationException("Invalid exact child supplier revision.");
+        var snapshot = await StageStateAsync(database, before.CompanyId, before.OrderId, before, after, token, owner.Fence);
+        owner.RequireParticipant(database, audit, auditWriter);
+        audit.Enqueue(new AuditEventDraft(before.CompanyId, PurchasingStore.MixedChildSupplierRevisionEvent, "Purchasing.ServiceOrder",
+            before.OrderId.ToString("D"), PurchasingStore.MixedChildSupplierRevisionCommand, before.Version, after.Version, AuditActorTypes.User,
+            envelope.ActorId.Trim(), envelope.PermissionCode, envelope.RoleCodes, JsonSerializer.Serialize(before, Json), snapshot, reason,
+            null, AuditAiInvolvement.None, null, envelope.SourceChannel, envelope.ClientIpAddress, envelope.UserAgent,
+            envelope.CorrelationId.Trim(), envelope.CausationId, envelope.IdempotencyKey));
+    }
+
     private static async Task<string> StageStateAsync(PurchasingDbContext database, Guid scope, Guid orderId,
         PurchaseServiceOrderState? before, PurchaseServiceOrderState after, CancellationToken token,
         Func<CancellationToken, Task>? fence)

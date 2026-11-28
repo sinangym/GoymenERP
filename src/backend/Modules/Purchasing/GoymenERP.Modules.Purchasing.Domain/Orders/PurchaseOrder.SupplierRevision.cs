@@ -33,6 +33,13 @@ public sealed partial class PurchaseOrder
     {
         RequireVersion(expectedVersion);
         RequireNoServiceApprovalParticipant();
+        ReviseSupplierCore(expectedVersion, supplierPartyId, invoiceHistory, preparedBy, reason, now);
+    }
+
+    private void ReviseSupplierCore(long expectedVersion, Guid supplierPartyId, PurchaseOrderInvoiceHistory invoiceHistory,
+        string preparedBy, string reason, DateTimeOffset now)
+    {
+        RequireVersion(expectedVersion);
         RequireStatus(PurchaseOrderStatus.Approved, SupplierRevisionBlocked, "Yalnız onaylı sipariş için cari revizyonu açılabilir.");
         Identity.Require(supplierPartyId, nameof(supplierPartyId));
         var actor = RequireActor(preparedBy, nameof(preparedBy));

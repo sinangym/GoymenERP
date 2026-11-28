@@ -138,6 +138,7 @@ public sealed partial class PurchaseServiceOrderServiceV1(ICompanyContext compan
     {
         ArgumentNullException.ThrowIfNull(metadata); token.ThrowIfCancellationRequested();
         var scope = await RequireAsync(permission, token);
+        if (command == PurchaseServiceOrderCommandsV1.SetSupplierRevisionPrices) token.ThrowIfCancellationRequested();
         if (id == Guid.Empty || metadata.RequestedAtUtc.Offset != TimeSpan.Zero || string.IsNullOrWhiteSpace(metadata.IdempotencyKey)
             || metadata.IdempotencyKey.Length > 200 || metadata.IdempotencyKey != metadata.IdempotencyKey.Trim()
             || string.IsNullOrWhiteSpace(metadata.CorrelationId) || metadata.CorrelationId.Length > 128) throw Failure(400);
@@ -149,15 +150,19 @@ public sealed partial class PurchaseServiceOrderServiceV1(ICompanyContext compan
             var cleanReason = PurchaseServiceOrder.RequireReason(reason);
             var result = await ReadAsync(scope, permission, () => store.ReplayAsync(command, envelope, hash, token), token);
             var disclosure = await DiscloseAsync(scope, token);
-            if (command == PurchaseServiceOrderCommandsV1.Approve) await StillAsync(scope, permission, token);
+            if (command is PurchaseServiceOrderCommandsV1.Approve or PurchaseServiceOrderCommandsV1.SetSupplierRevisionPrices) await StillAsync(scope, permission, token);
             result ??= await store.WriteAsync(id, command, envelope, hash, cleanReason,
                 (old, ct) => mutate(scope, old, ct), async ct =>
                 {
+                    if (command == PurchaseServiceOrderCommandsV1.SetSupplierRevisionPrices) ct.ThrowIfCancellationRequested();
                     await StillAsync(scope, permission, ct);
                     disclosure = await DiscloseAsync(scope, ct);
+                    if (command == PurchaseServiceOrderCommandsV1.SetSupplierRevisionPrices) ct.ThrowIfCancellationRequested();
                     // Price disclosure is another owner await; approval authority must still be fresh after it.
-                    if (command == PurchaseServiceOrderCommandsV1.Approve) await StillAsync(scope, permission, ct);
+                    if (command is PurchaseServiceOrderCommandsV1.Approve or PurchaseServiceOrderCommandsV1.SetSupplierRevisionPrices) await StillAsync(scope, permission, ct);
+                    if (command == PurchaseServiceOrderCommandsV1.SetSupplierRevisionPrices) ct.ThrowIfCancellationRequested();
                 }, token) ?? throw Failure(404);
+            if (command == PurchaseServiceOrderCommandsV1.SetSupplierRevisionPrices) token.ThrowIfCancellationRequested();
             if (result.Refusal is { } refusal) throw new PurchasingServiceException(refusal.Status, refusal.Code, refusal.Errors,
                 result.IsReplay, result.OriginalCorrelationId);
             return new(View(result.Order ?? throw Failure(503), disclosure), result.IsReplay, result.OriginalCorrelationId);

@@ -79,7 +79,7 @@ public sealed partial class PurchasingStore : IPurchaseMixedOrderApprovalPreview
     }
 
     private async Task<IReadOnlyList<PurchaseServiceOrderState>> ReadCurrentMixedChildrenAsync(StoredPurchaseOrder parent,
-        Func<CancellationToken, Task> fence, CancellationToken token)
+        Func<CancellationToken, Task> fence, CancellationToken token, bool requireDraft = true)
     {
         var ids = parent.Order.ServiceMemberships.Select(x => x.ServiceOrderId).ToArray();
         var records = await ReadMixedOwnerAsync(() => (from header in dbContext.ServiceOrders.AsNoTracking()
@@ -96,7 +96,7 @@ public sealed partial class PurchasingStore : IPurchaseMixedOrderApprovalPreview
                 ?? throw new PurchasingServiceException(503, "service_unavailable");
             PurchaseServiceOrder.Validate(state);
             if (state.CompanyId != parent.Order.CompanyId || state.CompanyId != row.CompanyId || state.OrderId != row.OrderId
-                || state.Version != row.Version || state.Status != PurchaseServiceOrderStatus.Draft
+                || state.Version != row.Version || (requireDraft ? state.Status != PurchaseServiceOrderStatus.Draft : state.Status is not (PurchaseServiceOrderStatus.Draft or PurchaseServiceOrderStatus.Approved))
                 || state.SupplierPartyId != parent.Order.SupplierPartyId || state.CompanyAccountId != parent.CompanyAccountId
                 || state.Money.CurrencyId != parent.Order.Money?.CurrencyId || string.IsNullOrWhiteSpace(state.DocumentNumber))
                 throw new PurchasingServiceException(409, PurchasingProblemCodesV1.VersionConflict);

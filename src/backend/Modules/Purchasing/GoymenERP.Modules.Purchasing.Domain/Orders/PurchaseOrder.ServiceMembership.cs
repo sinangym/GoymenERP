@@ -116,8 +116,12 @@ public sealed partial class PurchaseOrder
                 ?? throw new ArgumentException("Selected service owner is missing.");
             var selection = currentSelections.SingleOrDefault(x => x.ServiceOrderId == membership.ServiceOrderId)
                 ?? throw new ArgumentException("Current service selection is missing.");
-            if (membership.CompanyId != CompanyId || membership.PurchaseOrderId != Id || membership.SupplierPartyId != SupplierPartyId
-                || membership.CompanyAccountId != companyAccountId || Money?.CurrencyId != membership.CurrencyId
+            if (membership.CompanyId != CompanyId || membership.PurchaseOrderId != Id
+                || (SupplierRevision == 0 && (membership.SupplierPartyId != SupplierPartyId || membership.CompanyAccountId != companyAccountId))
+                || (SupplierRevision > 0 && (supplierRevisions[0].PreviousSupplierPartyId != membership.SupplierPartyId
+                    || supplierRevisions[^1].SupplierPartyId != SupplierPartyId
+                    || service.SupplierRevisionOrigin is not { } origin || origin.ParentOrderId != Id
+                    || origin.ParentRevisionVersion != supplierRevisions[^1].OrderVersionAfter)) || Money?.CurrencyId != membership.CurrencyId
                 || service.CompanyId != CompanyId || service.SupplierPartyId != SupplierPartyId
                 || service.CompanyAccountId != companyAccountId || service.Money.CurrencyId != membership.CurrencyId
                 || selection.LineIds is not { Count: > 0 } || selection.LineIds.Any(x => x == Guid.Empty)

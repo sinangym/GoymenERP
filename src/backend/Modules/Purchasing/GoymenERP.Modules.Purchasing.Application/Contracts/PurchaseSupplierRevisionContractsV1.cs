@@ -11,7 +11,11 @@ namespace GoymenERP.Modules.Purchasing.Application.Contracts;
 /// </summary>
 public sealed record RevisePurchaseOrderSupplierRequest(string ExpectedVersion, Guid SupplierPartyId, Guid CompanyAccountId, string Reason,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-    IReadOnlyList<PurchaseFutureAllocationSeenRequest>? SeenAllocations = null);
+    IReadOnlyList<PurchaseFutureAllocationSeenRequest>? SeenAllocations = null)
+{
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<PurchaseMixedOrderApprovalSelectionV1>? MixedServices { get; init; }
+}
 public sealed record SetPurchaseSupplierRevisionPriceRequest(string ExpectedVersion, PurchaseOrderLinePriceRequest Price);
 public sealed record PurchaseSupplierRevisionView(int Revision, string OrderVersionAfter, Guid PreviousSupplierPartyId, Guid SupplierPartyId,
     string PreparedBy, string PreviousApprovedBy, DateTimeOffset PreviousApprovedAtUtc, string Reason, DateTimeOffset RecordedAtUtc);

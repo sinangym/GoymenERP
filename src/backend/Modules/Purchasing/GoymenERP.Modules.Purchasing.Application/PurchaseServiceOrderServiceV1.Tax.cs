@@ -37,10 +37,11 @@ public sealed partial class PurchaseServiceOrderServiceV1
                 return PurchaseServiceOrder.ReviseTax(value, Version(request.ExpectedVersion), request.LineId, tax, scope.Actor, request.Reason, clock.GetUtcNow());
             }, token);
     }
-    private async Task<SubcontractTaxOptionsV1> TaxCatalogAsync(Scope scope, DateOnly on, CancellationToken token)
+    private async Task<SubcontractTaxOptionsV1> TaxCatalogAsync(Scope scope, DateOnly on, CancellationToken token,
+        string permission = PurchasingPermissionManifestV1.OrdersApprove)
     {
         var owner = taxCatalog ?? throw Failure(503);
-        var value = await ReadAsync(scope, PurchasingPermissionManifestV1.OrdersApprove,
+        var value = await ReadAsync(scope, permission,
             () => owner.GetAsync(scope.Company, SubcontractTaxSideV1.Purchasing, on, token), token);
         if (value.CompanyId != scope.Company || value.Side != SubcontractTaxSideV1.Purchasing || value.On != on
             || string.IsNullOrWhiteSpace(value.SourceVersion) || value.VatRates is null || value.WithholdingRatios is null
@@ -62,22 +63,23 @@ public sealed partial class PurchaseServiceOrderServiceV1
             ratio is not null, ratio is null ? null : Decimal(ratio.Percent), ratio?.TaxCode, Version(options.DefaultVersion),
             new(options.SourceVersion, vat.Code, ratio?.Code, actor, PurchaseServiceOrder.RequireReason(reason), now));
     }
-    private async Task VerifyTaxSnapshotsAsync(Scope scope, PurchaseServiceOrderState order, CancellationToken token)
+    private async Task VerifyTaxSnapshotsAsync(Scope scope, PurchaseServiceOrderState order, CancellationToken token,
+        string permission = PurchasingPermissionManifestV1.OrdersApprove)
     {
         foreach (var line in order.Lines)
         {
-            if (await ReadAsync(scope, PurchasingPermissionManifestV1.OrdersApprove,
+            if (await ReadAsync(scope, permission,
                 () => store.HasApprovedTaxSnapshotAsync(order, line.LineId, token), token)) continue;
             if (line.Tax?.Change is { } change)
             {
-                var options = await TaxCatalogAsync(scope, order.BusinessDate, token);
+                var options = await TaxCatalogAsync(scope, order.BusinessDate, token, permission);
                 var current = ListedTax(options, change.VatRateCode, line.Tax.ExemptionCode, change.WithholdingRatioCode,
                     change.ChangedBy, change.Reason, change.ChangedAtUtc);
                 // A separate default revision does not rewrite an explicit historical line choice.
                 if ((current with { SettingsVersion = line.Tax.SettingsVersion }) != line.Tax)
                     throw new PurchaseServiceOrderException(PurchaseServiceOrder.VersionConflict);
             }
-            else if (line.Tax != await TaxAsync(scope, PurchasingPermissionManifestV1.OrdersApprove, token))
+            else if (line.Tax != await TaxAsync(scope, permission, token))
                 throw new PurchaseServiceOrderException(PurchaseServiceOrder.VersionConflict);
         }
     }

@@ -43,6 +43,8 @@ public interface IPurchaseServiceOrderServiceV1
     Task<PurchaseServiceOrderResponseV1> CreateAsync(CreatePurchaseServiceOrderV1 request, PurchasingCommandMetadata metadata, CancellationToken token = default);
     Task<PurchaseServiceOrderResponseV1> ApproveAsync(Guid orderId, ApprovePurchaseServiceOrderV1 request, PurchasingCommandMetadata metadata, CancellationToken token = default);
     Task<PurchaseServiceOrderResponseV1> RevisePricesAsync(Guid orderId, RevisePurchaseServiceOrderPricesV1 request, PurchasingCommandMetadata metadata, CancellationToken token = default);
+    Task<PurchaseServiceOrderResponseV1> SetSupplierRevisionPricesAsync(Guid orderId, RevisePurchaseServiceOrderPricesV1 request,
+        PurchasingCommandMetadata metadata, CancellationToken token = default) => throw new PurchasingServiceException(503, "service_unavailable");
     Task<GoymenERP.Modules.Settings.Application.Contracts.V1.SubcontractTaxOptionsV1> TaxOptionsAsync(Guid orderId, CancellationToken token = default) =>
         throw new PurchasingServiceException(503, "service_unavailable");
     Task<PurchaseServiceOrderResponseV1> ReviseTaxAsync(Guid orderId, RevisePurchaseServiceOrderTaxV1 request, PurchasingCommandMetadata metadata, CancellationToken token = default) =>
@@ -82,6 +84,9 @@ public interface IPurchaseServiceOrderReferenceProofV1
 public sealed record PurchaseServiceOrderWriteV1(PurchaseServiceOrderState? Order, PurchasingTerminalRefusal? Refusal, bool IsReplay, string OriginalCorrelationId);
 public interface IPurchaseServiceOrderStoreV1
 {
+    Task<PurchaseServiceSupplierRevisionFactsV1?> ReadSupplierRevisionFactsAsync(Guid orderId,
+        Func<CancellationToken, Task> fence, CancellationToken token) => Task.FromException<PurchaseServiceSupplierRevisionFactsV1?>(
+            new PurchasingServiceException(503, "service_unavailable"));
     Task<PurchaseServiceOrderState?> ReadAsync(Guid orderId, CancellationToken token);
     Task<PurchaseServiceOrderState?> ReadForApprovalPreparationAsync(Guid orderId,
         Func<CancellationToken, Task> freshFence, CancellationToken token) =>
@@ -101,5 +106,6 @@ public static class PurchaseServiceOrderCommandsV1
     public const string Accept = "purchasing.service-order.accept.v1";
     public const string RevisePrices = "purchasing.service-order.prices-revise.v1";
     public const string ReviseTax = "purchasing.service-order.tax-revise.v1";
-    public static bool IsKnown(string command) => command is Create or Approve or Accept or RevisePrices or ReviseTax;
+    public const string SetSupplierRevisionPrices = "purchasing.service-order.supplier-revision-prices-set.v1";
+    public static bool IsKnown(string command) => command is Create or Approve or Accept or RevisePrices or ReviseTax or SetSupplierRevisionPrices;
 }
