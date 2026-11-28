@@ -372,7 +372,8 @@ function AskResult({ view, companyId }: { readonly view: AskView; readonly compa
           </h3>
           {view.answer.answer !== null ? (
             <><ComposedAnswerView answer={view.answer.answer} />
-            {view.answer.mode !== AI_ASK_MODE.generalChat && view.answer.answer.grounded !== false && view.answer.answer.answerId !== undefined ? <AiFeedbackPanel key={view.answer.answer.answerId} companyId={companyId} answerId={view.answer.answer.answerId}/> : null}</>
+            {(view.answer.mode === AI_ASK_MODE.generalChat || view.answer.answer.grounded !== false) && view.answer.answer.answerId !== undefined
+              ? <AiFeedbackPanel key={view.answer.answer.answerId} companyId={companyId} answerId={view.answer.answer.answerId}/> : null}</>
           ) : (
             <p data-ai-answer="cannot-answer">{view.answer.mode === AI_ASK_MODE.generalChat ? AI_TEXT.generalCannotAnswer : AI_TEXT.cannotAnswer}</p>
           )}

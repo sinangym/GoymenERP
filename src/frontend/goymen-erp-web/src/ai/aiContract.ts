@@ -142,6 +142,8 @@ function exact(value: unknown, keys: readonly string[]): Obj | null {
 }
 
 const isText = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
+const isAnswerId = (value: unknown): value is string => typeof value === 'string' && value.length === 36 && UUID.test(value)
+  && value !== '00000000-0000-0000-0000-000000000000'
 const isDataClass = (value: unknown): value is AiDataClass =>
   typeof value === 'string' && (AI_DATA_CLASSES as readonly string[]).includes(value)
 const isAvailability = (value: unknown): value is AiAvailability =>
@@ -245,8 +247,7 @@ function decodeComposed(value: unknown, released: readonly AiToolResult[]): AiCo
   if (composed === null || !isText(composed.text) || !Array.isArray(composed.citations)) return null
   if (!isText(composed.modelDeployment) || !isText(composed.policyVersion)) return null
   const answerId = composed.answerId
-  if (hasAnswerId && (typeof answerId !== 'string' || answerId.length !== 36 || !UUID.test(answerId)
-    || answerId === '00000000-0000-0000-0000-000000000000')) return null
+  if (hasAnswerId && !isAnswerId(answerId)) return null
   const citations: AiCitation[] = []
   for (const entry of composed.citations as unknown[]) {
     const citation = decodeCitation(entry, released)
@@ -267,11 +268,14 @@ export function decodeAiAskAnswer(value: unknown, mode: AiAskMode = AI_ASK_MODE.
     if (body.outcome === AI_ASK_OUTCOME.cannotAnswer)
       return body.answer === null ? { outcome: AI_ASK_OUTCOME.cannotAnswer, toolResults: [], answer: null, mode: AI_ASK_MODE.generalChat } : null
     if (body.outcome !== AI_ASK_OUTCOME.answered) return null
-    const answer = exact(body.answer, [...COMPOSED_KEYS, 'grounded'])
+    const hasAnswerId = typeof body.answer === 'object' && body.answer !== null && Object.hasOwn(body.answer, 'answerId')
+    const answer = exact(body.answer, [...COMPOSED_KEYS, 'grounded', ...(hasAnswerId ? ['answerId'] : [])])
     if (answer === null || answer.grounded !== false || !isText(answer.text) || !isText(answer.modelDeployment)
-      || !isText(answer.policyVersion) || !Array.isArray(answer.citations) || answer.citations.length !== 0) return null
+      || !isText(answer.policyVersion) || !Array.isArray(answer.citations) || answer.citations.length !== 0
+      || hasAnswerId && !isAnswerId(answer.answerId)) return null
     return { outcome: AI_ASK_OUTCOME.answered, toolResults: [], mode: AI_ASK_MODE.generalChat,
-      answer: { text: answer.text, citations: [], modelDeployment: answer.modelDeployment, policyVersion: answer.policyVersion, grounded: false } }
+      answer: { text: answer.text, citations: [], modelDeployment: answer.modelDeployment, policyVersion: answer.policyVersion, grounded: false,
+        ...(typeof answer.answerId === 'string' ? { answerId: answer.answerId } : {}) } }
   }
   const body = exact(value, ANSWER_KEYS)
   if (body === null || !Array.isArray(body.toolResults)) return null
