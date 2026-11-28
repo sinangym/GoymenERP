@@ -1,0 +1,88 @@
+using System.Text.Json;
+using GoymenERP.BuildingBlocks.Work;
+using GoymenERP.Modules.Sales.Application.Contracts;
+using NativeCustomerReturn = GoymenERP.Modules.Sales.Domain.CustomerReturns.SalesCustomerReturn;
+using GoymenERP.Modules.Sales.Infrastructure.WorkInbox;
+
+namespace GoymenERP.Api.WorkRuntime;
+
+public sealed partial class WorkDecisionHostV1
+{
+    private static bool ValidSalesCustomerReturnRequest(string kind, WorkDecisionRequestV1 r) => kind != SalesCustomerReturn
+        || SalesRequestDecisionBindingV1.TryVersion(r.ExpectedVersion, out var n) && n < long.MaxValue
+            && (r.Approve ? r.Reason is null : r.Reason is null || r.Reason.Trim().Length <= NativeCustomerReturn.MaximumReasonLength)
+            && r.SalesPriceFloor is null && r.SalesDiscount is null && r.SalesQuoteConversion is null && r.IdentityAccessGrant is null && r.InventoryCostCancellation is null
+            && r.PostingAccountMappingSelection is null && r.ApprovedSourceCatalogSelection is null && r.AccountingPeriodReopening is null
+            && r.NormalJournalDraft is null && r.ProductPackageStandard is null && r.LogisticsCustomerReturn is null
+            && r.SupplierReturnCostException is null && r.InventoryTransferOverage is null && r.LogisticsPlanExcess is null
+            && r.InventoryTransferLoss is null && r.ManufacturingPlanReapproval is null;
+
+    private static bool ValidSalesCustomerReturnProof(string kind, WorkApprovalDecisionSnapshotV1 s) => kind != SalesCustomerReturn
+        ? s.SalesCustomerReturnProof is null
+        : s.SalesCustomerReturnProof is { } p && s.CompanyId == p.CompanyId && s.Item.ItemId == p.ReturnId
+            && SalesRequestDecisionBindingV1.TryVersion(s.SourceVersion, out var n) && n == p.SelectedExpectedVersion
+            && s.Pending == (p.State == "PendingApproval")
+            && (p.OriginalDecisionDigest is null ? p.CurrentVersion == n : !s.Pending && p.CurrentVersion > n)
+            && SalesCustomerReturnDecisionBindingV1.MatchesDecisionProof(s.Item, p);
+
+    private async Task SalesCustomerReturnFenceAsync(WorkApprovalDecisionSnapshotV1 s, string actor, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        await RequireDecisionAuthorityAsync(SalesCustomerReturn, SalesPermissionManifestV1.ReturnsApprove, s.CompanyId, actor, token);
+        token.ThrowIfCancellationRequested();
+    }
+
+    private async Task<WorkSalesCustomerReturnDecisionPreviewV1> SalesCustomerReturnHumanPreviewAsync(WorkApprovalDecisionSnapshotV1 s, string actor, CancellationToken token)
+    {
+        // Exactly the command's already configured scoped instance, never a separately resolved raw read owner.
+        if (salesCustomerReturns is not ISalesCustomerReturnDecisionReadV1 reader) throw new WorkDecisionException(503);
+        SalesCustomerReturnDecisionReadResultV1 answer;
+        try { answer = await reader.ReadCustomerReturnDecisionAsync(s.Item.ItemId, Fence, token); }
+        catch (OperationCanceledException) { throw; }
+        catch (UnauthorizedAccessException) { throw new WorkDecisionException(403); }
+        catch { await Fence(token); throw new WorkDecisionException(503); }
+        // The owner performs its final consumer + native mandatory operation/price permission fence before returning.
+        // Do not add another authority await after that native priced snapshot has been frozen.
+        token.ThrowIfCancellationRequested();
+        if (!user.IsAuthenticated || user.UserId != actor || !company.IsResolved || company.CompanyId != s.CompanyId || !user.CanAccessCompany(s.CompanyId))
+            throw new WorkDecisionException(403);
+        if (answer is { State: SalesCustomerReturnDecisionReadStateV1.Denied, Detail: null }) throw new WorkDecisionException(403);
+        if (answer is not { State: SalesCustomerReturnDecisionReadStateV1.Found, Detail: { } detail }
+            || !SalesCustomerReturnDecisionBindingV1.MatchesDecisionSnapshot(s, detail)) throw new WorkDecisionException(503);
+        return WorkSalesCustomerReturnDecisionPreviewV1.FromNative(detail);
+        Task Fence(CancellationToken ct) => SalesCustomerReturnFenceAsync(s, actor, ct);
+    }
+
+    private async Task<WorkDecisionResultV1> DecideSalesCustomerReturnAsync(Guid id, WorkDecisionRequestV1 request, string key,
+        WorkApprovalDecisionSnapshotV1 s, string actor, CancellationToken token)
+    {
+        if (salesCustomerReturns is not ISalesCustomerReturnDecisionReadV1 || s.SalesCustomerReturnProof is null) throw new WorkDecisionException(503);
+        var body = new SalesDraftStateCommandRequest(request.ExpectedVersion, request.Reason);
+        var metadata = new SalesCommandMetadata(key, correlation.CorrelationId, correlation.CausationId, DateTimeOffset.UtcNow);
+        SalesCustomerReturnCommandResult answer;
+        try
+        {
+            // No human GET here: the versioned source chose the exact original return decision N; native replay remains current.
+            answer = request.Approve
+                ? await salesCustomerReturns.ApproveCustomerReturnAsync(id, body, metadata, token)
+                : await salesCustomerReturns.RejectCustomerReturnAsync(id, body, metadata, token);
+            await Fence(token);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (SalesDraftServiceException refusal)
+        { await Fence(token); throw new WorkDecisionException(refusal.Status, refusal.Code, refusal.IsReplay, refusal.OriginalCorrelationId); }
+        catch (UnauthorizedAccessException) { throw new WorkDecisionException(403); }
+        catch (Exception failure) when (failure is InvalidOperationException or JsonException)
+        { await Fence(token); throw new WorkDecisionException(503); }
+        if (answer?.CustomerReturn is null || !SalesCustomerReturnDecisionBindingV1.MatchesOriginalDecisionReceipt(s, answer, body, key, actor, request.Approve)
+            || answer?.OriginalDecisionReceipt is not { } receipt
+            || SalesCustomerReturnDecisionDigestsV1.SourceFactsDigest(s.CompanyId, answer.CustomerReturn) != receipt.SourceFactsDigest
+            || string.IsNullOrWhiteSpace(answer.OriginalCorrelationId)
+            || answer.OriginalCorrelationId != answer.OriginalCorrelationId.Trim() || answer.OriginalCorrelationId.Length > 128
+            || !answer.IsReplay && answer.OriginalCorrelationId != correlation.CorrelationId) throw new WorkDecisionException(503);
+        // The immutable decision is N→N+1. Native replay's CURRENT return DTO may be N+k; never relabel it as original N+1.
+        // A missing/invalid proof after native completion is unknown, never evidence of rollback.
+        return new(s.CompanyId, SalesCustomerReturn, id, receipt.OriginalDecision.State, answer.IsReplay, answer.OriginalCorrelationId);
+        Task Fence(CancellationToken ct) => SalesCustomerReturnFenceAsync(s, actor, ct);
+    }
+}
