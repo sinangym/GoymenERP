@@ -157,7 +157,8 @@ describe('Sales return complete readonly human and actual common Work protocol (
   })
   it('does not infer a purpose route from existing native detail or approval controls', async () => {
     const calls = installFetch({capabilities: ['sales.customer-returns.detail', 'sales.customer-returns.approve'], respond: () => undefined})
-    mount(); await screen.findByText('Sayfa bulunamadı')
+    mount(); await waitFor(() => expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+    expect(screen.queryByRole('region', {name: T.title})).toBeNull()
     expect(calls.filter(c => c.url.includes(ownerPath))).toHaveLength(0)
   })
 })

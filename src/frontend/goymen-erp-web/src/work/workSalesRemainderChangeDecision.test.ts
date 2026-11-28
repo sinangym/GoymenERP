@@ -59,6 +59,9 @@ describe('remainder native quantity-only Work profile',()=>{
   expect((await sendWorkDecision(COMPANY_A,kind,id,{expectedVersion:'6',approve:true,reason:null,delegationId:null},'SENTETIK')).type).toBe('unknown')
  })
  it.each([400,403,404,409,422,503])('preserves native refusal/unknown status%s with no extra read',async status=>{
-  const fetch=vi.fn().mockResolvedValue(problem(status));vi.stubGlobal('fetch',fetch);expect((await sendWorkDecision(COMPANY_A,kind,id,{expectedVersion:'6',approve:true,reason:null,delegationId:null},'SENTETIK')).type).toBe(status===503?'unknown':'refused');expect(fetch).toHaveBeenCalledTimes(1)
+  const reportAuthorizationFailure=vi.fn(),fetch=vi.fn().mockResolvedValue(problem(status));vi.stubGlobal('fetch',fetch);expect((await sendWorkDecision(COMPANY_A,kind,id,{expectedVersion:'6',approve:true,reason:null,delegationId:null},'SENTETIK',reportAuthorizationFailure)).type).toBe(status===403||status===503?'unknown':'refused');expect(fetch).toHaveBeenCalledTimes(1)
+  expect(reportAuthorizationFailure.mock.calls).toEqual(status===403?[[403]]:[])
+  const [url,init]=fetch.mock.calls[0]!;expect(url).toContain(`/work/decisions/${kind}/${id}`);expect(init.headers['Idempotency-Key']).toBe('SENTETIK')
+  expect(JSON.parse(init.body)).toEqual({expectedVersion:'6',approve:true,reason:null,delegationId:null})
  })
 })
