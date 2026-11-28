@@ -16,6 +16,7 @@ export const IDENTITY_INBOX_TEXT: WorkInboxModuleText = {
     role: 'Rol',
   },
   permissions: {
+    'identity.access-grant-request.work-decision': 'Rol erişim talebi kararı',
     'identity.access.approve': 'Rol erişim talebi onayı',
   },
 }

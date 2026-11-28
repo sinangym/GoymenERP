@@ -257,13 +257,14 @@ public sealed class IdentityAccessReadServiceTests
         var all = provider.GetDeclarations();
         var declarations = all.Where(declaration => declaration.ParentCapabilityId is null).ToArray();
 
-        Assert.Equal("1.3", provider.ContractVersion);
+        Assert.Equal("1.4", provider.ContractVersion);
         Assert.Equal(
             [
                 ("identity.users.manage", "/ayarlar/kullanicilar", "SY-01-USERS"),
                 ("identity.assignments.list", "/ayarlar/kullanicilar-ve-yetkiler", "SY-01"),
                 ("identity.roles.detail", "/ayarlar/kullanicilar-ve-yetkiler/roller/:roleId", "SY-02"),
                 ("identity.audit.list", "/ayarlar/denetim-kaydi", "SY-07"),
+                ("identity.access-grant-request.work-decision", "/onaylarim/identity.access-grant-request.v1/:approvalId", "SY-ACCESS-GRANT-WORK-DECISION"),
             ],
             declarations.Select(declaration =>
                 (declaration.CapabilityId, declaration.RoutePath, declaration.ScreenId)));
@@ -273,6 +274,7 @@ public sealed class IdentityAccessReadServiceTests
                 [IdentityPermissionManifestV1.AssignmentsRead],
                 [IdentityPermissionManifestV1.AssignmentsRead],
                 [ErpPermissions.IdentityAuditRead],
+                [IdentityPermissionManifestV1.AccessApprove],
             ],
             declarations.Select(declaration => declaration.RequiredPermissions.ToArray()));
         Assert.Equal(

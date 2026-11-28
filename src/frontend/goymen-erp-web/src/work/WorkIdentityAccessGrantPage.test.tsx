@@ -4,9 +4,8 @@ import {RouterProvider,createMemoryRouter} from 'react-router'
 import userEvent from '@testing-library/user-event'
 import {QueryClient} from '@tanstack/react-query'
 import {AppShell} from '../shell/AppShell'
-import {CapabilityRoute} from '../shell/CapabilityRoute'
+import {workRoutes} from './workRoutes'
 import {ShellProvider} from '../shell/ShellProvider'
-import {WorkDecisionPage} from './WorkDecisionPage'
 import {WORK_DECISION_TEXT as W} from './workDecisionText'
 import {WorkIdentityAccessGrantFacts} from './WorkIdentityAccessGrantFacts'
 import {IDENTITY_ACCESS_GRANT_WORK_TEXT as T} from './workIdentityAccessGrantText'
@@ -15,9 +14,9 @@ import {identityAccessGrantHuman as human,identityAccessGrantFixture as fixture,
 import {COMPANY_A,COMPANY_B,IDENTITY,installFetch,json,problem} from '../settings/testHarness'
 afterEach(()=>{cleanup();sessionStorage.clear();vi.unstubAllGlobals();vi.restoreAllMocks();Object.assign(IDENTITY,{authenticationSessionBinding:null})})
 const path=`/work/decisions/${kind}/${id}`
-// Candidate-only real shell/auth/cap route. Publication is deliberately a separate root-coordinated change.
+// Actual paired Work router, shell/auth/cap gates over synthetic HTTP transport.
 function mount(client=new QueryClient({defaultOptions:{queries:{retry:false,gcTime:0,staleTime:0}}})){
- const router=createMemoryRouter([{path:'/',element:<AppShell/>,children:[{path:`onaylarim/${kind}/:approvalId`,element:<CapabilityRoute capability={[cap]}><WorkDecisionPage kind={kind}/></CapabilityRoute>}]}],{initialEntries:[`/onaylarim/${kind}/${id}`]})
+ const router=createMemoryRouter([{path:'/',element:<AppShell/>,children:workRoutes}],{initialEntries:[`/onaylarim/${kind}/${id}`]})
  render(<ShellProvider queryClient={client}><RouterProvider router={router}/></ShellProvider>);return {client,router}
 }
 const result=(approve:boolean,replayed=false)=>json({companyId:COMPANY_A,kind,itemId:id,state:approve?'Approved':'Rejected',replayed,originalCorrelationId:'original-identity-access'},200,replayed?{'Idempotency-Replayed':'true','Idempotency-Original-Correlation-Id':'original-identity-access'}:undefined)

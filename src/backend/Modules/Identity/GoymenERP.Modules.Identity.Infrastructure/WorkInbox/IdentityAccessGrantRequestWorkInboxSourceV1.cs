@@ -49,6 +49,7 @@ internal sealed partial class IdentityAccessGrantRequestWorkInboxSourceV1(
     internal const string SelectedUserParameter = "kullanici";
 
     /// <summary>The role screen (<c>IDENTITY_ROUTE roleDetail</c>, <c>/ayarlar/kullanicilar-ve-yetkiler/roller/:roleId</c>).</summary>
+    public const string WorkDecisionPath = "/onaylarim/identity.access-grant-request.v1";
     internal const string RoleScreenPath = "/ayarlar/kullanicilar-ve-yetkiler/roller";
 
     public string Module => ModuleName;
@@ -186,7 +187,7 @@ internal sealed partial class IdentityAccessGrantRequestWorkInboxSourceV1(
         // The owner refuses the requester and the target only on a request that needs a second approval (Approve).
         string? preparedBy = row.RequiresSecondApproval ? Text(row.RequestedBy) : null;
         IReadOnlyList<string>? excluded = row.RequiresSecondApproval ? [Text(row.TargetUserId)] : null;
-        item = new WorkInboxItemV1(ModuleName, KindName, row.Id, row.RoleName, row.RequestedAtUtc.ToUniversalTime(), link,
+        item = new WorkInboxItemV1(ModuleName, KindName, row.Id, row.RoleName, row.RequestedAtUtc.ToUniversalTime(), WorkDecisionPath + "/" + Text(row.Id),
             preparedBy, rules, references, excluded);
         return true;
     }

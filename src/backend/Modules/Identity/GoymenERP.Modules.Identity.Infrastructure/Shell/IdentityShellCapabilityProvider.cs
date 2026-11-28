@@ -25,7 +25,7 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Shell;
 public sealed class IdentityShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "IDENTITY";
-    public const string OwnerContractVersion = "1.3";
+    public const string OwnerContractVersion = "1.4";
 
     public const string AccessListCapabilityId = "identity.assignments.list";
     public const string AccessListRouteId = "identity.assignments.list";
@@ -39,6 +39,11 @@ public sealed class IdentityShellCapabilityProvider : IShellCapabilityProvider
     public const string AuditListRouteId = "identity.audit.list";
     public const string AuditListRoutePath = "/ayarlar/denetim-kaydi";
     public const string AuditListScreenId = "SY-07";
+
+    public const string AccessGrantWorkDecisionCapabilityId = "identity.access-grant-request.work-decision";
+    public const string AccessGrantWorkDecisionRouteId = "identity-access-grant-request-work-decision";
+    public const string AccessGrantWorkDecisionRoutePath = "/onaylarim/identity.access-grant-request.v1/:approvalId";
+    public const string AccessGrantWorkDecisionScreenId = "SY-ACCESS-GRANT-WORK-DECISION";
 
     public string Owner => OwnerId;
 
@@ -98,5 +103,9 @@ public sealed class IdentityShellCapabilityProvider : IShellCapabilityProvider
             ShellCapabilityScopeRequirement.CompanyWide,
             [ErpPermissions.IdentityAuditRead],
             ImplementationAvailable: true),
+        new ShellCapabilityDeclaration(
+            AccessGrantWorkDecisionCapabilityId, AccessGrantWorkDecisionRouteId, AccessGrantWorkDecisionRoutePath, AccessGrantWorkDecisionScreenId,
+            ShellCapabilityRoutePrecedence.ParameterizedAfterStatic, ShellCapabilityContextRequirement.SingleCompany,
+            ShellCapabilityScopeRequirement.CompanyWide, [IdentityPermissionManifestV1.AccessApprove], ImplementationAvailable: true),
     ];
 }

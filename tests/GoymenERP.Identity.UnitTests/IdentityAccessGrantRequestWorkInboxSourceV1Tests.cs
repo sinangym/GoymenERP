@@ -50,7 +50,9 @@ public sealed class IdentityAccessGrantRequestWorkInboxSourceV1Tests
         Assert.Equal(("identity", "identity.access-grant-request.v1"), (first.Module, first.Kind));
         Assert.Equal("SENTETIK satın alma müdürü", first.DocumentLabel);
         Assert.Equal(Start, first.WaitingSinceUtc);
-        Assert.Equal("/ayarlar/kullanicilar-ve-yetkiler?kullanici=" + target.ToString("D"), first.Link);
+        Assert.Equal("/onaylarim/identity.access-grant-request.v1/" + older.Id.ToString("D"), first.Link);
+        Assert.Equal("/ayarlar/kullanicilar-ve-yetkiler?kullanici=" + target.ToString("D"), first.References[0].Link);
+        Assert.Equal("/ayarlar/kullanicilar-ve-yetkiler/roller/" + roleId.ToString("D"), first.References[1].Link);
         Assert.True(NativeApprovalQueueRulesV1.IsValidLink(first.Link));
         Assert.Equal(
             [

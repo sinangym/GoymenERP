@@ -807,3 +807,19 @@ it.each(['accounting.journal-reversals.approve','accounting.journals.detail'])('
  await renderAt(`/onaylarim/${kind}/${LEGACY_ID}`);await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
  expect(api.inboxReads()).toHaveLength(0);expect(vi.mocked(globalThis.fetch).mock.calls.some(([url])=>String(url).includes(`/work/decisions/${kind}/`))).toBe(false)
 })
+
+
+it('opens the access grant purpose card while retaining native target-user and role references',async()=>{
+ const kind='identity.access-grant-request.v1',capability='identity.access-grant-request.work-decision',permission='identity.access.approve',link=`/onaylarim/${kind}/${LEGACY_ID}`
+ const targetLink=`/ayarlar/kullanicilar-ve-yetkiler?kullanici=${PAYMENT_ID}`,roleLink=`/ayarlar/kullanicilar-ve-yetkiler/roller/${LIMIT_ID}`
+ const item={...limitItem,module:'identity',kind,itemId:LEGACY_ID,link,awaitingPermission:permission,ruleVersion:RV(kind),explanation:{rules:[{ruleCode:'identity.access-grant-approval-required',threshold:null,actual:null,deviation:null,unit:null}],
+  references:[{role:'target-user',recordId:PAYMENT_ID,label:'SENTETIK hedef',link:targetLink},{role:'role',recordId:LIMIT_ID,label:'SENTETIK rol',link:roleLink}]}}
+ const api=installFetch({granted:[capability],inbox:()=>json(inbox({items:[item],sources:[src('identity',kind,permission,'BusinessDays')]}))})
+ await renderAt('/onaylarim/kuyruk');await screen.findByTestId('work-inbox-item');const card=cardOf(kind);expect(within(card).getByRole('link').getAttribute('href')).toBe(link)
+ await userEvent.setup().click(within(card).getByRole('button',{name:T.explanationToggle}));expect(within(card).getByText('SENTETIK hedef')).toBeTruthy();expect(within(card).getByText('SENTETIK rol')).toBeTruthy()
+ expect(item.explanation.references[0]!.link).toBe(targetLink);expect(item.explanation.references[1]!.link).toBe(roleLink);expect(api.inboxReads()).toHaveLength(1)
+})
+it.each(['identity.access.approve','identity.assignments.list','identity.roles.detail'])('does not read the access grant purpose with native capability alone %s',async capability=>{
+ const kind='identity.access-grant-request.v1',api=installFetch({granted:[capability]});await renderAt(`/onaylarim/${kind}/${LEGACY_ID}`)
+ await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull());expect(api.inboxReads()).toHaveLength(0);expect(vi.mocked(globalThis.fetch).mock.calls.some(([url])=>String(url).includes(`/work/decisions/${kind}/`))).toBe(false)
+})
