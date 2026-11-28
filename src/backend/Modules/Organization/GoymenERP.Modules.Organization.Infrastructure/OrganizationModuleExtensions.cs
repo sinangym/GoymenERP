@@ -57,7 +57,9 @@ public static class OrganizationModuleExtensions
         services.AddScoped<IOrganizationMasterDataService, OrganizationMasterDataService>();
         // B-15 calendar master: the same command protocol and helpers as the master edit (one partial class).
         services.AddScoped<IOrganizationWorkCenterCalendarService, OrganizationMasterDataService>();
-        services.AddScoped<IOrganizationCompanyTaxIdService, OrganizationMasterDataService>();
+        services.AddScoped<IOrganizationCompanyTaxIdService>(sp =>
+            ((OrganizationMasterDataService)sp.GetRequiredService<IOrganizationMasterDataService>())
+                .WithCompanyTaxIdApprovalSafety(sp.GetService<GoymenERP.Modules.Audit.Application.Contracts.IAuditTransactionWriterV1>()));
         services.TryAddScoped<IOrganizationLocationOperatorEligibilityPortV1, UnavailableOrganizationLocationOperatorEligibilityPortV1>();
         services.AddScoped<IOrganizationTransferDestinationSourceV1, OrganizationTransferDestinationSourceV1>();
         // The module read for other modules' commands: company-scoped, no user permission gate.
