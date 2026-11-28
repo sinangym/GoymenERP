@@ -297,7 +297,7 @@ public sealed partial class SalesOrderOverDeliveryApprovalSqlServerRelationalAcc
     private static Task<int> OverRequestAuditCount(Run run, Guid id) => run.ScalarAsync<int>(
         "SELECT COUNT(*) FROM audit.AuditEvents WHERE EventType IN (N'sales.order.over-delivery-request-approved.v1',N'sales.order.over-delivery-request-rejected.v1',N'sales.order-draft.over-delivery-approved.v1') AND (EntityId=@text OR EntityId IN (SELECT CONVERT(nvarchar(36),Id) FROM sales.ApprovalRequests WHERE SubjectId=@id))", ("@text", id.ToString("D")), ("@id", id));
     private static void AssertOverRequestClean(OverRequestScopeState safe)
-    { Assert.Empty(safe.Db.ChangeTracker.Entries().Where(x => x.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)); Assert.False(safe.Writer.HasPendingDrafts); Assert.Null(safe.Db.Database.CurrentTransaction); }
+    { Assert.DoesNotContain(safe.Db.ChangeTracker.Entries(), x => x.State is EntityState.Added or EntityState.Modified or EntityState.Deleted); Assert.False(safe.Writer.HasPendingDrafts); Assert.Null(safe.Db.Database.CurrentTransaction); }
 
     private static OverRequestScopeState OverRequestScope(Run run, params IInterceptor[] interceptors)
     {
