@@ -71,7 +71,8 @@
         "source_commit": "ef0b449bd12a7733670925e526ede2461f035067",
         "artifact": "period-page-user-retry-recovery-20261128/frontend",
         "result": "449/449 passed;failed0/pending0;63.0556223s. Whole WorkDecisionPage cohort after user-event retry and early frozen POST/body/key assertions; no production retry logic or timeout changed. Previous1158-case failure retained, not relabelled PASS; no full1158/full frontend rerun."
-      }
+      },
+      "source_status_reconciliation": "MIXED-MIN and QUICK-CREATE advanced to SOURCE_IMPLEMENTED_LOCAL after bounded remaining-gap review;17 source-partial packages remain. No integrated/completed claim or canonical backlog change."
     }
   },
   "packages": [
@@ -316,7 +317,7 @@
       "backlog_parent": "W1-CARI",
       "title": "İşlemden ayrılmadan cari oluşturma/talep",
       "group": "FIRST_USE",
-      "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
+      "status": "SOURCE_IMPLEMENTED_LOCAL",
       "priority": "P0",
       "risk": "K3",
       "scope": "Mevcut arama ve CreateAsync akışını alış/satış formuna bağla; yetkisiz kullanıcı yalnız talep/taslak hazırlar. Yeni Party modeli açma.",
@@ -369,7 +370,7 @@
       ],
       "migration_owner": "Yok; sözleşme değişirse yeniden sınıflandır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Finish incoming-document/independent receipt entry contracts and actual API/browser/SQL/train acceptance within the same package. Creation-need API/UI source and scoped local66-case verification are recorded; reuse them without rebuilding.",
+      "next_action": "Complete actual native SQL/normal-host HTTP/browser and aggregate train acceptance of existing delivered sources. Do not rebuild source connections; bounded closure evidence is in execution.current_source_closure.",
       "planned_owner": "Claude ekran; Codex mevcut owner sözleşmesi",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -435,8 +436,8 @@
           "Native create/account, EnterTaxIdentity, initial identity revision, audit writer and immutable receipt; optional tax composes these, without a second create service."
         ],
         "remaining": [
-          "Incoming-document/independent receipt entry and foreign identity/duplicate business acceptance.",
-          "Actual SQL/normal HTTP/browser/fullCI/independent review; recipient admission remains pre/post rather than atomic with Work task commit."
+          "Actual native SQL and normal-host HTTP/browser acceptance; company/permission/session and original-key recovery.",
+          "Aggregate pins/fullCI/two independent exact-head K3/business acceptance."
         ],
         "behavior": "Unknown create attempt is preserved on close/reopen with the same key/body; parent submit is blocked while unresolved. Scope change aborts late eligibility reads. New business-party Customer/Supplier role defaults are visible/editable; no Identity role/grant is assigned. Optional initial VKN/TCKN uses the existing native owner probe and one atomic command. Possibly-committed403 retains original key/body only in ephemeral same actor/company/session/origin memory; current route grant and fresh acknowledged owner GET are required before explicit retry. Atomic abandoned remains frozen; no new key or raw browser storage/log/URL.",
         "browser": "NOT_RUN",
@@ -461,7 +462,18 @@
           },
           "limits": "Real browser/normal HTTP/SQL/full CI/independent K3/business acceptance pending. Original fixture failures retained, no same-head579 sum."
         },
-        "current_checkpoint_ref": "coordination.partial_package_closure_checkpoint.quick_creation_need_paired"
+        "current_checkpoint_ref": "coordination.partial_package_closure_checkpoint.quick_creation_need_paired",
+        "current_source_closure": {
+          "source_commit": "9b3ac0d199c5e4d018438085a9b3c4c364778d3f",
+          "scope": "BOUNDED_REMAINING_GAP_CHECK_NOT_FULL_DOMAIN_AUDIT",
+          "result": "Existing five entry points verified: SalesDraftCreatePage, PurchaseOrderCreatePage, ManualBankPaymentStartPage, InvoiceImportAdmissionPanel and ReceiptPages. Incoming Supplier/exact native account contexts already bound; role0 receipt support unchanged. Assign-only need API/UI and server-session recovery delivered. Remaining actual-owner foreign identity/duplicate/selection business acceptance and SQL/HTTP/browser/train gates.",
+          "integrated_acceptance": false,
+          "completed": false
+        },
+        "remaining_before_source_closure": [
+          "Incoming-document/independent receipt entry and foreign identity/duplicate business acceptance.",
+          "Actual SQL/normal HTTP/browser/fullCI/independent review; recipient admission remains pre/post rather than atomic with Work task commit."
+        ]
       }
     },
     {
@@ -663,7 +675,7 @@
       "backlog_parent": "W2-SATINALMA",
       "title": "Mal/hizmet/gider karma alışın asgari sözleşmesi",
       "group": "FIRST_USE",
-      "status": "SOURCE_PARTIALLY_IMPLEMENTED_LOCAL",
+      "status": "SOURCE_IMPLEMENTED_LOCAL",
       "priority": "P0",
       "risk": "K3",
       "scope": "ALS-D129: belge onayı sonrası kısmi mal/hizmet kabulü ve fatura; mevcut mal/hizmet servisleri ortak çalışma alanından kullanılır. Tek belge arkasındaki owner kaynakları ve numara bağları spec ile sabitlenir.",
@@ -717,7 +729,7 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Keep mixed approval/supplier/price history and current UI together; verify real SQL, authorized normal-host HTTP/browser and mixed partial acceptance/invoice chains at closure. No new line-level approval engine.",
+      "next_action": "Complete actual native SQL/normal-host HTTP/browser and aggregate train acceptance of existing delivered sources. Do not rebuild source connections; bounded closure evidence is in execution.current_source_closure.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -1218,10 +1230,21 @@
               "Other owned Sales Work kinds can potentially return403 after native commit; current generic refused transport needs a bounded unknown-result review before closure."
             ]
           }
-        }
+        },
+        "current_source_closure": {
+          "source_commit": "9b3ac0d199c5e4d018438085a9b3c4c364778d3f",
+          "scope": "BOUNDED_REMAINING_GAP_CHECK_NOT_FULL_DOMAIN_AUDIT",
+          "result": "Parent-owned approval/revision/history/receipt, price UI and downstream participant sources already delivered. Old UNREGISTERED/503/API/UI gaps are historical; remaining actual SQL atomicity/rollback/replay/partial goods-service acceptance/invoice and one Finance liability, normal HTTP/browser and train gates.",
+          "integrated_acceptance": false,
+          "completed": false
+        },
+        "remaining": [
+          "Actual native SQL and normal-host HTTP/browser acceptance; company/permission/session and original-key recovery.",
+          "Aggregate pins/fullCI/two independent exact-head K3/business acceptance."
+        ]
       },
       "delivery_tracking": {
-        "kodlandi": "PARTIAL_DRAFT_MEMBERSHIP_NATIVE_PREPARATION_ONLY",
+        "kodlandi": "SOURCE_IMPLEMENTED_LOCAL",
         "yerel_test_gecti": "BOUNDED_SCOPES_AT_RECORDED_HEADS_ONLY",
         "butunlesik_kabul_gecti": false,
         "tamamlandi": false

@@ -408,3 +408,7 @@ C5 migration/snapshot üretildi; gerçek SQL, normal HTTP/tarayıcı, birleşik 
 Aynı kapanış grubunun sonraki kayıtları: cari talebi/API bileşenleri 66/66, Work karar sayfası tam grubu 449/449 geçti.
 Bunlar kaydedilen yeni kaynak sürümündeki ayrı kohortlardır; geçmiş 1.158 koşusunu veya tam frontend kabulünü değiştirmez.
 Gerçek oturum değişiminde talep kurtarma P2 bulgusu kaynak ve regresyonla kapandı; K3 değildir.
+
+Dar kalan-iş kontrolünde MIXED-MIN ve QUICK-CREATE kaynak bağlantılarının tamamlandığı doğrulandı;
+uygulama ayrıntısında `SOURCE_IMPLEMENTED_LOCAL` aşamasına taşındılar. Kaynakta kısmi paket sayısı 19 → 17.
+Bu, bütünleşik kabul veya işletme tamamlanması değildir; canonical backlog durumu değiştirilmedi.
