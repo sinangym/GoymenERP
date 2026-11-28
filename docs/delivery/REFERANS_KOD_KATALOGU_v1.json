@@ -24,10 +24,10 @@
       "sources": [
         {
           "path": "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyCommandService.cs",
-          "line": 46,
+          "line": 47,
           "anchor": "public async Task<CounterpartyCommandExecution> CreateAsync(",
-          "sha256": "7e26f619ba7b023abd0d64d7c2377d7918aa8fb8ac15e19de87ed67240768332",
-          "git_blob": "345fad49ddf45440c953488db8d5a119ba117188"
+          "sha256": "3f8af3358cbd270895bb7e8fce25c12e45e888944bfcddc7ca4ccb92025e9174",
+          "git_blob": "eb64bbb2208310cc936de9a01a0c4971b7ecfdbf"
         },
         {
           "path": "src/backend/Modules/Counterparty/GoymenERP.Modules.Counterparty.Infrastructure/Persistence/CounterpartyCommandService.CreateWithTaxIdentity.cs",
@@ -53,7 +53,7 @@
           "git_blob": "fafe08cbaa3a5eb8e023747eaa0dfab129fe978f"
         }
       ],
-      "source_commit": "f7aafd03c10c14d11b7c0c866f4df1d174337009",
+      "source_commit": "26ff071bfac60d0c74b125f5807d741bdd574dcc",
       "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
       "historical_ci_url": null,
@@ -78,8 +78,8 @@
         "SAT-D57"
       ],
       "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı.",
-      "previous_source_commit": "cdc4aac0c0a214fa8e2cade1b46764b1575ee8b4",
-      "local_verification": "Atomic source75c7/1bde fully source-reviewed. API and complete integration-source builds0errors/0warnings atf7; targeted98:97pass/1normal-host deferred-shell-pin failure, including2new pure projector passes. Counterparty403/403 passed at522,skip0.7atomicSQL source Facts compiled but actualSQL/browser/CI/K3 NOT_RUN."
+      "previous_source_commit": "f7aafd03c10c14d11b7c0c866f4df1d174337009",
+      "local_verification": "Atomic source75c7/1bde fully source-reviewed. API and complete integration-source builds0errors/0warnings atf7; targeted98:97pass/1normal-host deferred-shell-pin failure, including2new pure projector passes. Counterparty403/403 passed at522,skip0.7atomicSQL source Facts compiled but actualSQL/browser/CI/K3 NOT_RUN. At26ff native merge purpose constructor/partial integration shifted CreateAsync anchor by one line; refreshed source hash/anchor only. Full Counterparty428 at1538 and controlled API2360 at26ff remain separate bounded proof; actualSQL NOT_RUN."
     },
     {
       "id": "REF-CATALOG-01",

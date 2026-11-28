@@ -555,7 +555,12 @@
         "K3": "NOT_PERFORMED",
         "map_runtime": "NOT_RUN",
         "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
-        "later_deltas": []
+        "later_deltas": [
+          {
+            "head": "1538fb93fa7a252bc84654fa18feb3214a23f926",
+            "note": "Native quote owned transaction/audit safety and DI connected;11 unit cases within2567Sales PASS.14 SQL source fixtures compile after test-only26ff fix; actualSQL NOT_RUN. Selected owner receipt/Host not yet delivered."
+          }
+        ]
       }
     },
     {
@@ -4275,13 +4280,13 @@
             "host_supported": true,
             "owner_permission": "identity.access.approve",
             "frontend_inbox_registered": true,
-            "frontend_published": false,
-            "frontend_capability": null,
-            "capability_declared": false,
-            "route": null,
-            "route_parity": null,
-            "inbox_capability": "identity.access.approve",
-            "inbox_capability_matches_work": null
+            "frontend_published": true,
+            "frontend_capability": "identity.access-grant-request.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/identity.access-grant-request.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "identity.access-grant-request.work-decision",
+            "inbox_capability_matches_work": true
           }
         ],
         "owner_commands": [
@@ -4297,26 +4302,30 @@
         "native_permissions": [
           "identity.access.approve"
         ],
-        "status": "BACKEND_HOST_CLIENT_SEEN_IMPACT_BOUND_FRONTEND_PENDING",
+        "status": "PAIRED_SOURCE_CLIENT_SEEN_IMPACT_BOUND",
         "source": "CHECKED_AT_EXACT_HEAD",
-        "local_tests": "2556 Sales and2354 controlled API PASS/0fail/0skip ataa628bece;1087 FE PASS/0skip at1e4efe7af. Historical native Identity963 at0c74 remains separately scoped.",
+        "local_tests": "See purpose_and_native_merge_checkpoint.paired_access_and_seen_native_merge for exact suite heads; not SQL/browser/CI/K3 acceptance.",
         "actual_SQL": "NOT_RUN",
         "browser_HTTP": "NOT_RUN",
         "CI": "NO_CURRENT_HEAD_EVIDENCE",
         "K3": "NOT_PERFORMED",
         "map_runtime": "NOT_RUN",
-        "source_commit": "aa628bece79f8935e086d396ab95c65686825034",
+        "source_commit": "26ff071bfac60d0c74b125f5807d741bdd574dcc",
         "later_deltas": [
           {
             "head": "aa628bece79f8935e086d396ab95c65686825034",
             "note": "Native Host and typed preview connected; see purpose_and_native_merge_checkpoint.paired_sales_and_access_host for exact evidence heads."
+          },
+          {
+            "head": "26ff071bfac60d0c74b125f5807d741bdd574dcc",
+            "note": "Paired strict Identity UI and standalone capability publication integrated; current56 backend/56frontend kinds."
           }
         ],
         "native_prerequisite": {
           "source_commit": "a44ba2f6cc8a2147297ee4a82ea11cc883b72aa9",
           "state": "SOURCE_IMPLEMENTED_BOUNDED_LOCAL",
           "local_evidence": "924 Identity and145 Audit cases PASS, fail0/skip0; SQL source compiled, actual SQL NOT_RUN",
-          "remaining": "Paired FE/capability publication; actual SQL/native HTTP/browser/pins/fullCI/K3. Client frozen token must match original applied impact on both fresh and replay."
+          "remaining": "ActualSQL/native HTTP/browser/pins/fullCI/K3; no real grant/activation performed."
         }
       }
     },
@@ -4559,7 +4568,7 @@
       "company_scope_and_sod": "NOT_VERIFIED",
       "idempotency_and_version": "NOT_VERIFIED",
       "runtime_acceptance": "NOT_RUN",
-      "limitation": "KIM-D59 native single-step exception: no separate pending approval. Read-only impact API source/local tests delivered; UI/link/atomic binding and actualSQL/HTTP/business acceptance pending.",
+      "limitation": "KIM-D59 native single-step exception with Work native screen link and seen-impact preview/command/UI binding. No separate pending approval; actualSQL/normalHTTP/browser acceptance pending.",
       "implementation_evidence": {
         "bindings": [],
         "owner_commands": [
@@ -4582,7 +4591,12 @@
         "map_runtime": "NOT_RUN",
         "note": "Direct group-level native merge; no pending request/Inbox kind. Requires merge+read in all affected companies, not a fabricated maker/checker workflow.",
         "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
-        "later_deltas": [],
+        "later_deltas": [
+          {
+            "head": "26ff071bfac60d0c74b125f5807d741bdd574dcc",
+            "note": "Purpose preview wraps existing human impact with frozen digest; fixed header binds native command and original replay receipt. Changed impact requires fresh human confirmation. Existing native request ABI and legacy path preserved."
+          }
+        ],
         "open_decision_ref": null,
         "answered_decision_ref": "docs/decisions/SINAN_KARARLARI_2026-11-28_CARI_BIRLESTIRME.md:KIM-D59",
         "decision_note": "KIM-D59 approved existing group-authorized native single step. Existing Cari screen is linked from Work with actual merge AND list capabilities; no pending approval, extra grant or stage.",
@@ -4590,7 +4604,8 @@
           "source_commit": "5cea429f766213b65c9605f057b53de8f1c45680",
           "state": "SOURCE_AND_UI_IMPLEMENTED_BOUNDED_LOCAL",
           "local_evidence": "164 frontend/416 Counterparty/2251 controlled API PASS at5cea only; fail0/skip0",
-          "remaining": "Viewed-membership-to-mutation atomic binding in progress; actual SQL/normal HTTP/browser/CI/K3 NOT_RUN."
+          "remaining": "ActualSQL/normalHTTP/browser/CI/K3 NOT_RUN; SQL source compiled, not accepted.",
+          "seen_impact_checkpoint_ref": "purpose_and_native_merge_checkpoint.paired_access_and_seen_native_merge"
         }
       }
     },
@@ -6427,12 +6442,12 @@
       }
     ],
     "audit_sha256": "7b99cf7b328d015372dc2a31cd0afd74c8c40edebd9e72ae822f61d7ee529680",
-    "current_source_commit": "aa628bece79f8935e086d396ab95c65686825034",
+    "current_source_commit": "26ff071bfac60d0c74b125f5807d741bdd574dcc",
     "current_source_summary": {
       "backend_kinds": 56,
-      "frontend_published_kinds": 55,
+      "frontend_published_kinds": 56,
       "backend_supported_flows": 55,
-      "paired_flows": 54,
+      "paired_flows": 55,
       "no_host_flows": [
         2,
         3,
@@ -6453,9 +6468,7 @@
       "native_single_step_no_pending_flows": [
         62
       ],
-      "backend_only_unpublished_flows": [
-        58
-      ]
+      "backend_only_unpublished_flows": []
     }
   },
   "purpose_and_native_merge_checkpoint": {
@@ -6514,11 +6527,11 @@
       "actual_SQL": "NOT_RUN"
     },
     "remaining": [
-      "Flow7 Work Host/DTO source connected; 60 controlled cases PASS atf405. Paired frontend/publication in progress; actual SQL/HTTP/browser not accepted.",
-      "Flow58 selected owner source is delivered and963 Identity cases PASS at0c74. Host/typed request/publication/frontend remain; frozen human impact token must bind through real original receipt.",
-      "KIM-D59 native preview/UI/Work link delivered; atomic viewed account-membership to native mutation binding is still in progress, not accepted.",
-      "Credit profile fields are present; instrument release decision pending, NonCash reimbursement/bank policy and runtime links unresolved.",
-      "Actual SQL, normal HTTP/browser, pins/full CI and two independent exact-head K3 remain."
+      "Flow7 and58 source/Host/typed preview/paired frontend published. Client frozen seen-impact and original native receipt preserved; actualSQL/normalHTTP/browser not accepted.",
+      "KIM-D59 native single-step purpose preview/header/UI binding delivered. Company-account snapshot is canonicalized consistently for SQL uniqueidentifier versus Guid ordering. ActualSQL/restart/range-lock proof pending.",
+      "Flow8 native owned approval safety delivered; selected conversion-request provenance and Work Host/paired UI still in development. Floor flow2 native safety in separate author branch.",
+      "Credit profile fields are present; instrument release decision pending; NonCash reimbursement/bank policy and runtime links unresolved.",
+      "ActualSQL, normalHTTP/browser, pins/fullCI and two independent exact-head K3 remain."
     ],
     "activation": "NONE",
     "runtime_verified_flows": 0,
@@ -6610,6 +6623,72 @@
       "CI": "NO_CURRENT_HEAD_EVIDENCE",
       "K3": "NOT_PERFORMED",
       "limits": "Controlled API protocols are not actual SQL/Audit/transaction or real-user acceptance. FE source unchanged by the later test-only aa628bece correction. All64 map runtime NOT_RUN."
+    },
+    "paired_access_and_seen_native_merge": {
+      "source_commit": "26ff071bfac60d0c74b125f5807d741bdd574dcc",
+      "scope": "BOUNDED_SOURCE_AND_LOCAL_PROOF_NOT_TRAIN_ACCEPTANCE",
+      "frontend_and_identity": {
+        "source_commit": "9d796b33868b3e56acc64c5a6dc718fc961a93af",
+        "frontend_files": 16,
+        "frontend_passed": 1383,
+        "frontend_failed": 0,
+        "frontend_skipped": 0,
+        "TSC_exit": 0,
+        "lint_exit": 0,
+        "lint_warnings": 0,
+        "identity_passed": 963,
+        "identity_failed": 0,
+        "identity_skipped": 0,
+        "API_build_errors": 0,
+        "API_build_warnings": 0
+      },
+      "controlled_API": {
+        "source_commit": "26ff071bfac60d0c74b125f5807d741bdd574dcc",
+        "passed": 2360,
+        "failed": 0,
+        "skipped": 0,
+        "seconds": 70.2412341,
+        "artifact": "quote-sql-fixture-compile-fixed-20261128"
+      },
+      "native_sales_and_counterparty": {
+        "source_commit": "1538fb93fa7a252bc84654fa18feb3214a23f926",
+        "sales_passed": 2567,
+        "counterparty_passed": 428,
+        "failed": 0,
+        "skipped": 0
+      },
+      "audit": {
+        "source_commit": "a34866d439114ca6efd073511873bc7310f7605f",
+        "passed": 145,
+        "failed": 0,
+        "skipped": 0
+      },
+      "retained_failure": {
+        "source_commit": "9d796b33868b3e56acc64c5a6dc718fc961a93af",
+        "API_test_compile": "CS0649 unused QuoteRollbackProbe.AfterRollback field; no API tests ran in that phase",
+        "test_only_fix_commit": "26ff071bfac60d0c74b125f5807d741bdd574dcc",
+        "correction": "Remove unassigned unused helper field and unused override only; all assertions, rollback injection and tests retained."
+      },
+      "source_pairing": {
+        "backend_kinds": 56,
+        "frontend_published_kinds": 56,
+        "paired_mapped_flows": 55,
+        "native_single_step_no_pending_flows": [
+          62
+        ]
+      },
+      "new_SQL_source": {
+        "counterparty_seen_impact_cases": 12,
+        "quote_native_safety_cases": 14,
+        "compiled": true,
+        "actual_SQL": "NOT_RUN"
+      },
+      "actual_SQL": "NOT_RUN",
+      "normal_HTTP_browser": "NOT_RUN",
+      "CI": "NO_CURRENT_HEAD_EVIDENCE",
+      "K3": "NOT_PERFORMED",
+      "activation": "NONE",
+      "limits": "Each count belongs only to its stated source and bounded suite. No sum is train acceptance. All64 runtime NOT_RUN; native quote selected receipt/Work Host are still being developed."
     }
   }
 }
