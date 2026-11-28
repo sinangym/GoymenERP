@@ -21,7 +21,10 @@ public sealed partial class SalesDraftServiceTests
         if (support) Assert.Equal(Actor, Assert.Single(item.ExcludedDeciders!)); else Assert.Null(item.ExcludedDeciders);
         var rule = Assert.Single(item.Rules); Assert.Equal(SalesRemainderChangeDecisionBindingV1.RequestedRule, rule.RuleCode); Assert.Null(rule.Actual); Assert.Null(rule.Threshold); Assert.Null(rule.Deviation); Assert.Null(rule.Unit);
         Assert.DoesNotContain("SENTETIK kalan", JsonSerializer.Serialize(item, SalesDraftJson.Options), StringComparison.Ordinal);
-        // Generic Excludes' exact-kind maker exception is root-composed; this test verifies source-owned exclusions only.
+        Assert.Equal(support, item.Excludes(Actor));
+        Assert.True((item with { Kind = "sales.order-draft.v1" }).Excludes(Actor));
+        Assert.True((item with { Module = "logistics" }).Excludes(Actor));
+        Assert.True((item with { ExcludedDeciders = [Actor] }).Excludes(Actor));
     }
 
     [Fact]

@@ -106,6 +106,9 @@ public sealed record WorkInboxItemV1(
         !(Module == "product" && Kind == "product.price-list-version.v1")
         && (!(Module == "accounting" && Kind == "accounting.approved-source-catalog.v1")
                 // Native catalog activation explicitly permits a preparer holding the separate activation permission.
+                // SAT-D2: this exact native owner keeps preparer metadata and supplies persona-specific exclusions.
+                // Work decision Host separately requires the matching typed owner proof before using this exception.
+                && !(Module == "sales" && Kind == "sales.remainder-change.v1")
                 && WorkInboxRulesV1.SameUser(PreparedBy, userId)
             || ExcludedDeciders is { } excluded && excluded.Any(candidate => WorkInboxRulesV1.SameUser(candidate, userId)));
 }
