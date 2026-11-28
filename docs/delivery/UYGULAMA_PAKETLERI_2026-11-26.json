@@ -691,7 +691,13 @@
         "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Domain/Orders/PurchaseOrder.ServiceMembership.cs",
         "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Domain/Orders/PurchaseOrder.SupplierRevision.cs",
         "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Domain/Orders/PurchaseOrder.cs",
-        "tests/GoymenERP.Purchasing.UnitTests/PurchaseMixedOrderApprovalTests.cs"
+        "tests/GoymenERP.Purchasing.UnitTests/PurchaseMixedOrderApprovalTests.cs",
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/Contracts/PurchaseServiceOrderApprovalPreparationV1.cs",
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/Contracts/PurchaseServiceOrderContractsV1.cs",
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchaseServiceOrderServiceV1.ApprovalPreparation.cs",
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchaseServiceOrderServiceV1.cs",
+        "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Infrastructure/Persistence/PurchaseServiceOrderStoreV1.cs",
+        "tests/GoymenERP.Purchasing.UnitTests/PurchasingServiceTests.ServiceOrderApprovalPreparation.cs"
       ],
       "execution": {
         "mixed_invoice_source_checkpoint": {
@@ -714,13 +720,30 @@
           "legacy_body_and_hash": "UNCHANGED",
           "persistence_API_UI_actualSQL": "NOT_IMPLEMENTED_OR_NOT_RUN"
         },
-        "native_service_approval_preparation": "IN_PROGRESS_IN_SEPARATE_AUTHOR_BRANCH_NOT_INTEGRATED"
+        "native_service_approval_preparation": {
+          "source_commit": "864092336",
+          "state": "INTEGRATED_READONLY_NATIVE_PREPARATION_NO_MIXED_RUNTIME_ADMISSION",
+          "purchasing_unit_passed": 1477,
+          "failed": 0,
+          "skipped": 0,
+          "validation_source_commit": "399654ef4b9005e50c40a624f37c641453ed21a2",
+          "artifact": "quote-host-floor-mixed-preparation-20261128",
+          "actual_SQL": "NOT_RUN",
+          "legacy_body_hash_guard_order": "UNCHANGED",
+          "participant": "UNREGISTERED_DEFAULT_503"
+        }
       },
       "delivery_tracking": {
         "kodlandi": "PARTIAL_SOURCE_CONTRACT_ONLY",
         "yerel_test_gecti": "BOUNDED_SCOPES_AT_RECORDED_HEADS_ONLY",
         "butunlesik_kabul_gecti": false,
         "tamamlandi": false
+      },
+      "migration_allocation": {
+        "down_throw": 52361,
+        "scope": "FIRST_USE mixed durable service membership only;52160range already belongs WP7",
+        "state": "SOURCE_INVENTORY_UNUSED_CHECKED_MIGRATION_NOT_GENERATED",
+        "live_source_search": "docs/src/backend/tools/tests exact52361 no occurrence at399654ef4; verify current main/open source before generation"
       }
     },
     {
@@ -2251,7 +2274,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Integrate selected quote Work source/binding/Host, then pair UI and validate each current flow. Floor native safety is local-tested; its selected read/receipt follows. Current56 backend/56frontend kinds/55mapped flows; nativeCari62 remains no-pending exception. All64 runtime NOT_RUN; SQL/HTTP/browser/pins/fullCI/twoK3 pending.",
+      "next_action": "Pair tested selected quote Host with frontend/publication; integrate Floor historical source and peer fixes, then its Host.57 backend/56 frontend kinds;56 backend/55 paired mapped flows. Cari62 stays native no-pending. All64 runtime NOT_RUN; actualSQL/HTTP/browser/pins/fullCI/twoK3 pending.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2426,7 +2449,8 @@
           "finance.credit-account.v1",
           "accounting.inventory-cost-cancellation.v1",
           "accounting.source-voucher.v1",
-          "sales.request.v1"
+          "sales.request.v1",
+          "sales.quote-conversion-request.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -4158,7 +4182,7 @@
           "delivery_scope": "Flow51 catalog and Flow52 posting mapping owner/source/DTO/WorkHost/full human UI are paired in source:47 backend/47 frontend/0 staged. Flow53 native whole-approval safety integrated; owner read follow-up is frozen in its separate author branch, not yet integrated. Source pairing is not runtime acceptance.",
           "runtime_acceptance": "NOT_RUN"
         },
-        "current_checkpoint_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#selected_quote_and_floor_native_checkpoint",
+        "current_checkpoint_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#quote_work_host_and_mixed_preparation_checkpoint",
         "native_cost_work_checkpoint": {
           "source_commit": "c1a3809ad3fab2235f75fc5e91f671e3b557b938",
           "evidence_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#native_cost_work_checkpoint",

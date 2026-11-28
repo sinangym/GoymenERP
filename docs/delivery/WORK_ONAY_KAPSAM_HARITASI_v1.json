@@ -159,6 +159,11 @@
             "head": "79a38c60c1370c602146b08a97381ca4d3fd3257",
             "note": "Native floor approval now owns its transaction/audit/fences; original complete-line maker check and commercial invalidation retained. Selected owner/Work Host still absent.",
             "checkpoint_ref": "selected_quote_and_floor_native_checkpoint"
+          },
+          {
+            "head": "a461e610460b7597c08544c7ebb00499e6b671fb",
+            "note": "Selected owner read and original receipt source integrated;41 new unit source cases within2707Sales PASS. Work source/Host not yet integrated and two peer findings still being fixed.",
+            "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint"
           }
         ]
       }
@@ -526,8 +531,8 @@
           {
             "kind": "sales.quote-conversion-request.v1",
             "source": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesQuoteConversionRequestWorkInboxSourceV1.cs:16",
-            "source_decision_read": false,
-            "host_supported": false,
+            "source_decision_read": true,
+            "host_supported": true,
             "owner_permission": "sales.quotes.expired-conversion.approve",
             "frontend_inbox_registered": true,
             "frontend_published": false,
@@ -552,7 +557,7 @@
         "native_permissions": [
           "sales.quotes.expired-conversion.approve"
         ],
-        "status": "LEGACY_INBOX_NATIVE_COMMAND_NO_WORK_HOST",
+        "status": "BACKEND_WORK_HOST_FRONTEND_UNPUBLISHED",
         "source": "CHECKED_AT_EXACT_HEAD",
         "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
         "actual_SQL": "NOT_RUN",
@@ -570,6 +575,11 @@
             "head": "79a38c60c1370c602146b08a97381ca4d3fd3257",
             "note": "Selected quote owner read, bound approve/reject target and genuine original receipt integrated; separate request and quote versions and SAT-D44 maker exception retained. Final PriceRead P2 fixed and tested; Work source/Host not yet integrated.",
             "checkpoint_ref": "selected_quote_and_floor_native_checkpoint"
+          },
+          {
+            "head": "a461e610460b7597c08544c7ebb00499e6b671fb",
+            "note": "Selected Work source and Host integrated. Quote/request version axes, frozen4field target, native original receipt and SAT-D44 exception preserved. Local bounded proof only; frontend not yet published.",
+            "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint"
           }
         ]
       }
@@ -5803,7 +5813,7 @@
     "source_peers": "Bounded full native53 owner/source/WorkHost/UI and native54/55 safety peers, shared composition/inventory peer; publication peers found link/count/duplicate issues and source-closed finalc1. Some reviewers authored earlier native pieces; none of these are formal independent exact-head K3 acceptance.",
     "limits": "41packages/50references/64 flow rows unchanged; all64 semantics NOT_VERIFIED/runtime NOT_RUN/verified_runtime_flows0. Old CI does not transfer. ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3/business acceptance remain pending. Provider/grant/role/Critical/deployment/AI activation unchanged. Token telemetry unavailable; phase durations are measured local artifacts."
   },
-  "current_checkpoint_ref": "selected_quote_and_floor_native_checkpoint",
+  "current_checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint",
   "invoice_and_inventory_cost_work_checkpoint": {
     "source_commit": "9386df64820c0e99137a6dada429e3185be96113",
     "status": "SOURCE_AND_BOUNDED_LOCAL_TESTS_ONLY",
@@ -6453,11 +6463,11 @@
       }
     ],
     "audit_sha256": "7b99cf7b328d015372dc2a31cd0afd74c8c40edebd9e72ae822f61d7ee529680",
-    "current_source_commit": "79a38c60c1370c602146b08a97381ca4d3fd3257",
+    "current_source_commit": "a461e610460b7597c08544c7ebb00499e6b671fb",
     "current_source_summary": {
-      "backend_kinds": 56,
+      "backend_kinds": 57,
       "frontend_published_kinds": 56,
-      "backend_supported_flows": 55,
+      "backend_supported_flows": 56,
       "paired_flows": 55,
       "no_host_flows": [
         2,
@@ -6465,7 +6475,6 @@
         4,
         5,
         6,
-        8,
         10,
         11,
         62
@@ -6479,7 +6488,9 @@
       "native_single_step_no_pending_flows": [
         62
       ],
-      "backend_only_unpublished_flows": []
+      "backend_only_unpublished_flows": [
+        8
+      ]
     }
   },
   "purpose_and_native_merge_checkpoint": {
@@ -6749,5 +6760,81 @@
     "K3": "NOT_PERFORMED",
     "runtime_verified_flows": 0,
     "remaining": "Quote selected Work source/binding and Host are in separate author branch, not yet integrated. Floor selected owner read/private receipt in progress. Mixed invoice test source is not one mixed commercial PO/approval or real Finance debt proof."
+  },
+  "quote_work_host_and_mixed_preparation_checkpoint": {
+    "source_commit": "a461e610460b7597c08544c7ebb00499e6b671fb",
+    "scope": "BOUNDED_LOCAL_SOURCE_AND_HOST_NOT_TRAIN_ACCEPTANCE",
+    "quote_work_source": "b4487ea0349a88e184fb3cb1d125d4c8c62dc845",
+    "quote_host": "c1bbba0c09804fd265673fa04932f74afec0124f",
+    "quote_preview_fix": "a461e610460b7597c08544c7ebb00499e6b671fb",
+    "sales": {
+      "freeGiB": 3.797710418701172,
+      "exit": 0,
+      "head": "399654ef4b9005e50c40a624f37c641453ed21a2",
+      "seconds": 57.6217922,
+      "passed": 2707,
+      "failed": 0,
+      "skipped": 0,
+      "artifact": "quote-host-floor-mixed-preparation-20261128"
+    },
+    "purchasing": {
+      "freeGiB": 3.6954689025878906,
+      "exit": 0,
+      "head": "399654ef4b9005e50c40a624f37c641453ed21a2",
+      "seconds": 23.8535692,
+      "passed": 1477,
+      "failed": 0,
+      "skipped": 0,
+      "artifact": "quote-host-floor-mixed-preparation-20261128"
+    },
+    "API_refresh": {
+      "head": "a461e610460b7597c08544c7ebb00499e6b671fb",
+      "freeGiB": 3.7621612548828125,
+      "exit": 0,
+      "seconds": 187.9117165,
+      "errors": 0,
+      "warnings": 0,
+      "artifact": "quote-preview-malformed-fix-20261128"
+    },
+    "controlled_API": {
+      "head": "a461e610460b7597c08544c7ebb00499e6b671fb",
+      "freeGiB": 3.6802597045898438,
+      "exit": 0,
+      "seconds": 73.3685754,
+      "passed": 2425,
+      "failed": 0,
+      "skipped": 0,
+      "artifact": "quote-preview-malformed-fix-20261128"
+    },
+    "preserved_first_API_run": {
+      "source_commit": "399654ef4b9005e50c40a624f37c641453ed21a2",
+      "passed": 2424,
+      "failed": 1,
+      "skipped": 0,
+      "artifact": "quote-host-floor-mixed-preparation-20261128",
+      "cause": "Malformed null instalment fixture attempted strict native digest before reaching SUT. Fix rejects malformed collection before digest and injects malformed owner response without sealing it; original503 assertion retained."
+    },
+    "bounded_source_review": "All13 quote source/Host files read independently; no new P0/P1/P2 reported. Not formal K3.",
+    "floor_owner_read_receipt": {
+      "source_commits": [
+        "890114c7d",
+        "e550c89c7",
+        "db8c38be0"
+      ],
+      "unit_source_cases": 41,
+      "SQL_source_facts": 5,
+      "actual_SQL": "NOT_RUN",
+      "known_source_findings": "Two bounded peer P2: replay current restriction persona and mutable source line list. Fixes plus historical selected-version source in separate author branch; not integrated/accepted."
+    },
+    "quote_SQL_source_facts_added": 2,
+    "SQL_source_compiled": true,
+    "actual_SQL": "NOT_RUN",
+    "normal_HTTP_browser": "NOT_RUN",
+    "CI": "NO_CURRENT_HEAD_EVIDENCE",
+    "K3": "NOT_PERFORMED",
+    "runtime_verified_flows": 0,
+    "new_permission_or_role_assignment": false,
+    "new_schema": false,
+    "remaining": "Quote paired frontend/publication pending backend contract completion; Floor historical source/binding and two P2 fixes in author branch. Mixed persistent membership/atomic approval/API/UI still unavailable."
   }
 }
