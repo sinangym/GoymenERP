@@ -53,6 +53,9 @@ function MergePanel({ partyId, companyId, namespace, contractContext, onChanged,
     companyId,
   ])
 
+  const [confirmed, setConfirmed] = useState(false)
+  const [confirmedImpact, setConfirmedImpact] = useState<MergePurposeImpact | null>(null)
+
   const refresh = useCallback(() => {
     setConfirmed(false)
     setConfirmedImpact(null)
@@ -63,8 +66,6 @@ function MergePanel({ partyId, companyId, namespace, contractContext, onChanged,
   const command = useMergeCommand(companyId, contractContext, `cari.party-merge:${partyId}`, refresh)
   const [selected, setSelected] = useState('')
   const [reason, setReason] = useState('')
-  const [confirmed, setConfirmed] = useState(false)
-  const [confirmedImpact, setConfirmedImpact] = useState<MergePurposeImpact | null>(null)
   const [commandView, setCommandView] = useState<MergeView | null>(null)
   const [fieldError, setFieldError] = useState<string | null>(null)
 
