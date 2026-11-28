@@ -4266,7 +4266,7 @@
           {
             "kind": "identity.access-grant-request.v1",
             "source": "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/WorkInbox/IdentityAccessGrantRequestWorkInboxSourceV1.cs:27",
-            "source_decision_read": false,
+            "source_decision_read": true,
             "host_supported": false,
             "owner_permission": "identity.access.approve",
             "frontend_inbox_registered": true,
@@ -4292,21 +4292,21 @@
         "native_permissions": [
           "identity.access.approve"
         ],
-        "status": "LEGACY_INBOX_NATIVE_COMMAND_NO_WORK_HOST",
+        "status": "SELECTED_OWNER_SOURCE_READY_NO_WORK_HOST",
         "source": "CHECKED_AT_EXACT_HEAD",
-        "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
+        "local_tests": "963 Identity cases PASS at0c74, fail0/skip0; SQL source compiled only.",
         "actual_SQL": "NOT_RUN",
         "browser_HTTP": "NOT_RUN",
         "CI": "NO_CURRENT_HEAD_EVIDENCE",
         "K3": "NOT_PERFORMED",
         "map_runtime": "NOT_RUN",
-        "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
+        "source_commit": "ce705d93e",
         "later_deltas": [],
         "native_prerequisite": {
           "source_commit": "a44ba2f6cc8a2147297ee4a82ea11cc883b72aa9",
           "state": "SOURCE_IMPLEMENTED_BOUNDED_LOCAL",
           "local_evidence": "924 Identity and145 Audit cases PASS, fail0/skip0; SQL source compiled, actual SQL NOT_RUN",
-          "remaining": "Work selected source/Host/UI; narrow read-only context adaptation in progress. Legacy original effect proof stays unavailable, never reconstructed from current role permissions."
+          "remaining": "Host/typed selection/publication/frontend and actual SQL/browser/CI/K3. Four-field actual read context implemented; original human impact token cannot be replaced by current source token."
         }
       }
     },
@@ -6417,7 +6417,7 @@
       }
     ],
     "audit_sha256": "7b99cf7b328d015372dc2a31cd0afd74c8c40edebd9e72ae822f61d7ee529680",
-    "current_source_commit": "f71e023a4a7960a5c35ba3e018036668d8828df7",
+    "current_source_commit": "0c74ead11",
     "current_source_summary": {
       "backend_kinds": 55,
       "frontend_published_kinds": 54,
@@ -6506,7 +6506,7 @@
     },
     "remaining": [
       "Flow7 Work Host/DTO source connected; 60 controlled cases PASS atf405. Paired frontend/publication in progress; actual SQL/HTTP/browser not accepted.",
-      "Flow58 Work source/Host/UI still missing; owner purpose read/original impact receipt now present. Read-only narrow context adaptation is in progress in the assigned clone.",
+      "Flow58 selected owner source is delivered and963 Identity cases PASS at0c74. Host/typed request/publication/frontend remain; frozen human impact token must bind through real original receipt.",
       "KIM-D59 native preview/UI/Work link delivered; atomic viewed account-membership to native mutation binding is still in progress, not accepted.",
       "Credit profile fields are present; instrument release decision pending, NonCash reimbursement/bank policy and runtime links unresolved.",
       "Actual SQL, normal HTTP/browser, pins/full CI and two independent exact-head K3 remain."
@@ -6537,8 +6537,31 @@
     },
     "identity_read_context": {
       "source_commit": "f71e023a4",
-      "state": "SOURCE_NOT_YET_REBUILT",
+      "state": "SOURCE_AND_WORK_SELECTED_READER_LOCAL_TESTED",
       "scope": "New actual company/actor/correlation/causation read context; legacy write-metadata overload projects actual fields, no fabricated key/channel. One new unit source case. Work source in assigned clone."
+    },
+    "selected_access_source": {
+      "source_commit": "0c74ead11",
+      "identity_unit": {
+        "passed": 963,
+        "failed": 0,
+        "skipped": 0
+      },
+      "sales_request_controlled_API": {
+        "passed": 62,
+        "failed": 0,
+        "skipped": 0
+      },
+      "api_build": {
+        "errors": 0,
+        "warnings": 0
+      },
+      "sql_source_compiled": true,
+      "actual_SQL": "NOT_RUN",
+      "read_context_source": "f71e023a4",
+      "work_source": "ce705d93e",
+      "foreign_carrier_gate": "0c74ead11 refuses unpublished Identity private proof on every existing supported Host kind;2 controlled regressions. Replace with strict exact-kind validator when Identity Host connects.",
+      "future_Host_gate": "Approval expected-impact token must come from the frozen human preview/request and equal genuine historical applied digest on BOTH fresh and replay; latest source permissions cannot substitute. Legacy missing impact proof is unavailable, not empty."
     }
   }
 }
