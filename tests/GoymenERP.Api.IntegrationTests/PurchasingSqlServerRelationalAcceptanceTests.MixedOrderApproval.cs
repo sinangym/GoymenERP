@@ -46,11 +46,11 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             Assert.Equal((4L, PurchaseOrderStatus.Approved, OrderApprover), (parent.Version, parent.Status, parent.Approval!.ApprovedBy));
             Assert.Equal(1L, Assert.Single(parent.ServiceMemberships).PreparedVersion);
         }
-        await using (var child = ServiceScope(run, CompanyA))
-            await child.Store.WriteAsync(f.Service.OrderId, PurchaseServiceOrderCommandsV1.RevisePrices,
-                run.Envelope("mixed-later-child-native-revision"), Hash("mixed-later-child-native-revision"), "SENTETIK existing native price revision",
-                (old, _) => Task.FromResult(PurchaseServiceOrder.RevisePrices(old!, 2,
-                    new Dictionary<Guid, decimal> { [f.Service.Lines[0].LineId] = 3m }, run.Actor, "SENTETIK native revision", DateTimeOffset.UtcNow)), _ => Task.CompletedTask, default);
+        await using (var price = MixedApprovalScope(run))
+            _ = await MixedPriceRevise(price, f, PriceRequest(f, "4", "2", "3"),
+                AdmissionEnvelope(run, "mixed-later-parent-price-revision"));
+        Assert.Equal(audits + 4, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents")); // Genuine parent price revision + changed child.
+        Assert.Equal(5L, await run.ScalarAsync<long>("SELECT Version FROM purchasing.PurchaseOrders WHERE Id=@id", ("@id", f.Parent.Order.Id)));
         await using (var retry = MixedApprovalScope(run))
         {
             var replay = await retry.Store.ApproveMixedOrderAsync(f.Parent.Order.Id, request, envelope with { CorrelationId = "new-replay-correlation" },
@@ -61,7 +61,7 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             Assert.Equal(2L, Assert.Single(replay.Receipt!.Original.Children).After.Version);
         }
         Assert.Equal(3L, await run.ScalarAsync<long>("SELECT Version FROM purchasing.ServiceOrders WHERE CompanyId=@c AND OrderId=@id", ("@c", CompanyA), ("@id", f.Service.OrderId)));
-        Assert.Equal(attempts + 1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseAttempts"));
+        Assert.Equal(attempts + 2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseAttempts"));
     }
 
     [SqlServerFact]
