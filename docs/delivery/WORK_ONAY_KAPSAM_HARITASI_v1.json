@@ -443,13 +443,13 @@
             "host_supported": true,
             "owner_permission": "sales.requests.approve",
             "frontend_inbox_registered": true,
-            "frontend_published": false,
-            "frontend_capability": null,
-            "capability_declared": false,
-            "route": null,
-            "route_parity": null,
-            "inbox_capability": "sales.requests.approve",
-            "inbox_capability_matches_work": null
+            "frontend_published": true,
+            "frontend_capability": "sales.request.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/sales.request.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "sales.request.work-decision",
+            "inbox_capability_matches_work": true
           }
         ],
         "owner_commands": [
@@ -465,21 +465,26 @@
         "native_permissions": [
           "sales.requests.approve"
         ],
-        "status": "BACKEND_HOST_TYPED_PREVIEW_LOCAL_SOURCE_FRONTEND_PENDING",
+        "status": "PAIRED_SOURCE_AND_BOUNDED_LOCAL_TESTS_NOT_RUNTIME_ACCEPTED",
         "source": "CHECKED_AT_EXACT_HEAD",
-        "local_tests": "60 controlled Host/DTO cases PASS atf4050b0a9, fail0/skip0; source units2556 at a44. Different evidence heads, not train acceptance.",
+        "local_tests": "2556 Sales and2354 controlled API PASS/0fail/0skip ataa628bece;1087 FE PASS/0skip at1e4efe7af. Historical native Identity963 at0c74 remains separately scoped.",
         "actual_SQL": "NOT_RUN",
         "browser_HTTP": "NOT_RUN",
         "CI": "NO_CURRENT_HEAD_EVIDENCE",
         "K3": "NOT_PERFORMED",
         "map_runtime": "NOT_RUN",
-        "source_commit": "da11afc40",
-        "later_deltas": [],
+        "source_commit": "aa628bece79f8935e086d396ab95c65686825034",
+        "later_deltas": [
+          {
+            "head": "aa628bece79f8935e086d396ab95c65686825034",
+            "note": "Native Host and typed preview connected; see purpose_and_native_merge_checkpoint.paired_sales_and_access_host for exact evidence heads."
+          }
+        ],
         "native_prerequisite": {
           "source_commit": "a44ba2f6cc8a2147297ee4a82ea11cc883b72aa9",
           "state": "SOURCE_IMPLEMENTED_BOUNDED_LOCAL",
           "local_evidence": "2556 Sales cases PASS, fail0/skip0; actual SQL NOT_RUN",
-          "remaining": "Paired frontend/publication, actual SQL/native HTTP/browser and train acceptance. Host/DTO now connected; SAT-D22 preserved."
+          "remaining": "Actual SQL/native HTTP/browser/pins/fullCI/two independentK3 and business acceptance."
         }
       }
     },
@@ -4267,7 +4272,7 @@
             "kind": "identity.access-grant-request.v1",
             "source": "src/backend/Modules/Identity/GoymenERP.Modules.Identity.Infrastructure/WorkInbox/IdentityAccessGrantRequestWorkInboxSourceV1.cs:27",
             "source_decision_read": true,
-            "host_supported": false,
+            "host_supported": true,
             "owner_permission": "identity.access.approve",
             "frontend_inbox_registered": true,
             "frontend_published": false,
@@ -4292,21 +4297,26 @@
         "native_permissions": [
           "identity.access.approve"
         ],
-        "status": "SELECTED_OWNER_SOURCE_READY_NO_WORK_HOST",
+        "status": "BACKEND_HOST_CLIENT_SEEN_IMPACT_BOUND_FRONTEND_PENDING",
         "source": "CHECKED_AT_EXACT_HEAD",
-        "local_tests": "963 Identity cases PASS at0c74, fail0/skip0; SQL source compiled only.",
+        "local_tests": "2556 Sales and2354 controlled API PASS/0fail/0skip ataa628bece;1087 FE PASS/0skip at1e4efe7af. Historical native Identity963 at0c74 remains separately scoped.",
         "actual_SQL": "NOT_RUN",
         "browser_HTTP": "NOT_RUN",
         "CI": "NO_CURRENT_HEAD_EVIDENCE",
         "K3": "NOT_PERFORMED",
         "map_runtime": "NOT_RUN",
-        "source_commit": "ce705d93e",
-        "later_deltas": [],
+        "source_commit": "aa628bece79f8935e086d396ab95c65686825034",
+        "later_deltas": [
+          {
+            "head": "aa628bece79f8935e086d396ab95c65686825034",
+            "note": "Native Host and typed preview connected; see purpose_and_native_merge_checkpoint.paired_sales_and_access_host for exact evidence heads."
+          }
+        ],
         "native_prerequisite": {
           "source_commit": "a44ba2f6cc8a2147297ee4a82ea11cc883b72aa9",
           "state": "SOURCE_IMPLEMENTED_BOUNDED_LOCAL",
           "local_evidence": "924 Identity and145 Audit cases PASS, fail0/skip0; SQL source compiled, actual SQL NOT_RUN",
-          "remaining": "Host/typed selection/publication/frontend and actual SQL/browser/CI/K3. Four-field actual read context implemented; original human impact token cannot be replaced by current source token."
+          "remaining": "Paired FE/capability publication; actual SQL/native HTTP/browser/pins/fullCI/K3. Client frozen token must match original applied impact on both fresh and replay."
         }
       }
     },
@@ -6417,12 +6427,12 @@
       }
     ],
     "audit_sha256": "7b99cf7b328d015372dc2a31cd0afd74c8c40edebd9e72ae822f61d7ee529680",
-    "current_source_commit": "0c74ead11",
+    "current_source_commit": "aa628bece79f8935e086d396ab95c65686825034",
     "current_source_summary": {
-      "backend_kinds": 55,
-      "frontend_published_kinds": 54,
-      "backend_supported_flows": 54,
-      "paired_flows": 53,
+      "backend_kinds": 56,
+      "frontend_published_kinds": 55,
+      "backend_supported_flows": 55,
+      "paired_flows": 54,
       "no_host_flows": [
         2,
         3,
@@ -6432,7 +6442,6 @@
         8,
         10,
         11,
-        58,
         62
       ],
       "frontend_staged_flows": [],
@@ -6445,7 +6454,7 @@
         62
       ],
       "backend_only_unpublished_flows": [
-        7
+        58
       ]
     }
   },
@@ -6562,6 +6571,45 @@
       "work_source": "ce705d93e",
       "foreign_carrier_gate": "0c74ead11 refuses unpublished Identity private proof on every existing supported Host kind;2 controlled regressions. Replace with strict exact-kind validator when Identity Host connects.",
       "future_Host_gate": "Approval expected-impact token must come from the frozen human preview/request and equal genuine historical applied digest on BOTH fresh and replay; latest source permissions cannot substitute. Legacy missing impact proof is unavailable, not empty."
+    },
+    "paired_sales_and_access_host": {
+      "source_commit": "aa628bece79f8935e086d396ab95c65686825034",
+      "sales_unit": {
+        "passed": 2556,
+        "failed": 0,
+        "skipped": 0
+      },
+      "controlled_API": {
+        "passed": 2354,
+        "failed": 0,
+        "skipped": 0,
+        "includes_new_identity_host_and_DTO": 41
+      },
+      "api_build": {
+        "errors": 0,
+        "warnings": 0
+      },
+      "frontend": {
+        "source_commit": "1e4efe7aff970111f79b053a23134ce39e9fc9b3",
+        "files": 8,
+        "passed": 1087,
+        "failed": 0,
+        "skipped": 0,
+        "TSC_exit": 0,
+        "lint_exit": 0
+      },
+      "earlier_source_run": {
+        "source_commit": "1e4efe7aff970111f79b053a23134ce39e9fc9b3",
+        "sales_passed": 2555,
+        "sales_failed": 1,
+        "skipped": 0,
+        "reason": "Existing pool classification omitted new standalone request purpose. aa628bece adds exact purpose/RequestsApprove assertions and only that capability to the pool set; all other exclusion assertions retained."
+      },
+      "actual_SQL": "NOT_RUN",
+      "normal_HTTP_browser": "NOT_RUN",
+      "CI": "NO_CURRENT_HEAD_EVIDENCE",
+      "K3": "NOT_PERFORMED",
+      "limits": "Controlled API protocols are not actual SQL/Audit/transaction or real-user acceptance. FE source unchanged by the later test-only aa628bece correction. All64 map runtime NOT_RUN."
     }
   }
 }

@@ -2210,7 +2210,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Pair Flow7 frontend and capability publication against its connected native Host/typed DTO, then Flow58 with original seen-impact token/receipt binding. Finish KIM-D59 atomic seen-impact binding. Source counts55 backend kinds/54 mapped flows,54 paired kinds/53 mapped flows; all64 runtime acceptance NOT_RUN.",
+      "next_action": "Pair Flow58 frontend/publication with its connected client-seen-impact Host; finish KIM-D59 atomic seen-impact/API/UI binding. Source56 backend kinds/55 mapped flows;55 paired kinds/54 mapped flows. All64 runtime acceptance NOT_RUN; SQL/HTTP/browser/pins/fullCI/two K3 pending.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -4117,7 +4117,7 @@
           "delivery_scope": "Flow51 catalog and Flow52 posting mapping owner/source/DTO/WorkHost/full human UI are paired in source:47 backend/47 frontend/0 staged. Flow53 native whole-approval safety integrated; owner read follow-up is frozen in its separate author branch, not yet integrated. Source pairing is not runtime acceptance.",
           "runtime_acceptance": "NOT_RUN"
         },
-        "current_checkpoint_ref": "WORK_ONAY_KAPSAM_HARITASI_v1.json:purpose_and_native_merge_checkpoint",
+        "current_checkpoint_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#purpose_and_native_merge_checkpoint.paired_sales_and_access_host",
         "native_cost_work_checkpoint": {
           "source_commit": "c1a3809ad3fab2235f75fc5e91f671e3b557b938",
           "evidence_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#native_cost_work_checkpoint",
