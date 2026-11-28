@@ -752,7 +752,25 @@
           "database_application": "NOT_APPLIED",
           "mixed_runtime_admission": "UNAVAILABLE_PENDING_COMPLETE_PREVIEW_ATOMIC_PARTICIPANT_AND_ORIGINAL_RECEIPT"
         },
-        "fresh_child_edit_compatibility": "Initial membership version/line identities are retained baseline history, not a ban on native Draft edits. Approval must freeze a new complete actual child version/line selection and preserve original receipts."
+        "fresh_child_edit_compatibility": "Initial membership version/line identities are retained baseline history, not a ban on native Draft edits. Approval must freeze a new complete actual child version/line selection and preserve original receipts.",
+        "native_readonly_preview": {
+          "source_commits": [
+            "4757fd246",
+            "b55700fb0"
+          ],
+          "unit_validation": {
+            "exit": 0,
+            "head": "986c33d06cea4e384e46514695938ae7915c5b9f",
+            "freeGiB": 3.6465301513671875,
+            "seconds": 26.3781757,
+            "artifact": "discount-mixed-preview-unit-20261128/purchasing",
+            "total": 1518,
+            "passed": 1518,
+            "failed": 0,
+            "skipped": 0
+          },
+          "scope": "Actual current native child view and frozen current version/full line set, initial membership history immutable; readonly Serializable owner scope and native preparation reused.10controlled preview+4pure domain new cases.3SQL source Facts registered/compiled; actualSQL NOT_RUN. No public endpoint/DI or atomic admission yet; mixed Approve stays503."
+        }
       },
       "delivery_tracking": {
         "kodlandi": "PARTIAL_DRAFT_MEMBERSHIP_NATIVE_PREPARATION_ONLY",
@@ -2295,7 +2313,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Pair tested selected quote Host with frontend/publication; integrate Floor historical source and peer fixes, then its Host.57 backend/56 frontend kinds;56 backend/55 paired mapped flows. Cari62 stays native no-pending. All64 runtime NOT_RUN; actualSQL/HTTP/browser/pins/fullCI/twoK3 pending.",
+      "next_action": "Floor frontend/publication and Discount selected owner/source in separate writers. Mixed atomic participant/original receipt still pending. All64 runtime unverified; remaining source gaps3,4,5,6,10,11;62 remains native single step. ActualSQL/normalHTTP/browser/pins/fullCI/twoK3 pending.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2471,7 +2489,9 @@
           "accounting.inventory-cost-cancellation.v1",
           "accounting.source-voucher.v1",
           "sales.request.v1",
-          "sales.quote-conversion-request.v1"
+          "sales.quote-conversion-request.v1",
+          "identity.access-grant-request.v1",
+          "sales.price-floor-exception.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -2537,7 +2557,8 @@
               "scope": "DecisionHost/Finance registry/import authority/SqlConcurrencyWrapper/C7/C8 controlled ports; complete integration-source compiled, actual SQL NOT_RUN"
             },
             "original_failures": "4ccc API full PASS200.2623446s; Finance test-source compile failed on internal Audit.Pending. a3f75 Finance2241PASS0skip16.8405267s; integration source failed4 missing Persistence symbols. ce800 Finance2252PASS0skip16.0868709s; controlled Host865total864PASS1FAIL0skip74.0214885s (maker503 vs403). feeed3344 Finance2254PASS0skip15.8521812s and Host865PASS0skip60.4506076s after real maker403 fix and public collector fixture correction. d512 Finance2284total2283PASS1FAIL0skip16.5263706s (two new screen literals missing); b19 test-only exact expected-set correction. All old logs retained; no assertion or test removed."
-          }
+          },
+          "quote_floor_discount_mixed_followup": "See existing current checkpoint ref/integrated_floor_quote_discount_mixed_followup for exact heads/durations/counters and retained failures; no aggregate acceptance claim."
         },
         "reuse": [
           "existing FinanceCashAccountService commands and durable receipts",
@@ -2550,8 +2571,7 @@
           "existing Work post transport and SQL fixtures"
         ],
         "remaining": [
-          "Finish mapped owner/Host/UI gaps for flows2,3,4,5,6,7,8,10,11,58; flow62 user approved preserving the native single step (KIM-D59); preview/link verification remains. Preserve native exceptions. 59 UI publication integrated; verify and investigate retained intermittent price retry failure.",
-          "All64 actualSQL/normalHTTP/browser business acceptance, generated pins, full mandatoryCI and two independent exact-headK3 remain pending."
+          "Floor frontend/publication and Discount selected owner/source in separate writers. Mixed atomic participant/original receipt still pending. All64 runtime unverified; remaining source gaps3,4,5,6,10,11;62 remains native single step. ActualSQL/normalHTTP/browser/pins/fullCI/twoK3 pending."
         ],
         "sql": "NOT_RUN",
         "browser": "NOT_RUN",
@@ -3613,7 +3633,7 @@
           "7898cc30397ab51d38464c5ac674de2422890d07",
           "9f9442c4e9382033ea97f54e62d7238ab50e91c4"
         ],
-        "kind_count_scope": "54backend/54pairedUI/0staged;53/53 distinct mapped flows, not64 runtime acceptance.",
+        "kind_count_scope": "58 backend/57 frontend kinds;57 backend/56 paired distinct mapped flows. Previously delivered Identity kind restored to this list. Source counts, not64 runtime acceptance.",
         "staged_kinds": [],
         "historical_kind_count_scope": "29 paired source kinds/29 native kinds with exact set equality atcc379ff28f74d5810ed51ad537ebece821440d72, including Product package-standard; staged0. Native price-list publish safety is a prerequisite, not a30th Work purpose. All64 runtime flows remain NOT_VERIFIED/NOT_RUN; source pairing is not acceptance.",
         "historical_kind_count_scopes": [

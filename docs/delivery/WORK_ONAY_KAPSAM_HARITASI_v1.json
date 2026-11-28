@@ -124,7 +124,7 @@
             "kind": "sales.price-floor-exception.v1",
             "source": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesPriceFloorExceptionWorkInboxSourceV1.cs:17",
             "source_decision_read": true,
-            "host_supported": false,
+            "host_supported": true,
             "owner_permission": "sales.orders.price-floor-exception.approve",
             "frontend_inbox_registered": true,
             "frontend_published": false,
@@ -145,7 +145,7 @@
         "native_permissions": [
           "sales.orders.price-floor-exception.approve"
         ],
-        "status": "LEGACY_INBOX_NATIVE_COMMAND_NO_WORK_HOST",
+        "status": "BACKEND_WORK_HOST_FRONTEND_UNPUBLISHED",
         "source": "CHECKED_AT_EXACT_HEAD",
         "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
         "actual_SQL": "NOT_RUN",
@@ -168,6 +168,11 @@
           {
             "head": "ca642cc60",
             "note": "Historical version source, immutable original receipt binding and two peer fixes integrated. JSON-ignored carrier/body slot present; all current Hosts explicitly reject foreign Floor proof until Floor native dispatch is connected.23 new unit and3 SQL source cases NOT_RUN. Full15file bounded peer: no new P0/P1/P2, notK3."
+          },
+          {
+            "head": "14960975831f3363dea947eef9863b0b42512c63",
+            "note": "Quote selected UI/publication and Floor native Host integrated. Source proof is bounded at recorded heads; normal-host aggregate registry pin fails until train repin. SQL/browser/CI/K3 remain NOT_RUN.",
+            "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint"
           }
         ]
       }
@@ -539,13 +544,13 @@
             "host_supported": true,
             "owner_permission": "sales.quotes.expired-conversion.approve",
             "frontend_inbox_registered": true,
-            "frontend_published": false,
-            "frontend_capability": null,
-            "capability_declared": false,
-            "route": null,
-            "route_parity": null,
-            "inbox_capability": "sales.quotes.expired-conversion.approve",
-            "inbox_capability_matches_work": null
+            "frontend_published": true,
+            "frontend_capability": "sales.quote-conversion-request.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/sales.quote-conversion-request.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "sales.quote-conversion-request.work-decision",
+            "inbox_capability_matches_work": true
           }
         ],
         "owner_commands": [
@@ -561,7 +566,7 @@
         "native_permissions": [
           "sales.quotes.expired-conversion.approve"
         ],
-        "status": "BACKEND_WORK_HOST_FRONTEND_UNPUBLISHED",
+        "status": "PAIRED_SOURCE",
         "source": "CHECKED_AT_EXACT_HEAD",
         "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
         "actual_SQL": "NOT_RUN",
@@ -583,6 +588,11 @@
           {
             "head": "a461e610460b7597c08544c7ebb00499e6b671fb",
             "note": "Selected Work source and Host integrated. Quote/request version axes, frozen4field target, native original receipt and SAT-D44 exception preserved. Local bounded proof only; frontend not yet published.",
+            "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint"
+          },
+          {
+            "head": "14960975831f3363dea947eef9863b0b42512c63",
+            "note": "Quote selected UI/publication and Floor native Host integrated. Source proof is bounded at recorded heads; normal-host aggregate registry pin fails until train repin. SQL/browser/CI/K3 remain NOT_RUN.",
             "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint"
           }
         ]
@@ -6467,14 +6477,13 @@
       }
     ],
     "audit_sha256": "7b99cf7b328d015372dc2a31cd0afd74c8c40edebd9e72ae822f61d7ee529680",
-    "current_source_commit": "efa3425b44313a28c6d4408e146670671645f16d",
+    "current_source_commit": "14960975831f3363dea947eef9863b0b42512c63",
     "current_source_summary": {
-      "backend_kinds": 57,
-      "frontend_published_kinds": 56,
-      "backend_supported_flows": 56,
-      "paired_flows": 55,
+      "backend_kinds": 58,
+      "frontend_published_kinds": 57,
+      "backend_supported_flows": 57,
+      "paired_flows": 56,
       "no_host_flows": [
-        2,
         3,
         4,
         5,
@@ -6493,7 +6502,7 @@
         62
       ],
       "backend_only_unpublished_flows": [
-        8
+        2
       ]
     }
   },
@@ -6828,7 +6837,7 @@
       "unit_source_cases": 41,
       "SQL_source_facts": 5,
       "actual_SQL": "NOT_RUN",
-      "known_source_findings": "Both prior P2 fixes integrated atffd63872f and full15file bounded independent peer reports no new P0/P1/P2. New23unit/3SQL facts not run; notK3."
+      "known_source_findings": "Both prior P2 fixes integrated and full bounded15file source peer clean;23 historical-source unit cases included in2730Sales PASS at50029. Separate5file Host peer clean and76 controlledHost/DTO PASS. Not formalK3; actualSQL NOT_RUN."
     },
     "quote_SQL_source_facts_added": 2,
     "SQL_source_compiled": true,
@@ -6839,7 +6848,7 @@
     "runtime_verified_flows": 0,
     "new_permission_or_role_assignment": false,
     "new_schema": false,
-    "remaining": "Quote frontend/publication in separate author branch. Floor historical source+two peer fixes integrated; unit/API validation and Floor Host pending. Mixed Draft membership unit1504PASS; atomic approval admission/API/UI/realSQL pending.",
+    "remaining": "Floor frontend/publication and Discount selected owner/source in separate writers. Mixed atomic participant/original receipt still pending. All64 runtime unverified; remaining source gaps3,4,5,6,10,11;62 remains native single step. ActualSQL/normalHTTP/browser/pins/fullCI/twoK3 pending.",
     "null_boundary_followup": {
       "source_commit": "efa3425b44313a28c6d4408e146670671645f16d",
       "API_refresh": {
@@ -6862,6 +6871,124 @@
       },
       "artifact": "quote-preview-null-boundary-fixed-20261128",
       "change": "Preserve503 for null owner detail/quote before native hash; two new negative boundary cases. Valid human contract unchanged."
+    },
+    "integrated_floor_quote_discount_mixed_followup": {
+      "source_commit": "14960975831f3363dea947eef9863b0b42512c63",
+      "quote_publication": "ed87f45bb",
+      "floor_Host": "50029f3de",
+      "floor_fixture_fix": "165124507",
+      "native_discount_and_DI": [
+        "ed335effb",
+        "986c33d06"
+      ],
+      "mixed_readonly_preview": [
+        "4757fd246",
+        "b55700fb0"
+      ],
+      "sales": {
+        "exit": 0,
+        "head": "986c33d06cea4e384e46514695938ae7915c5b9f",
+        "freeGiB": 3.349048614501953,
+        "seconds": 58.8085797,
+        "artifact": "discount-mixed-preview-unit-20261128/sales",
+        "total": 2741,
+        "passed": 2741,
+        "failed": 0,
+        "skipped": 0
+      },
+      "purchasing": {
+        "exit": 0,
+        "head": "986c33d06cea4e384e46514695938ae7915c5b9f",
+        "freeGiB": 3.6465301513671875,
+        "seconds": 26.3781757,
+        "artifact": "discount-mixed-preview-unit-20261128/purchasing",
+        "total": 1518,
+        "passed": 1518,
+        "failed": 0,
+        "skipped": 0
+      },
+      "controlled_API": {
+        "seconds": 76.2411646,
+        "exit": 1,
+        "freeGiB": 3.584308624267578,
+        "head": "50029f3dee10daf9d499bd8de3e371ca130db9cf",
+        "artifact": "floor-quote-api-frontend-20261128/host",
+        "total": 2508,
+        "passed": 2507,
+        "failed": 1,
+        "skipped": 0,
+        "unresolved_failure": "1 normal-host SalesShell registry acceptance mismatch; aggregate shell authority pins deferred until integrated train closure. Test retained; no skip or assertion weakening. Other2507 including66FloorHost+10FloorDTO passed."
+      },
+      "API_refresh": {
+        "freeGiB": 3.741962432861328,
+        "exit": 0,
+        "head": "8343ca77744f420c6f72175993528f4894ae413e",
+        "seconds": 21.5492735,
+        "artifact": "discount-mixed-preview-api-20261128/api_refresh"
+      },
+      "composition": {
+        "head": "14960975831f3363dea947eef9863b0b42512c63",
+        "exit": 0,
+        "freeGiB": 3.6617050170898438,
+        "seconds": 64.936551,
+        "artifact": "discount-composition-permission-fixed-20261128/host",
+        "total": 15,
+        "passed": 15,
+        "failed": 0,
+        "skipped": 0
+      },
+      "frontend_tsc": {
+        "head": "50029f3dee10daf9d499bd8de3e371ca130db9cf",
+        "freeGiB": 3.6819305419921875,
+        "exit": 0,
+        "seconds": 63.3113618,
+        "artifact": "quote-published-frontend-20261128/tsc"
+      },
+      "frontend_lint": {
+        "head": "50029f3dee10daf9d499bd8de3e371ca130db9cf",
+        "freeGiB": 3.685718536376953,
+        "exit": 0,
+        "seconds": 0.5143202,
+        "artifact": "quote-published-frontend-20261128/lint"
+      },
+      "frontend": {
+        "head": "50029f3dee10daf9d499bd8de3e371ca130db9cf",
+        "freeGiB": 3.68634033203125,
+        "exit": 0,
+        "seconds": 258.1911073,
+        "artifact": "quote-published-frontend-20261128/frontend",
+        "files": 59,
+        "total": 2899,
+        "passed": 2899,
+        "failed": 0,
+        "skipped": 0
+      },
+      "floor_bounded_source_peer": "Full5 Host/DTO/test files plus called source/binding/receipt read independently, no new concrete P0/P1/P2; not formal K3.",
+      "preserved_floor_first_run": {
+        "exit": 1,
+        "seconds": 59.9374401,
+        "head": "de1447919a947abfb4678db7d7e781a6d3971a3e",
+        "freeGiB": 3.7791404724121094,
+        "artifact": "floor-historical-source-unit-20261128/sales",
+        "total": 2730,
+        "passed": 2729,
+        "failed": 1,
+        "skipped": 0,
+        "cause": "New fixture mixed synthetic owner PriceRead with final native OrdersPriceRead; bind/watch the native permission, keep all denial/context/count assertions. Subsequent2730 Sales passed at50029; prior failure retained."
+      },
+      "preserved_composition_first_run": {
+        "freeGiB": 3.6927833557128906,
+        "exit": 1,
+        "head": "8343ca77744f420c6f72175993528f4894ae413e",
+        "seconds": 70.5621402,
+        "artifact": "discount-mixed-preview-api-20261128/host",
+        "total": 15,
+        "passed": 10,
+        "failed": 5,
+        "skipped": 0,
+        "cause": "Reused strict request-authority fixture expected RequestsApprove for the new Discount command.149609758 binds the exact native expected permission per probe, retaining company/permission/WIP/noSQL assertions. No production policy or broad grant changed."
+      },
+      "limits": "Bounded exact-head local scopes only. No actualSQL/normalHTTP/browser/fullCI/pins/twoK3/business acceptance. API-only refresh uses freshly built changed Sales/Purchasing dependencies, not full solution build. Mixed atomic approval/receipt is still unavailable; no role/grant/Critical/provider/AI activation. Token telemetry unavailable."
     }
   }
 }

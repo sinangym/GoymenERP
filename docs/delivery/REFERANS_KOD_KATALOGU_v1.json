@@ -190,10 +190,10 @@
       "sources": [
         {
           "path": "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchasingService.cs",
-          "line": 263,
+          "line": 264,
           "anchor": "public async Task<PurchaseOrderResponse> CreateOrderAsync(CreatePurchaseOrderRequest request, PurchasingCommandMetadata metadata,",
-          "sha256": "31b1859e62d7d64294d585f0a73f00d1db97db7c0ed3c1f20fc6c486379f8923",
-          "git_blob": "4bb3f182f289e0d9a103ad5dac234f4567be4239"
+          "sha256": "2b97ff198f7bf5681bff5ecda91f3c1e44218f043310efb0c9551e0df303df75",
+          "git_blob": "4410c3c5ea696d139cc705043eaa910bf53458d1"
         }
       ],
       "tests": [
@@ -205,7 +205,7 @@
           "git_blob": "bfe2f3194b166e753401085169fd1a2047541a97"
         }
       ],
-      "source_commit": "43d4e5063b3e98eb367c26cb43bed42947e2b254",
+      "source_commit": "14960975831f3363dea947eef9863b0b42512c63",
       "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
       "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
@@ -217,7 +217,7 @@
         "Eski test sonucu yeni kullanım kabulü değildir"
       ],
       "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
-      "adaptations": "Mevcut çok satır oluşturma ve native onay kullanılır. WP8 taze yetki/delegasyon fence farkı 68ca412f7 ile uygulanır; karma mal/hizmet kabulü ve gerçek SQL ayrı kabul gerektirir (ALS-D129).",
+      "adaptations": "Existing multi-line/native approval reused; current mixed readonly child preview preserves initial membership and freezes current child version/all lines.1518 Purchasing unit PASS at986c33d06; atomic mixed approval and actualSQL/browser remain pending.",
       "limitations": [
         "Mevcut satır desteği karma mal/hizmet belgesinin tamamlandığı anlamına gelmez; ALS-D129.",
         "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
@@ -236,7 +236,13 @@
       ],
       "adaptation_test": "Yeni/degisen davranışın negatif şirket/yetki, replay ve concurrency kabulü; gerekli olduğunda gerçek SQL ve tarayıcı.",
       "previous_source_commit": "c24706af4de4300d4a171eca11459098d87cd14f",
-      "previous_historical_evidence": "HISTORICAL_CI_TREE_MATCH"
+      "previous_historical_evidence": "HISTORICAL_CI_TREE_MATCH",
+      "adaptation_history": [
+        {
+          "source_commit": "43d4e5063b3e98eb367c26cb43bed42947e2b254",
+          "note": "Previous guarded native purchase source; preserved as historical reference."
+        }
+      ]
     },
     {
       "id": "REF-INVOICE-01",
