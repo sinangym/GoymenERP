@@ -32,7 +32,7 @@ public sealed partial class PurchasingHttpAcceptanceTests
     }
     [Theory]
     [InlineData("unknown")] [InlineData("duplicate")] [InlineData("nested-unknown")] [InlineData("missing-date")]
-    [InlineData("missing-occurrence")] [InlineData("query")] [InlineData("metadata")] [InlineData("media")]
+    [InlineData("missing-occurrence")] [InlineData("query")] [InlineData("metadata")] [InlineData("media")] [InlineData("media-trailing")] [InlineData("media-case")]
     public async Task Unordered_http_rejects_noncanonical_transport_before_native_owner(string defect)
     {
         var owner = new UnorderedHttpOwner(); using var host = UnorderedHost(owner); using var client = CreateClient(host);
@@ -42,10 +42,13 @@ public sealed partial class PurchasingHttpAcceptanceTests
         if (defect == "nested-unknown") body = body.Replace("\"expectedVersion\":\"0\"", "\"expectedVersion\":\"0\",\"price\":\"10\"");
         if (defect == "missing-date") body = body.Replace("\"businessDate\":\"2026-11-28\",", "");
         if (defect == "missing-occurrence") body = "{\"businessDate\":\"2026-11-28\"}";
-        using var request = Post(PurchasingEndpoints.UnorderedAcceptancesPath + (defect == "query" ? "?companyId=foreign" : ""), "SENTETIK-shape", body, defect == "media" ? "text/plain" : "application/json");
+        var media = defect.StartsWith("media", StringComparison.Ordinal);
+        var path = defect == "media-case" ? PurchasingEndpoints.UnorderedAcceptancesPath.ToUpperInvariant() : PurchasingEndpoints.UnorderedAcceptancesPath;
+        if (defect == "media-trailing") path += "/";
+        using var request = Post(path + (defect == "query" ? "?companyId=foreign" : ""), "SENTETIK-shape", body, media ? "text/plain" : "application/json");
         if (defect == "metadata") request.Headers.Remove("Idempotency-Key");
         using var response = await client.SendAsync(request);
-        Assert.Equal(defect == "media" ? HttpStatusCode.UnsupportedMediaType : HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Equal(media ? HttpStatusCode.UnsupportedMediaType : HttpStatusCode.BadRequest, response.StatusCode);
         Assert.Equal(0, owner.Calls); AssertPrivateNoStore(response);
     }
     [Theory]

@@ -631,6 +631,7 @@ _ = app.Services.GetRequiredService<ShellCapabilityRegistry>().Revision;
 
 app.UseExceptionHandler();
 app.UseMiddleware<ShellCapabilityTransportMiddleware>();
+app.UseMiddleware<PurchaseUnorderedAcceptanceTransportMiddleware>();
 app.UseMiddleware<CorrelationContextMiddleware>();
 app.UseCors();
 if (databaseStartupMode == DatabaseStartupMode.ValidateOnly)
