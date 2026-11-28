@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using GoymenERP.Modules.Sales.Domain;
 using GoymenERP.Modules.Sales.Domain.Requests;
 
@@ -40,7 +41,11 @@ public sealed record SalesRequestDetailView(
     SalesRequestSummaryView Request, DateOnly? RequestedDeliveryDate, string? Note,
     IReadOnlyList<SalesRequestLineView> Lines, SalesRequestDecisionV1? Decision);
 
-public sealed record SalesRequestResponse(SalesRequestDetailView Detail, bool IsReplay, string OriginalCorrelationId);
+public sealed record SalesRequestResponse(SalesRequestDetailView Detail, bool IsReplay, string OriginalCorrelationId)
+{
+    [JsonIgnore]
+    public SalesRequestOriginalDecisionReceiptV1? OriginalDecisionReceipt { get; init; }
+}
 
 public sealed record SalesRequestListResponse(IReadOnlyList<SalesRequestSummaryView> Items, string? NextCursor);
 

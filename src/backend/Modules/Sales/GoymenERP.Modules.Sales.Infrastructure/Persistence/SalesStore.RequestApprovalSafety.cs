@@ -64,6 +64,9 @@ public sealed partial class SalesStore : ISalesRequestApprovalStoreV1
                     // A recorded terminal native refusal is itself this command's durable answer.
                     terminal = refusal;
                 }
+                if (result is not null)
+                    result = result with { OriginalDecisionReceipt = await ReadOriginalRequestDecisionReceiptAsync(
+                        envelope, requestHash, commandName, result, cancellationToken) };
                 await RequestApprovalFenceAsync(cancellationToken); RequireFlushed();
                 if (terminal is null && result is { IsReplay: false } && !state.Saved)
                     throw new InvalidOperationException("Satış talebi kararı kaydedilmiş bir deneme taşımıyor.");

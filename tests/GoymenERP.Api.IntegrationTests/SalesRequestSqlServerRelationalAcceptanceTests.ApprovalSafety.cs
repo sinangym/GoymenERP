@@ -118,7 +118,8 @@ public sealed partial class SalesRequestSqlServerRelationalAcceptanceTests
                     if (safe.Writer.HasPendingDrafts) observedPending = true;
                     // The first drained draft with a still-dirty native header is AFTER actual Audit.WritePendingAsync.
                     if (phase == "after-audit" && observedPending && !safe.Writer.HasPendingDrafts && !save.Saved) safe.Authority.Granted = false;
-                    if (save.Saved && ++savedFences == (phase == "precommit" ? 3 : 1) && phase != "after-audit") safe.Authority.Granted = false;
+                    // Post-Save 1; attempt before/after 2/3; Audit before/after 4/5; post-execute 6; actual precommit 7.
+                    if (save.Saved && ++savedFences == (phase == "precommit" ? 7 : 1) && phase != "after-audit") safe.Authority.Granted = false;
                 };
                 var failure = await Assert.ThrowsAsync<SalesDraftServiceException>(() => Decide(safe, run, id, key, approve));
                 Assert.Equal(403, failure.Status); Assert.False(safe.Writer.HasPendingDrafts);
