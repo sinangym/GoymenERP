@@ -10,7 +10,7 @@ public sealed partial class SalesStore : ISalesQuoteApprovalStoreV1
 {
     private OwnedQuoteApproval? ownedQuoteApproval;
     public bool QuoteApprovalEntryIsClean => officialCancellationAuditWriter is not null && ownedQuoteApproval is null && quoteDecisionReadFence is null
-        && ownedRequestApproval is null && ownedPriceFloorApproval is null && ownedDiscountApproval is null && dbContext.Database.IsRelational() && System.Transactions.Transaction.Current is null
+        && ownedRequestApproval is null && ownedPriceFloorApproval is null && ownedDiscountApproval is null && ownedOverDeliveryRequestApproval is null && dbContext.Database.IsRelational() && System.Transactions.Transaction.Current is null
         && dbContext.Database.CurrentTransaction is null && !dbContext.ChangeTracker.HasChanges() && !officialCancellationAuditWriter.HasPendingDrafts;
 
     public async Task<T> RunQuoteApprovalAsync<T>(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
