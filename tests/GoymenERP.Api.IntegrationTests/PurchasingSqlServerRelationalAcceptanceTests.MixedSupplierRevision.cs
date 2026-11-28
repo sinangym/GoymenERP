@@ -119,9 +119,10 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.ServiceInvoiceBindings WHERE OrderId=@id", ("@id", f.Service.OrderId)));
         await using var rejected = MixedApprovalScope(run);
         var billed = body with { MixedServices = [body.MixedServices![0] with { ExpectedVersion = "3" }] };
-        var refusal = await Assert.ThrowsAsync<PurchasingServiceException>(() => MixedReviseSupplier(rejected, f, billed,
+        var refusal = await Assert.ThrowsAsync<PurchasingRuleException>(() => MixedReviseSupplier(rejected, f, billed,
             AdmissionEnvelope(run, "mixed-supplier-invoice")));
-        Assert.Equal((409, PurchaseOrder.SupplierRevisionBlocked), (refusal.Status, refusal.Code));
+        // The application preserves the native durable 409/refusal path for this unchanged native rule.
+        Assert.Equal(PurchaseOrder.SupplierRevisionBlocked, refusal.Code);
         Assert.Equal(4L, await run.ScalarAsync<long>("SELECT Version FROM purchasing.PurchaseOrders WHERE Id=@id", ("@id", f.Parent.Order.Id)));
     }
 

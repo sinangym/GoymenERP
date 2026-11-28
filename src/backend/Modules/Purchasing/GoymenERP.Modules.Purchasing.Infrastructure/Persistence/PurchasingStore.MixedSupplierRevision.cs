@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Text.Json;
 using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
+using GoymenERP.Modules.Purchasing.Domain;
 using GoymenERP.Modules.Purchasing.Domain.Orders;
 using GoymenERP.Modules.Purchasing.Domain.Services;
 using Microsoft.EntityFrameworkCore;
@@ -87,10 +88,12 @@ public sealed partial class PurchasingStore : IPurchaseMixedSupplierRevisionStor
         { Answer = await owner.ReadMixedSupplierOriginalAsync(id, request, envelope, hash, Fence, token); return Answer is not null; }
         internal async Task PrepareAsync(StoredPurchaseOrder loaded, CancellationToken token)
         {
-            if (parent is not null || loaded.Order.ServiceMemberships.Count == 0 || loaded.Order.Status != PurchaseOrderStatus.Approved)
-                throw new PurchasingServiceException(409, PurchasingProblemCodesV1.OrderState);
-            if (loaded.Order.Version != PurchaseMixedOrderApprovalIntentV1.Version(request.ExpectedVersion))
-                throw new PurchasingServiceException(409, PurchasingProblemCodesV1.VersionConflict);
+            if (parent is not null || loaded.Order.ServiceMemberships.Count == 0)
+                throw new PurchasingServiceException(503, "service_unavailable");
+            var expected = PurchaseMixedOrderApprovalIntentV1.Version(request.ExpectedVersion);
+            if (loaded.Order.Version != expected) throw new PurchasingVersionConflictException(expected, loaded.Order.Version);
+            if (loaded.Order.Status != PurchaseOrderStatus.Approved)
+                throw new PurchasingRuleException(PurchaseOrder.SupplierRevisionBlocked, "Yalnız onaylı sipariş için cari revizyonu açılabilir.");
             parent = loaded; original = await owner.ReadCurrentMixedChildrenAsync(loaded, Fence, token, requireDraft: false);
             var selected = request.MixedServices!;
             if (selected.Count != original.Count || original.Any(child => !selected.Any(x => x.ServiceOrderId == child.OrderId
@@ -103,7 +106,7 @@ public sealed partial class PurchasingStore : IPurchaseMixedSupplierRevisionStor
             var serviceInvoice = await ReadMixedOwnerAsync(() => owner.MixedDatabase.ServiceInvoiceBindings.AsNoTracking()
                 .AnyAsync(x => ids.Contains(x.OrderId), token), Fence, token);
             if (invoice || serviceInvoice || loaded.Order.Acceptances.Count != 0 || original.Any(x => x.Acceptances.Count != 0))
-                throw new PurchasingServiceException(409, PurchaseOrder.SupplierRevisionBlocked);
+                throw new PurchasingRuleException(PurchaseOrder.SupplierRevisionBlocked, "Kabul veya fatura bulunan siparişin carisi değiştirilemez.");
             var facts = await prepare(original, token); await Fence(token);
             if (facts is null || facts.Count != original.Count || facts.Any(x => x is null || x.CompanyId != loaded.Order.CompanyId
                 || x.ActorId != envelope.ActorId.Trim() || x.Original is null || x.Candidate is null))
