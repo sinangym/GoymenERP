@@ -156,6 +156,35 @@ public sealed class PurchaseMixedOrderApprovalTests
         Assert.Equal(PurchaseOrderStatus.Draft, f.Parent.Order.Status); Assert.Equal(PurchaseServiceOrderStatus.Draft, f.Service.Status);
     }
 
+    [Fact]
+    public void Fresh_complete_child_selection_does_not_rewrite_the_original_binding_baseline()
+    {
+        var f = Fixture(); Bind(f); var baseline = f.Parent.Order.ServiceMemberships[0];
+        var changed = f.Service with { Version = 2, Lines = [f.Service.Lines[0], f.Service.Lines[1] with { LineId = Guid.NewGuid() }] };
+        Assert.Equal(PurchaseServiceOrder.VersionConflict, Assert.Throws<PurchaseServiceOrderException>(() => Approve(f with { Service = f.Service with { Version = 2 } })).Code);
+        Assert.Equal(PurchaseOrderStatus.Draft, f.Parent.Order.Status);
+        var approved = f.Parent.Order.ApproveSelectedServiceOrders(3, f.Parent.CompanyAccountId, [changed], [Selection(changed)],
+            Checker, Now, changed.Money.CurrencyId, new Dictionary<Guid, PurchaseOrderLineTheoreticalKilograms>());
+        Assert.Equal((4L, PurchaseOrderStatus.Approved), (f.Parent.Order.Version, f.Parent.Order.Status));
+        Assert.Equal((3L, PurchaseServiceOrderStatus.Approved), (approved[0].Version, approved[0].Status));
+        Assert.Same(baseline, Assert.Single(f.Parent.Order.ServiceMemberships));
+        Assert.Equal(1L, baseline.PreparedVersion); Assert.Equal(f.Service.Lines.Select(x => x.LineId), baseline.LineIds);
+    }
+
+    [Theory]
+    [InlineData("version")] [InlineData("line")] [InlineData("duplicate")]
+    public void Fresh_selection_rejects_stale_or_partial_child_intent_before_mutating_parent(string changed)
+    {
+        var f = Fixture(); Bind(f); var selection = Selection(f.Service);
+        if (changed == "version") selection = selection with { ExpectedVersion = 2 };
+        if (changed == "line") selection = selection with { LineIds = [selection.LineIds[0]] };
+        var failure = Record.Exception(() => f.Parent.Order.ApproveSelectedServiceOrders(3, f.Parent.CompanyAccountId, [f.Service],
+            changed == "duplicate" ? [selection, selection] : [selection], Checker, Now, f.Service.Money.CurrencyId,
+            new Dictionary<Guid, PurchaseOrderLineTheoreticalKilograms>()));
+        Assert.True(failure is ArgumentException or PurchaseServiceOrderException, failure?.ToString());
+        Assert.Equal((3L, PurchaseOrderStatus.Draft), (f.Parent.Order.Version, f.Parent.Order.Status)); Assert.Null(f.Parent.Order.Approval);
+    }
+
     private sealed class UnconfiguredParticipant : IPurchaseMixedOrderApprovalParticipantV1 { }
     private static PurchaseOrderServiceSelection Selection(PurchaseServiceOrderState service) => new(service.OrderId, service.Version, service.Lines.Select(x => x.LineId).ToArray());
     private static void Bind(MixedFixture f, IReadOnlyList<PurchaseOrderServiceSelection>? selections = null) =>

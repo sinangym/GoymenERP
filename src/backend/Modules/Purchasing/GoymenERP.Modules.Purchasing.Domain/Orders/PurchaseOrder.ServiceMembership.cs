@@ -90,28 +90,42 @@ public sealed partial class PurchaseOrder
     /// revalidate native supplier/reference/tax facts and persist both results with one command/audit transaction.</summary>
     public IReadOnlyList<PurchaseServiceOrderState> ApproveWithServiceOrders(long expectedVersion, Guid companyAccountId,
         IReadOnlyList<PurchaseServiceOrderState> services, string approvedBy, DateTimeOffset now, Guid functionalCurrencyId,
+        IReadOnlyDictionary<Guid, PurchaseOrderLineTheoreticalKilograms> theoreticalKilograms) =>
+        ApproveSelectedServiceOrders(expectedVersion, companyAccountId, services,
+            serviceMemberships.Select(x => new PurchaseOrderServiceSelection(x.ServiceOrderId, x.PreparedVersion, x.LineIds)).ToArray(),
+            approvedBy, now, functionalCurrencyId, theoreticalKilograms);
+
+    /// <summary>Pure native transitions for a fresh, complete current-child selection. Initial membership remains history.
+    /// Runtime admission still requires the parent owner's same-transaction preparation, writes and immutable receipt.</summary>
+    public IReadOnlyList<PurchaseServiceOrderState> ApproveSelectedServiceOrders(long expectedVersion, Guid companyAccountId,
+        IReadOnlyList<PurchaseServiceOrderState> services, IReadOnlyList<PurchaseOrderServiceSelection> currentSelections,
+        string approvedBy, DateTimeOffset now, Guid functionalCurrencyId,
         IReadOnlyDictionary<Guid, PurchaseOrderLineTheoreticalKilograms> theoreticalKilograms)
     {
         RequireVersion(expectedVersion);
-        ArgumentNullException.ThrowIfNull(services);
-        if (serviceMemberships.Count == 0 || services.Count != serviceMemberships.Count
-            || services.Any(x => x is null) || services.Select(x => x.OrderId).Distinct().Count() != services.Count)
-            throw new ArgumentException("Tam hizmet üyeliği bulunamadı.");
+        ArgumentNullException.ThrowIfNull(services); ArgumentNullException.ThrowIfNull(currentSelections);
+        if (serviceMemberships.Count == 0 || services.Count != serviceMemberships.Count || currentSelections.Count != serviceMemberships.Count
+            || services.Any(x => x is null) || currentSelections.Any(x => x is null)
+            || services.Select(x => x.OrderId).Distinct().Count() != services.Count
+            || currentSelections.Select(x => x.ServiceOrderId).Distinct().Count() != currentSelections.Count)
+            throw new ArgumentException("Complete current service selection is required.");
         var approved = new List<PurchaseServiceOrderState>();
         foreach (var membership in serviceMemberships)
         {
             var service = services.SingleOrDefault(x => x.OrderId == membership.ServiceOrderId)
-                ?? throw new ArgumentException("Üye hizmet bulunamadı.");
+                ?? throw new ArgumentException("Selected service owner is missing.");
+            var selection = currentSelections.SingleOrDefault(x => x.ServiceOrderId == membership.ServiceOrderId)
+                ?? throw new ArgumentException("Current service selection is missing.");
             if (membership.CompanyId != CompanyId || membership.PurchaseOrderId != Id || membership.SupplierPartyId != SupplierPartyId
                 || membership.CompanyAccountId != companyAccountId || Money?.CurrencyId != membership.CurrencyId
                 || service.CompanyId != CompanyId || service.SupplierPartyId != SupplierPartyId
                 || service.CompanyAccountId != companyAccountId || service.Money.CurrencyId != membership.CurrencyId
-                || !membership.LineIds.ToHashSet().SetEquals(service.Lines.Select(x => x.LineId)))
-                throw new ArgumentException("Üyelik güncel native sahiplerle uyuşmuyor.");
-            // Reuse the child's exact expected version, state, maker and tax guards; no second approval policy.
-            approved.Add(PurchaseServiceOrder.Approve(service, membership.PreparedVersion, approvedBy, now));
+                || selection.LineIds is not { Count: > 0 } || selection.LineIds.Any(x => x == Guid.Empty)
+                || selection.LineIds.Distinct().Count() != selection.LineIds.Count
+                || !selection.LineIds.ToHashSet().SetEquals(service.Lines.Select(x => x.LineId)))
+                throw new ArgumentException("Current selection and immutable membership identity do not match the actual owners.");
+            approved.Add(PurchaseServiceOrder.Approve(service, selection.ExpectedVersion, approvedBy, now));
         }
-        // Child states are immutable. Parent native rules run last, before either result can be persisted.
         ApproveCore(expectedVersion, approvedBy, now, functionalCurrencyId, theoreticalKilograms);
         return approved.AsReadOnly();
     }
