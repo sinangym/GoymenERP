@@ -352,6 +352,8 @@ public sealed partial class WorkDecisionHostV1(ICompanyContext company, ICurrent
             || snapshot.Item.Rules is null || snapshot.Item.Rules.Count > WorkInboxRulesV1.MaxRulesPerItem
             || snapshot.Item.Rules.Any(rule => !WorkInboxRulesV1.IsValidRule(source.Module, rule))
             || !ValidSalesPriceFloorProof(kind, snapshot)
+            // The selected discount owner is registered, but its paired Work host is not published yet.
+            || snapshot.SalesDiscountProof is not null
             || !ValidSalesQuoteConversionProof(kind, snapshot)
             || !ValidSalesRequestProof(kind, snapshot)
             || !ValidIdentityAccessGrantProof(kind, snapshot)
