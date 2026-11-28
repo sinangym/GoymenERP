@@ -1,6 +1,7 @@
 using GoymenERP.Api.Ai;
 using GoymenERP.Api.Ai.Answers;
 using GoymenERP.Api.Ai.Gateway;
+using GoymenERP.BuildingBlocks.Ai;
 using GoymenERP.BuildingBlocks.Security;
 using GoymenERP.BuildingBlocks.Multitenancy;
 using GoymenERP.Modules.AiKnowledge.Domain;
