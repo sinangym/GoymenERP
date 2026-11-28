@@ -489,7 +489,7 @@ public sealed partial class CounterpartyPartyMergeSqlServerRelationalAcceptanceT
         private readonly string _baseConnection = Environment.GetEnvironmentVariable(
             SqlServerRelationalAcceptanceTests.ConnectionStringEnvironmentVariable)!;
 
-        public MergeTest(bool grantMerge)
+        public MergeTest(bool grantMerge, Action<IServiceCollection>? configure = null)
         {
             Factory = new SqlServerRelationalApiFactory(_baseConnection, services =>
             {
@@ -508,6 +508,7 @@ public sealed partial class CounterpartyPartyMergeSqlServerRelationalAcceptanceT
                     operatorRole.Permissions.Add(ErpPermissions.CounterpartyPartiesRead);
                     operatorRole.Permissions.Add(ErpPermissions.CounterpartyPartiesMergeApprove);
                 });
+                configure?.Invoke(services);
             });
         }
 

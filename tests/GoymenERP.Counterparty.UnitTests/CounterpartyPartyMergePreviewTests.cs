@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 namespace GoymenERP.Counterparty.UnitTests;
 
 // InMemory read-boundary tests; these are not SQL transaction/merge acceptance evidence.
-public sealed class CounterpartyPartyMergePreviewTests
+public sealed partial class CounterpartyPartyMergePreviewTests
 {
     private static readonly Guid A = Guid.Parse("ca000000-0000-0000-0000-000000000001");
     private static readonly Guid B = Guid.Parse("ca000000-0000-0000-0000-000000000002");

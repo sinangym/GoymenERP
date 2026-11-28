@@ -89,43 +89,43 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyPartyMer
         await RequireCompanyWidePermissionAsync(ErpPermissions.CounterpartyPartiesRead, cancellationToken);
         Func<CancellationToken, Task> activeBeforeSave = token => authorityFence.RequireStillAsync(
             currentUser, companyContext, authorityRevalidationService, PartyMergePermissions, token);
-        RequirePartyId(survivorPartyId);
+        var shape = MergeShape(survivorPartyId, command);
         var mergedPartyId = command.MergedPartyId;
-        if (mergedPartyId == Guid.Empty)
-        {
-            throw new ArgumentException("mergedPartyId: Birleştirilecek cari kimliği boş olamaz.", nameof(command));
-        }
-
-        if (mergedPartyId == survivorPartyId)
-        {
-            throw new ArgumentException("mergedPartyId: Cari kendisiyle birleştirilemez.", nameof(command));
-        }
-
-        var expectedSurvivorVersion = CounterpartyContactInformationEditor.ParseVersion(command.ExpectedVersion);
-        var expectedMergedVersion = ParseMergedPartyVersion(command.MergedPartyExpectedVersion);
-        ValidateReason(command.Reason);
-        var reason = command.Reason.Trim();
+        var expectedSurvivorVersion = shape.Survivor;
+        var expectedMergedVersion = shape.Merged;
+        var reason = shape.Reason;
         var keyHash = IdempotencyHash.ComputeKey(metadata.IdempotencyKey);
-        var requestHash = IdempotencyHash.ComputePayload(new
-        {
-            SurvivorPartyId = survivorPartyId,
-            MergedPartyId = mergedPartyId,
-            ExpectedVersion = expectedSurvivorVersion,
-            MergedPartyExpectedVersion = expectedMergedVersion,
-            Reason = reason,
-        });
+        var requestHash = MergePayloadHash(survivorPartyId, command, shape);
 
         var survivor = await FindFencedPartyAsync(metadata.CompanyId, survivorPartyId, tracking: true, cancellationToken);
+        await MergePurposeFenceAsync(cancellationToken);
         var merged = await dbContext.Parties
             .SingleOrDefaultAsync(party => party.Id == mergedPartyId, cancellationToken);
-        var affectedCompanyIds = await dbContext.CompanyPartyAccounts.AsNoTracking()
-            .Where(account => account.PartyId == survivorPartyId || account.PartyId == mergedPartyId)
-            .Select(account => account.CompanyId)
-            .Distinct()
-            .OrderBy(companyId => companyId)
-            .ToArrayAsync(cancellationToken);
-        var mergedHeld = merged is not null && await dbContext.CompanyPartyAccounts.AsNoTracking()
-            .AnyAsync(account => account.PartyId == mergedPartyId, cancellationToken);
+        await MergePurposeFenceAsync(cancellationToken);
+        IReadOnlyList<CounterpartyPartyMergeHoldingAccountV1>? capturedAccounts = null;
+        Guid[] affectedCompanyIds;
+        bool mergedHeld;
+        if (mergePurpose is { } purpose)
+        {
+            // Under the owned SQL Server Serializable transaction this existing PartyId-index predicate
+            // covers the full holding-account range, including insert phantoms. Real SQL source tests verify it.
+            var accounts = await dbContext.CompanyPartyAccounts.AsNoTracking()
+                .Where(account => account.PartyId == survivorPartyId || account.PartyId == mergedPartyId)
+                .OrderBy(x => x.CompanyId).ThenBy(x => x.PartyId).ThenBy(x => x.Id).ToListAsync(cancellationToken);
+            capturedAccounts = Array.AsReadOnly(accounts.Select(MergeAccountPreview).ToArray());
+            affectedCompanyIds = accounts.Select(x => x.CompanyId).Distinct().Order().ToArray();
+            purpose.Companies = affectedCompanyIds;
+            await MergePurposeFenceAsync(cancellationToken);
+            mergedHeld = merged is not null && accounts.Any(x => x.PartyId == mergedPartyId);
+        }
+        else
+        {
+            affectedCompanyIds = await dbContext.CompanyPartyAccounts.AsNoTracking()
+                .Where(account => account.PartyId == survivorPartyId || account.PartyId == mergedPartyId)
+                .Select(account => account.CompanyId).Distinct().OrderBy(companyId => companyId).ToArrayAsync(cancellationToken);
+            mergedHeld = merged is not null && await dbContext.CompanyPartyAccounts.AsNoTracking()
+                .AnyAsync(account => account.PartyId == mergedPartyId, cancellationToken);
+        }
         var visible = survivor is not null
             && mergedHeld
             && await HoldsPartyMergeAuthorityEverywhereAsync(metadata.CompanyId, affectedCompanyIds, cancellationToken);
@@ -137,6 +137,7 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyPartyMer
         };
 
         var existing = await FindCommandExecutionAsync(ApprovePartyMergeCommandName, keyHash, cancellationToken);
+        await MergePurposeFenceAsync(cancellationToken);
         if (existing is not null)
         {
             await activeBeforeSave(cancellationToken);
@@ -168,6 +169,14 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyPartyMer
                 keyHash, requestHash, metadata, null, cancellationToken, fullBeforeSave);
             LogPartyMergeCommand(metadata, survivorPartyId, mergedPartyId, affectedCompanyIds.Length, refused);
             return refused;
+        }
+
+        if (mergePurpose is { } checkedPurpose)
+        {
+            var impact = MergeImpactPreview(metadata.CompanyId, survivor, merged, capturedAccounts!);
+            if (!string.Equals(checkedPurpose.SeenImpactDigest, MergeImpactDigest(impact), StringComparison.Ordinal)) throw new MergeImpactChanged();
+            checkedPurpose.CapturedImpact = impact;
+            await MergePurposeFenceAsync(cancellationToken);
         }
 
         var now = timeProvider.GetUtcNow();
@@ -204,7 +213,7 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyPartyMer
             AuditActorTypes.User, metadata.ActorId,
             CounterpartyPartyMergePermissionsV1.Approve, scope.RoleCodes,
             before,
-            SerializePartyMergeSnapshot(merged, survivor.Id, merge, affectedCompanyIds),
+            SerializePurposeMergeSnapshot(merged, survivor.Id, merge, affectedCompanyIds),
             reason,
             ApprovalContextJson: null, AuditAiInvolvement.None, AiContextJson: null,
             metadata.SourceChannel, metadata.ClientIpAddress, metadata.UserAgent,
@@ -281,6 +290,7 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyPartyMer
             {
                 var permissionScope = await authorizationService.GetPermissionScopeAsync(
                     permission, companyId, cancellationToken);
+                await MergePurposeFenceAsync(cancellationToken);
                 if (!permissionScope.IsGranted || !permissionScope.IsCompanyWide)
                 {
                     return false;
@@ -305,6 +315,7 @@ internal sealed partial class CounterpartyCommandService : ICounterpartyPartyMer
             foreach (var permission in PartyMergePermissions)
             {
                 await RequireFreshCompanyWidePermissionAsync(permission, companyId, cancellationToken);
+                await MergePurposeFenceAsync(cancellationToken);
             }
         }
     }

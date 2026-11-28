@@ -32,7 +32,8 @@ internal sealed partial class CounterpartyCommandService(
     ISettingsEInvoiceScenarioPolicyProviderV1? eInvoiceScenarioPolicy = null,
     IUserDirectoryReadPortV1? userDirectory = null,
     ICompanyLifecycleReadPortV1? companyLifecycle = null,
-    IAuditTransactionWriterV1? identityDecisionAuditWriter = null)
+    IAuditTransactionWriterV1? identityDecisionAuditWriter = null,
+    ICounterpartyMergePurposeAuditReadV1? mergePurposeAudit = null)
     : ICounterpartyCommandService, ICounterpartyContactInformationService
 {
     private const int CommandExecutionSchemaVersion = 1;
@@ -407,6 +408,12 @@ internal sealed partial class CounterpartyCommandService(
         CancellationToken cancellationToken,
         Func<CancellationToken, Task>? beforeSave = null)
     {
+        if (mergePurpose is { } merging)
+        {
+            if (merging.ReadOnly || commandName != ApprovePartyMergeCommandName || merging.CompanyId != metadata.CompanyId
+                || merging.ActorId != metadata.ActorId || merging.KeyHash != idempotencyKeyHash || merging.RequestHash != requestHash)
+                throw new InvalidOperationException("Birleştirme purpose işlemi başka komut kaydedemez.");
+        }
         if (identityDecision is { } decision)
         {
             if (decision.CommandName != commandName)
@@ -434,6 +441,7 @@ internal sealed partial class CounterpartyCommandService(
 
         try
         {
+            await MergePurposeFenceAsync(cancellationToken);
             if (identityDecision is { } savingDecision) await savingDecision.Fence(cancellationToken);
             if (createWithTaxIdentity is { } savingCreation) await savingCreation.Fence(cancellationToken);
             if (beforeSave is not null)
@@ -442,7 +450,19 @@ internal sealed partial class CounterpartyCommandService(
             }
 
             if (createWithTaxIdentity is { } attemptingCreation) attemptingCreation.SaveAttempted = true;
+            if (mergePurpose is not null && identityDecisionAuditWriter!.HasPendingDrafts)
+            {
+                var transaction = dbContext.Database.CurrentTransaction ?? throw new InvalidOperationException("Birleştirme owned işlemi bulunamadı.");
+                await identityDecisionAuditWriter.WritePendingAsync(transaction.GetDbTransaction(), cancellationToken);
+                await MergePurposeFenceAsync(cancellationToken);
+                if (identityDecisionAuditWriter.HasPendingDrafts) throw new InvalidOperationException("Birleştirme audit kuyruğu kapanmadı.");
+            }
             await dbContext.SaveChangesAsync(cancellationToken);
+            if (mergePurpose is { } savedMerge)
+            {
+                savedMerge.Saved = true;
+                await MergePurposeFenceAsync(cancellationToken);
+            }
             if (createWithTaxIdentity is { } savedCreation)
             {
                 savedCreation.Saved = true;
@@ -459,7 +479,7 @@ internal sealed partial class CounterpartyCommandService(
                 metadata.CorrelationId);
         }
         catch (DbUpdateException exception) when (
-            identityDecision is null && createWithTaxIdentity is null && concurrencyContext is not null
+            mergePurpose is null && identityDecision is null && createWithTaxIdentity is null && concurrencyContext is not null
             && (exception is DbUpdateConcurrencyException || IsDatedHistoryRace(exception)))
         {
             dbContext.ChangeTracker.Clear();
@@ -496,7 +516,7 @@ internal sealed partial class CounterpartyCommandService(
                 cancellationToken: cancellationToken,
                 beforeSave: beforeSave);
         }
-        catch (DbUpdateException) when (identityDecision is null && createWithTaxIdentity is null)
+        catch (DbUpdateException) when (mergePurpose is null && identityDecision is null && createWithTaxIdentity is null)
         {
             dbContext.ChangeTracker.Clear();
             var winner = await FindCommandExecutionAsync(

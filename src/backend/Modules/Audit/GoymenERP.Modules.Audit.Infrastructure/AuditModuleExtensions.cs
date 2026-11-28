@@ -49,6 +49,7 @@ public static class AuditModuleExtensions
         services.AddScoped<AuditSaveChangesInterceptor>();
         services.AddScoped<IAuditQueryService, AuditQueryService>();
         services.AddScoped<IIdentityAccessDecisionAuditReadV1, IdentityAccessDecisionAuditReadV1>();
+        services.AddScoped<ICounterpartyMergePurposeAuditReadV1, CounterpartyMergePurposeAuditReadV1>();
         services.AddSingleton(refusedAttemptRetention);
         services.AddSingleton(refusedAttemptStandaloneWrite);
         services.AddSingleton(refusedAttemptAggregation);

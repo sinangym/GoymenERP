@@ -7,8 +7,11 @@ namespace GoymenERP.Modules.Counterparty.Infrastructure.Persistence;
 
 internal sealed partial class CounterpartyCommandService
 {
-    public async Task<CounterpartyPartyMergePreviewResultV1> PreviewMergeAsync(Guid survivorPartyId,
-        PreviewCounterpartyPartyMergeV1 command, CancellationToken token)
+    public Task<CounterpartyPartyMergePreviewResultV1> PreviewMergeAsync(Guid survivorPartyId,
+        PreviewCounterpartyPartyMergeV1 command, CancellationToken token) => PreviewMergeCoreAsync(survivorPartyId, command, null, token);
+
+    private async Task<CounterpartyPartyMergePreviewResultV1> PreviewMergeCoreAsync(Guid survivorPartyId,
+        PreviewCounterpartyPartyMergeV1 command, Func<CancellationToken, Task>? consumer, CancellationToken token)
     {
         token.ThrowIfCancellationRequested(); ArgumentNullException.ThrowIfNull(command);
         RequirePartyId(survivorPartyId);
@@ -40,12 +43,13 @@ internal sealed partial class CounterpartyCommandService
             return Answer(CounterpartyPartyMergePreviewStatusV1.Changed);
         await AllCompanyAuthority(); await Fence();
         if (companies.Any(company => !currentUser.CanAccessCompany(company))) throw new UnauthorizedAccessException("Birleştirme etki önizlemesi yetkisi yok.");
-        return new(CounterpartyPartyMergePreviewStatusV1.Found, new(captured.CompanyId, PartyPreview(survivor), PartyPreview(merged),
-            Array.AsReadOnly(accounts.ToArray()), new(merged.Id, survivor.Id, false)));
+        return new(CounterpartyPartyMergePreviewStatusV1.Found, MergeImpactPreview(captured.CompanyId, survivor, merged, Array.AsReadOnly(accounts.ToArray())));
 
         CounterpartyPartyMergePreviewResultV1 Answer(CounterpartyPartyMergePreviewStatusV1 status) => new(status, null);
         async Task Fence()
         {
+            token.ThrowIfCancellationRequested();
+            if (consumer is not null) await consumer(token);
             token.ThrowIfCancellationRequested();
             await captured.RequireStillAsync(currentUser, companyContext, authorityRevalidationService, PartyMergePermissions, token);
             token.ThrowIfCancellationRequested();
@@ -69,8 +73,7 @@ internal sealed partial class CounterpartyCommandService
                 .Where(x => x.PartyId == survivorPartyId || x.PartyId == command.MergedPartyId)
                 .OrderBy(x => x.CompanyId).ThenBy(x => x.PartyId).ThenBy(x => x.Id).ToListAsync(token);
             await Fence();
-            return rows.Select(x => new CounterpartyPartyMergeHoldingAccountV1(x.CompanyId, x.Id, x.PartyId,
-                x.Version.ToString(CultureInfo.InvariantCulture), x.IsActive)).ToList();
+            return rows.Select(MergeAccountPreview).ToList();
         }
         async Task<List<Party>> ReadParties()
         {
