@@ -32,8 +32,8 @@ internal sealed partial class OrganizationMasterDataService
             var view = ToChangeView(row);
             var source = TaxIdSourceDigest(row);
             var detail = new OrganizationCompanyTaxIdDecisionDetailV1(companyId, company.Version, company.Vkn, view,
-                row.CompanyVersionAtRequest, row.IsCurrentFor(company), source,
-                TaxIdPurposeDigest(new { company.Id, company.Version, company.Vkn, Request = view, row.CompanyVersionAtRequest }));
+                row.CompanyVersionAtRequest, row.IsCurrentFor(company), source, "");
+            detail = detail with { PreviewDigest = OrganizationCompanyTaxIdDecisionFactsV1.PreviewDigest(detail) };
             return new(OrganizationCompanyTaxIdDecisionReadStatusV1.Found, detail);
         }
         catch (TaxIdPurposeDenied) { return new(OrganizationCompanyTaxIdDecisionReadStatusV1.Denied, null); }
@@ -56,8 +56,8 @@ internal sealed partial class OrganizationMasterDataService
     }
     private sealed class TaxIdPurposeDenied : UnauthorizedAccessException;
     private static string TaxIdPurposeDigest<T>(T value) => Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(value))));
-    private static string TaxIdSourceDigest(CompanyTaxIdChangeRequest row) => TaxIdPurposeDigest(new
-    { row.CompanyId, row.Id, row.CurrentVkn, row.ProposedVkn, row.CompanyVersionAtRequest, row.Reason, row.RequestedBy, row.RequestedAtUtc });
+    private static string TaxIdSourceDigest(CompanyTaxIdChangeRequest row) =>
+        OrganizationCompanyTaxIdDecisionFactsV1.SourceFactsDigest(row.CompanyId, ToChangeView(row), row.CompanyVersionAtRequest);
     private static bool ValidTaxIdPurposeRow(CompanyTaxIdChangeRequest row) => row.Id != Guid.Empty && row.CompanyId != Guid.Empty
         && row.CompanyVersionAtRequest > 0 && Company.IsCanonicalVkn(row.ProposedVkn) && OrganizationCompanyTaxIdRules.HasValidCheckDigit(row.ProposedVkn)
         && (row.CurrentVkn is null || Company.IsCanonicalVkn(row.CurrentVkn))

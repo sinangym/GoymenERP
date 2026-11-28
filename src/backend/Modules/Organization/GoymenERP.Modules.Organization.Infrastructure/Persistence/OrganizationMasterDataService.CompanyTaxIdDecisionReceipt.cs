@@ -46,6 +46,7 @@ internal sealed partial class OrganizationMasterDataService
         return new(companyId, id, row.CompanyVersionAtRequest, command.ExpectedVersion, row.Version, command.Decision, note,
             row.RequestedBy, row.RequestedAtUtc, row.DecidedBy!, row.DecidedAtUtc!.Value, request.CommandName,
             request.IdempotencyKeyHash, request.RequestHash, execution.ActorId, execution.OriginalCorrelationId,
-            execution.CompletedAtUtc, TaxIdSourceDigest(row), TaxIdPurposeDigest(original.Response));
+            execution.CompletedAtUtc, TaxIdSourceDigest(row), TaxIdPurposeDigest(original.Response))
+        { ProposedVkn = row.ProposedVkn, FirstVkn = row.CurrentVkn is null };
     }
 }

@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace GoymenERP.Modules.Organization.Application.Contracts;
 
 // Purpose-only reads: the existing company-wide tax-id approval permission, never Organization.Read.
@@ -19,4 +21,8 @@ public sealed record OrganizationCompanyTaxIdDecisionReceiptV1(Guid CompanyId, G
     long CompanyVersionAtRequest, long ExpectedCompanyVersion, long RequestVersion, string Decision, string? Note,
     string RequestedBy, DateTimeOffset RequestedAtUtc, string DecidedBy, DateTimeOffset DecidedAtUtc,
     string CommandName, string IdempotencyKeyHash, string PayloadHash, string ActorId, string OriginalCorrelationId,
-    DateTimeOffset CommandCompletedAtUtc, string SourceFactsDigest, string OriginalResultDigest);
+    DateTimeOffset CommandCompletedAtUtc, string SourceFactsDigest, string OriginalResultDigest)
+{
+    [JsonIgnore] public string? ProposedVkn { get; init; }
+    [JsonIgnore] public bool? FirstVkn { get; init; }
+}
