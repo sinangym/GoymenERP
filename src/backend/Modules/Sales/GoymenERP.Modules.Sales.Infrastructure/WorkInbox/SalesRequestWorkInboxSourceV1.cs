@@ -12,11 +12,12 @@ namespace GoymenERP.Modules.Sales.Infrastructure.WorkInbox;
 /// request"), so the item names no maker and no excluded decider (YOL-D23: Work excludes no one the owner does not). The rule
 /// carries no numbers.
 /// </summary>
-internal sealed class SalesRequestWorkInboxSourceV1(
+internal sealed partial class SalesRequestWorkInboxSourceV1(
     ISalesWorkInboxApprovalStoreV1 store,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
-    IErpAuthorityRevalidationService authority)
+    IErpAuthorityRevalidationService authority,
+    ISalesRequestDecisionReadV1? owner = null)
     : SalesWorkInboxSourceBaseV1(companyContext, currentUser, authority)
 {
     public const string KindName = "sales.request.v1";
