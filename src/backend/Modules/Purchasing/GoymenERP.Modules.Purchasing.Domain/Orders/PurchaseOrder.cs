@@ -217,6 +217,12 @@ public sealed partial class PurchaseOrder
     /// </summary>
     public void Approve(long expectedVersion, string approvedBy, DateTimeOffset now)
     {
+        RequireNoServiceApprovalParticipant();
+        ApproveCore(expectedVersion, approvedBy, now);
+    }
+
+    private void ApproveCore(long expectedVersion, string approvedBy, DateTimeOffset now)
+    {
         RequireVersion(expectedVersion);
         var actor = RequireActor(approvedBy, nameof(approvedBy));
         RequireStatus(PurchaseOrderStatus.Draft, PurchasingRuleCodes.OrderNotDraft, "Yalnız taslak sipariş onaylanabilir.");
@@ -251,6 +257,12 @@ public sealed partial class PurchaseOrder
     /// </summary>
     public void Approve(long expectedVersion, string approvedBy, DateTimeOffset now, Guid functionalCurrencyId)
     {
+        RequireNoServiceApprovalParticipant();
+        ApproveCore(expectedVersion, approvedBy, now, functionalCurrencyId);
+    }
+
+    private void ApproveCore(long expectedVersion, string approvedBy, DateTimeOffset now, Guid functionalCurrencyId)
+    {
         RequireVersion(expectedVersion);
         var functional = Identity.Require(functionalCurrencyId, nameof(functionalCurrencyId));
         if (Status == PurchaseOrderStatus.Draft && Money is { } money && money.CurrencyId != functional
@@ -260,7 +272,7 @@ public sealed partial class PurchaseOrder
                 "Döviz cinsinden siparişin kuru yok; kur girilmeden sipariş onaylanamaz.");
         }
 
-        Approve(expectedVersion, approvedBy, now);
+        ApproveCore(expectedVersion, approvedBy, now);
     }
 
     /// <summary>
@@ -271,6 +283,13 @@ public sealed partial class PurchaseOrder
     /// inconsistency. Every other rule is <see cref="Approve(long, string, DateTimeOffset, Guid)"/>'s (the version and Draft checks come first).
     /// </summary>
     public void Approve(long expectedVersion, string approvedBy, DateTimeOffset now, Guid functionalCurrencyId,
+        IReadOnlyDictionary<Guid, PurchaseOrderLineTheoreticalKilograms> theoreticalKilograms)
+    {
+        RequireNoServiceApprovalParticipant();
+        ApproveCore(expectedVersion, approvedBy, now, functionalCurrencyId, theoreticalKilograms);
+    }
+
+    private void ApproveCore(long expectedVersion, string approvedBy, DateTimeOffset now, Guid functionalCurrencyId,
         IReadOnlyDictionary<Guid, PurchaseOrderLineTheoreticalKilograms> theoreticalKilograms)
     {
         ArgumentNullException.ThrowIfNull(theoreticalKilograms);
@@ -288,7 +307,7 @@ public sealed partial class PurchaseOrder
                 "Adetli satırın teorik kg kaynağı yok; sipariş onaylanamaz.");
         }
 
-        Approve(expectedVersion, approvedBy, now, functionalCurrencyId);
+        ApproveCore(expectedVersion, approvedBy, now, functionalCurrencyId);
         foreach (var line in pending) line.RecordTheoreticalKilograms(theoreticalKilograms[line.Id]);
     }
 
