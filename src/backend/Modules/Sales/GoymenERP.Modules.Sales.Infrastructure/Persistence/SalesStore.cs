@@ -62,6 +62,7 @@ public sealed partial class SalesStore(
     public async Task<SalesDraftStoreResult> StoreDraftAsync(SalesDraftWriteEnvelope envelope, string requestHash,
         Func<string, SalesOrderDraft> build, CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(build);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
@@ -201,6 +202,7 @@ public sealed partial class SalesStore(
     public async Task RecordRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash, SalesDraftTerminalRefusal refusal,
         CancellationToken cancellationToken = default, string commandName = SalesDraftCommands.CreateV1, Guid? draftId = null)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(refusal);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
@@ -268,6 +270,7 @@ public sealed partial class SalesStore(
         Func<SalesOrderDraft, int?, System.Data.IDbTransaction, CancellationToken, Task>? withinTransaction = null,
         CancellationToken cancellationToken = default, SalesOrderRiskAssessment? riskWarning = null)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(freshDecisionFence);
         if (commandName is not (SalesDraftCommands.ApproveV1 or SalesDraftCommands.RejectV1))
             throw new ArgumentException("Fresh decision fence is for native approval/rejection only.", nameof(commandName));
@@ -325,6 +328,7 @@ public sealed partial class SalesStore(
         Func<SalesOrderDraft, DateTimeOffset, CancellationToken, Task>? stage = null,
         Func<SalesOrderDraft, CancellationToken, Task>? freshDecisionFence = null)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
         RequireEnvelope(envelope);
@@ -580,6 +584,7 @@ public sealed partial class SalesStore(
         Func<SalesOrderDraft, CancellationToken, Task> beforeWrite, Func<SalesOrderDraft, object> picture,
         Func<SalesOrderDraft, SalesDraftReplayResult?> replayResult, CancellationToken cancellationToken)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
         RequireEnvelope(envelope);
@@ -1075,6 +1080,7 @@ public sealed partial class SalesStore(
         Guid draftId, Func<SalesOrderDraft, DateTimeOffset, DeliveryScheduleSnapshot> mutate, SalesDraftStateAudit audit,
         Func<CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
         ArgumentNullException.ThrowIfNull(beforeWrite);
@@ -1242,6 +1248,7 @@ public sealed partial class SalesStore(
         Func<SalesOrderDraft, System.Data.IDbTransaction, CancellationToken, Task>? withinTransaction = null,
         CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
         ArgumentNullException.ThrowIfNull(beforeWrite);
@@ -1426,6 +1433,7 @@ public sealed partial class SalesStore(
         Guid draftId, Func<SalesOrderDraft, SalesForceClosurePlan, DateTimeOffset, ForceClosureFacts> mutate, SalesDraftStateAudit audit,
         Func<SalesOrderDraft, CancellationToken, Task<SalesForceClosurePlan>> beforeWrite, CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
         ArgumentNullException.ThrowIfNull(beforeWrite);
@@ -1570,6 +1578,7 @@ public sealed partial class SalesStore(
         SalesDraftStateAudit audit, Func<SalesOrderDraft, CancellationToken, Task<OverDeliveryApprovalInput>> beforeWrite,
         CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
         ArgumentNullException.ThrowIfNull(beforeWrite);
@@ -1716,6 +1725,7 @@ public sealed partial class SalesStore(
         SalesDraftStateAudit audit, Func<SalesOrderDraft, CancellationToken, Task<LineClosureInput>> beforeWrite,
         CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
         ArgumentNullException.ThrowIfNull(beforeWrite);
@@ -1870,6 +1880,7 @@ public sealed partial class SalesStore(
         Guid draftId, Func<SalesOrderDraft, DateTimeOffset, RemainderChangeFacts> mutate, SalesDraftStateAudit audit,
         Func<SalesOrderDraft, CancellationToken, Task> beforeWrite, CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
         ArgumentNullException.ThrowIfNull(beforeWrite);

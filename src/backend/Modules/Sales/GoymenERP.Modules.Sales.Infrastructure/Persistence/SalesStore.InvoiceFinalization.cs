@@ -21,6 +21,7 @@ public sealed partial class SalesStore
     public async Task<SalesInvoiceStoreResult?> FinalizeInvoiceAsync(SalesDraftWriteEnvelope envelope, string requestHash, Guid invoiceId,
         Action<SalesInvoice, DateTimeOffset> finalize, SalesDraftStateAudit audit, CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(finalize);
         ArgumentNullException.ThrowIfNull(audit);
         RequireEnvelope(envelope);
@@ -99,6 +100,7 @@ public sealed partial class SalesStore
         string? commandName, Guid invoiceId, Action<SalesInvoice, DateTimeOffset> record, SalesDraftStateAudit audit,
         CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(record);
         ArgumentNullException.ThrowIfNull(audit);
         RequireEnvelope(envelope);

@@ -20,6 +20,7 @@ public sealed partial class SalesStore : ISalesRiskExceptionUsageStore
     public async Task<SalesRiskExceptionUsageOutcome> RecordRiskExceptionUsageAsync(SalesRiskExceptionUsageV1 usage,
         CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         RequireUsage(usage);
         var companyId = RequireResolvedCompany();
 

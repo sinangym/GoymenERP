@@ -40,6 +40,7 @@ public sealed partial class SalesStore : ISalesRiskExceptionStore
     public async Task<SalesRiskExceptionStoreResult> StoreRiskExceptionAsync(SalesDraftWriteEnvelope envelope, string requestHash, Guid orderId,
         Func<int, DateTimeOffset, SalesShipmentRiskException> build, SalesDraftStateAudit audit, CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(build);
         RequireRiskExceptionAudit(audit);
         RequireEnvelope(envelope);
@@ -82,6 +83,7 @@ public sealed partial class SalesStore : ISalesRiskExceptionStore
     public async Task RecordRiskExceptionRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName, Guid orderId,
         SalesDraftTerminalRefusal refusal, CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(refusal);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
@@ -115,6 +117,7 @@ public sealed partial class SalesStore : ISalesRiskExceptionStore
         string commandName, Guid orderId, int exceptionNo, Action<SalesShipmentRiskException, DateTimeOffset> mutate,
         SalesDraftStateAudit audit, CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(mutate);
         RequireRiskExceptionAudit(audit);
         RequireEnvelope(envelope);

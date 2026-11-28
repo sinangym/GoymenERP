@@ -21,6 +21,7 @@ public sealed partial class SalesStore
         SalesDraftStateAudit audit, Func<SalesOrderDraft, CancellationToken, Task<SalesSourcePlanWriteInput>> beforeWrite,
         CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
         ArgumentNullException.ThrowIfNull(beforeWrite);

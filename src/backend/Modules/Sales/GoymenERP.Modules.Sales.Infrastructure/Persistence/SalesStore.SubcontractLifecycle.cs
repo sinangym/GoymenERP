@@ -36,6 +36,7 @@ public sealed partial class SalesStore : ISalesSubcontractInvoiceLifecycleStoreV
     public async Task<SalesSubcontractInvoiceReplayV1> RecordLifecycleRefusalAsync(SalesDraftWriteEnvelope envelope,
         string requestHash, string commandName, SalesDraftTerminalRefusal refusal, CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         RequireSubcontractCommand(envelope, requestHash, commandName);
         if (refusal.Status is not (400 or 403 or 404 or 409 or 422) || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null)
             throw new ArgumentException("Kalıcı ret kaydı geçersiz.", nameof(refusal));
@@ -72,6 +73,7 @@ public sealed partial class SalesStore : ISalesSubcontractInvoiceLifecycleStoreV
         string requestHash, string commandName, SalesDraftTerminalRefusal refusal, Func<CancellationToken, Task> freshFence,
         CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(freshFence);
         if (System.Transactions.Transaction.Current is not null)
             throw new InvalidOperationException("A guarded subcontract invoice command cannot join an ambient transaction.");
@@ -88,6 +90,7 @@ public sealed partial class SalesStore : ISalesSubcontractInvoiceLifecycleStoreV
         string requestHash, string commandName, Guid invoiceId, Action<SalesSubcontractServiceInvoice, DateTimeOffset> mutate,
         SalesDraftStateAudit audit, Func<CancellationToken, Task>? freshFence, CancellationToken cancellationToken)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         RequireSubcontractCommand(envelope, requestHash, commandName);
         // Locate the immutable key without taking a header lock first. Both Logistics correction and
         // Sales mutation then use the same claim-range -> owner weighing -> invoice-header lock order.

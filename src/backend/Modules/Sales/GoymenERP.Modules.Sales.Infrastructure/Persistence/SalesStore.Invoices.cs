@@ -23,6 +23,7 @@ public sealed partial class SalesStore : ISalesInvoiceStore
     public async Task<SalesInvoiceStoreResult> StoreInvoiceAsync(SalesDraftWriteEnvelope envelope, string requestHash,
         Func<string, SalesInvoice> build, CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(build);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
@@ -315,6 +316,7 @@ public sealed partial class SalesStore : ISalesInvoiceStore
     public async Task RecordInvoiceRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName, Guid invoiceId,
         SalesDraftTerminalRefusal refusal, CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(refusal);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
@@ -362,6 +364,7 @@ public sealed partial class SalesStore : ISalesInvoiceStore
         Guid invoiceId, Action<SalesInvoice, DateTimeOffset> mutate, SalesDraftStateAudit audit,
         Func<CancellationToken, Task>? freshFence, CancellationToken cancellationToken)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
         RequireEnvelope(envelope);
@@ -470,6 +473,7 @@ public sealed partial class SalesStore : ISalesInvoiceStore
         Func<SalesInvoice, DateTimeOffset, SalesInvoiceMatchFacts> record, SalesDraftStateAudit audit,
         CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(record);
         ArgumentNullException.ThrowIfNull(audit);
         RequireEnvelope(envelope);

@@ -42,6 +42,7 @@ public sealed partial class SalesStore : ISalesApprovalRequestStore
         string requestHash, Guid quoteId, Func<int, DateTimeOffset, SalesApprovalRequest> build, SalesDraftStateAudit audit,
         CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(build);
         RequireApprovalRequestAudit(audit);
         RequireEnvelope(envelope);
@@ -83,6 +84,7 @@ public sealed partial class SalesStore : ISalesApprovalRequestStore
     public async Task RecordApprovalRequestRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
         Guid subjectId, SalesDraftTerminalRefusal refusal, CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(refusal);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
@@ -117,6 +119,7 @@ public sealed partial class SalesStore : ISalesApprovalRequestStore
         string commandName, SalesApprovalRequestKind kind, Guid subjectId, int requestNo,
         Action<SalesApprovalRequest, DateTimeOffset> mutate, SalesDraftStateAudit audit, CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(mutate);
         RequireApprovalRequestAudit(audit);
         RequireEnvelope(envelope);
@@ -177,6 +180,7 @@ public sealed partial class SalesStore : ISalesApprovalRequestStore
         Func<SalesOrderDraft, SalesApprovalRequest, OverDeliveryApprovalInput, DateTimeOffset, OverDeliveryApprovalFacts> mutate,
         SalesDraftStateAudit audit, CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(beforeWrite);
         ArgumentNullException.ThrowIfNull(mutate);
         RequireApprovalRequestAudit(audit);
@@ -297,6 +301,7 @@ public sealed partial class SalesStore : ISalesApprovalRequestStore
     public async Task<(SalesApprovalRequest Request, bool Created)> OpenOverDeliveryRequestAsync(SalesOverDeliveryRequestOpenV1 input,
         SalesDraftStateAudit audit, CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(input);
         RequireApprovalRequestAudit(audit);
         RequireEnvelope(input.Envelope);

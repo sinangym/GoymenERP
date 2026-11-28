@@ -300,6 +300,7 @@ public sealed partial class SalesStore : ISalesOfficialInvoiceCancellationStoreV
         final.FinanceStatus == SalesInvoiceFinanceStatus.Admitted, officialNo, ettn);
     private async Task<T> OfficialTransaction<T>(Func<Task<T>> action, Func<CancellationToken, Task> fence, CancellationToken ct)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         var writer = officialCancellationAuditWriter ?? throw new SalesDraftStoreException(SalesDraftProblemCodesV1.OwnerReferenceUnavailable, "Denetim işlem yazıcısı yok.");
         if (writer.HasPendingDrafts) throw InvalidOfficial();
         var companyId = RequireResolvedCompany();

@@ -72,6 +72,7 @@ public sealed partial class SalesStore : ISalesOrderSignedApprovalStore
         long expectedOrderVersion, SalesOrderSignedApproval approval, SalesDraftStateAudit audit, SalesDraftStateAudit supersededAudit,
         CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(approval);
         RequireSignedApprovalAudit(audit);
         RequireSignedApprovalAudit(supersededAudit);
@@ -131,6 +132,7 @@ public sealed partial class SalesStore : ISalesOrderSignedApprovalStore
         SalesOrderSignedApproval approval, SalesDraftStateAudit audit, SalesDraftStateAudit supersededAudit, DateTimeOffset now,
         CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(order);
         ArgumentNullException.ThrowIfNull(approval);
         RequireSignedApprovalAudit(audit);
@@ -184,6 +186,7 @@ public sealed partial class SalesStore : ISalesOrderSignedApprovalStore
         string requestHash, Guid orderId, Guid approvalId, Action<SalesOrderSignedApproval, DateTimeOffset> mutate,
         SalesDraftStateAudit audit, CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(mutate);
         RequireSignedApprovalAudit(audit);
         RequireEnvelope(envelope);
@@ -234,6 +237,7 @@ public sealed partial class SalesStore : ISalesOrderSignedApprovalStore
     public async Task RecordSignedApprovalRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
         Guid orderId, SalesDraftTerminalRefusal refusal, CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(refusal);
         RequireEnvelope(envelope);
         RequireHash(requestHash);

@@ -11,6 +11,7 @@ public sealed partial class SalesStore
 {
     private async Task<T> InSubcontractTransactionAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         // This is an owner command, not a borrowed writer. Pending changes or another transaction would
         // otherwise let a failed invoice command persist unrelated work or commit someone else's handles.
         if (dbContext.Database.CurrentTransaction is not null || dbContext.ChangeTracker.HasChanges())
@@ -48,6 +49,7 @@ public sealed partial class SalesStore
     /// </summary>
     private async Task<T> InSignedApprovalTransactionAsync<T>(Func<Task<T>> action, CancellationToken cancellationToken)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         // An owner command with its own clean transaction: pending changes or a borrowed transaction would commit unrelated work.
         if (dbContext.Database.CurrentTransaction is not null || dbContext.ChangeTracker.HasChanges())
         {

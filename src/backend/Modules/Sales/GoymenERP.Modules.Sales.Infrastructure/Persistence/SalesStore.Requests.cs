@@ -24,6 +24,7 @@ public sealed partial class SalesStore
     public async Task<SalesRequestStoreResult> StoreRequestAsync(SalesDraftWriteEnvelope envelope, string requestHash,
         Func<string, SalesRequest> build, CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(build);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
@@ -102,6 +103,7 @@ public sealed partial class SalesStore
     public async Task RecordRequestRefusalAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName, Guid? requestId,
         SalesDraftTerminalRefusal refusal, CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(refusal);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
@@ -144,6 +146,7 @@ public sealed partial class SalesStore
     public async Task<SalesRequestStoreResult?> DecideRequestAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
         Guid requestId, Action<SalesRequest, DateTimeOffset> mutate, SalesDraftStateAudit audit, CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(mutate);
         ArgumentNullException.ThrowIfNull(audit);
         RequireEnvelope(envelope);

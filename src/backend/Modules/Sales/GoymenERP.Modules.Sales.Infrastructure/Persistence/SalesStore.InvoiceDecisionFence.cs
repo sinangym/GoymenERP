@@ -9,6 +9,7 @@ public sealed partial class SalesStore
         string requestHash, string commandName, Guid invoiceId, Action<SalesInvoice, DateTimeOffset> mutate,
         SalesDraftStateAudit audit, Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken = default)
     {
+        RequireNoForeignReturnOrSelectedReadMutation();
         ArgumentNullException.ThrowIfNull(freshFence);
         if (System.Transactions.Transaction.Current is not null)
             throw new InvalidOperationException("An invoice decision requires its own Sales transaction.");
