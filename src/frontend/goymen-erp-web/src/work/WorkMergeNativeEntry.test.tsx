@@ -26,7 +26,7 @@ describe('native single-step merge entry from Work management', () => {
     expect(calls.filter(call => call.method !== 'GET')).toHaveLength(0)
     expect(calls.filter(call => call.url.includes('/work/inbox') || call.url.includes('/merge/preview'))).toHaveLength(0)
   })
-  it.each([[CAPABILITY.cariPartiesList], [CARI_MERGE_CAPABILITY], ['work.delegations.manage', CAPABILITY.cariPartiesList]])('does not expose the entry for incomplete capabilities %j', async capabilities => {
+  it.each<{ capabilities: readonly string[] }>([{ capabilities: [CAPABILITY.cariPartiesList] }, { capabilities: [CARI_MERGE_CAPABILITY] }, { capabilities: ['work.delegations.manage', CAPABILITY.cariPartiesList] }])('does not expose the entry for incomplete capabilities $capabilities', async ({ capabilities }) => {
     installFetch({ capabilities, respond: url => url.includes('/work/delegations?') ? json({ companyId: 'aaaaaaaa-0000-4000-8000-000000000001', items: [], page: 0, hasMore: false, people: [] }) : undefined })
     mount(); if (capabilities.includes(CARI_MERGE_CAPABILITY) || capabilities.includes('work.delegations.manage')) await screen.findByRole('heading', { name: T.title })
     else await screen.findByRole('alert')
