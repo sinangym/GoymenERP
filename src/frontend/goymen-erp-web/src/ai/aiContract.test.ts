@@ -81,10 +81,8 @@ describe('Plan AI-3 — AI sözleşme çözücüleri', () => {
     },
   )
 
-  it('genel sohbette, kaynaksız ve cevaplanmamış sonuçta makbuz kabul etmez', () => {
+  it('kaynaksız ERP ve cevaplanmamış sonuçta makbuz kabul etmez', () => {
     const answerId = 'aaaaaaaa-0000-0000-0000-000000000001'
-    expect(decodeAiAskAnswer({ outcome: 'answered', mode: 'general-chat', toolResults: [],
-      answer: { ...COMPOSED, citations: [], grounded: false, answerId } }, 'general-chat')).toBeNull()
     expect(decodeAiAskAnswer({ outcome: 'answered', toolResults: [], answer: { ...COMPOSED, answerId } })).toBeNull()
     expect(decodeAiAskAnswer({ outcome: 'cannot_answer', toolResults: [], answer: null, answerId })).toBeNull()
   })
@@ -141,6 +139,33 @@ describe('WP-B5 explicit mode wire isolation',()=>{
    .toEqual({...GENERAL,outcome:'cannot_answer',answer:null})
   expect(decodeAiAskAnswer(GENERAL)).toBeNull()
   expect(decodeAiAskAnswer({outcome:'answered',toolResults:[RESULT],answer:COMPOSED},'general-chat')).toBeNull()
+ })
+ it.each(['aaaaaaaa-0000-0000-0000-000000000001', 'AAAAAAAA-0000-0000-0000-000000000001'])(
+  'retains an existing server-issued general answer identity exactly: %s', answerId => {
+   const response = { ...GENERAL, answer: { ...GENERAL.answer, answerId } }
+   expect(decodeAiAskAnswer(response, 'general-chat')).toEqual(response)
+   expect(decodeAiAskAnswer(GENERAL, 'general-chat')?.answer).not.toHaveProperty('answerId')
+   expect(decodeAiAskAnswer(response)).toBeNull()
+  })
+ it.each([null, undefined, '', 'SENTETIK-key', '00000000-0000-0000-0000-000000000000', 1,
+  '00000000-0000-0000-0000-000000000000\n', 'aaaaaaaa-0000-0000-0000-000000000001\n',
+  'aaaaaaaa-0000-0000-0000-000000000001\r'])(
+  'refuses a present invalid general answer receipt identity: %s', answerId => {
+   expect(decodeAiAskAnswer({ ...GENERAL, answer: { ...GENERAL.answer, answerId } }, 'general-chat')).toBeNull()
+  })
+ it('does not give cannot-answer or unknown fields an answer identity', () => {
+  const answerId = 'aaaaaaaa-0000-0000-0000-000000000001'
+  expect(decodeAiAskAnswer({ ...GENERAL, outcome: 'cannot_answer', answer: null, answerId }, 'general-chat')).toBeNull()
+  expect(decodeAiAskAnswer({ ...GENERAL, outcome: 'cannot_answer', answer: { ...GENERAL.answer, answerId } }, 'general-chat')).toBeNull()
+  expect(decodeAiAskAnswer({ ...GENERAL, answer: { ...GENERAL.answer, responseId: answerId } }, 'general-chat')).toBeNull()
+  expect(decodeAiAskAnswer({ ...GENERAL, answer: { ...GENERAL.answer, answerId, responseId: answerId } }, 'general-chat')).toBeNull()
+ })
+ it.each([
+  { toolResults: [RESULT], answer: { ...GENERAL.answer, answerId: 'aaaaaaaa-0000-0000-0000-000000000001' } },
+  { answer: { ...GENERAL.answer, answerId: 'aaaaaaaa-0000-0000-0000-000000000001', citations: [CITATION] } },
+  { answer: { ...GENERAL.answer, answerId: 'aaaaaaaa-0000-0000-0000-000000000001', grounded: true } },
+ ])('does not let a genuine-format general receipt bypass mode or source isolation: %j', change => {
+  expect(decodeAiAskAnswer({ ...GENERAL, ...change }, 'general-chat')).toBeNull()
  })
  it.each([
   ['missing mode',{...GENERAL,mode:undefined}],['wrong mode',{...GENERAL,mode:'erp'}],['future mode',{...GENERAL,mode:'future'}],

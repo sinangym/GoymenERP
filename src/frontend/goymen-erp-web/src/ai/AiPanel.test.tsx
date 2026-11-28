@@ -593,19 +593,90 @@ describe('B1 open-record question binding', () => {
 
 })
 
-it.each(['grounded','legacy','general','cannot-answer'] as const)('opens feedback only for a server-issued grounded answer identity: %s',async variant=>{
+it.each(['grounded','legacy','general','general-receipt','cannot-answer'] as const)('opens feedback only for an actual server-issued answer identity: %s',async variant=>{
  const answerId='dddddddd-0000-4000-8000-000000000001'
- const response=variant==='general'?GENERAL_RESPONSE:variant==='cannot-answer'?{outcome:'cannot_answer',toolResults:[],answer:null}:variant==='grounded'?{...ERP_RESPONSE,answer:{...ERP_RESPONSE.answer,answerId}}:ERP_RESPONSE
+ const response=variant==='general-receipt'?{...GENERAL_RESPONSE,answer:{...GENERAL_RESPONSE.answer,answerId}}:variant==='general'?GENERAL_RESPONSE:variant==='cannot-answer'?{outcome:'cannot_answer',toolResults:[],answer:null}:variant==='grounded'?{...ERP_RESPONSE,answer:{...ERP_RESPONSE.answer,answerId}}:ERP_RESPONSE
  const fetch=installFetch([AI_PANEL_CAPABILITY],{capabilities:()=>json(READY),ask:()=>json(response),feedback:()=>json({answerId,version:'0',kind:null,reasonCode:null})})
  renderShell();const panel=await openPanel();await within(panel).findByRole('textbox',{name:AI_TEXT.questionLabel})
- if(variant==='general')await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.generalMode}))
+ if(variant==='general'||variant==='general-receipt')await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.generalMode}))
  await userEvent.type(within(panel).getByRole('textbox',{name:AI_TEXT.questionLabel}),'SENTETIK soru');await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.submit}))
- if(variant==='grounded'){
+ if(variant==='grounded'||variant==='general-receipt'){
   await within(panel).findByLabelText(FEEDBACK.kind)
   expect(fetch.mock.calls.filter(([url])=>String(url).includes(`/ai/answers/${answerId}/feedback`))).toHaveLength(1)
+  expect(panel.textContent).not.toContain(answerId)
+  if(variant==='general-receipt'){
+   expect(within(panel).getByText(AI_TEXT.generalUngrounded)).toBeTruthy()
+   expect(within(panel).queryByText(AI_TEXT.readSourcesHeading)).toBeNull()
+   expect(within(panel).queryByText(AI_TEXT.citationsHeading)).toBeNull()
+  }
  }else{
   await within(panel).findByText(variant==='cannot-answer'?AI_TEXT.cannotAnswer:variant==='general'?GENERAL_RESPONSE.answer.text:ERP_RESPONSE.answer.text)
   expect(within(panel).queryByRole('region',{name:FEEDBACK.heading})).toBeNull()
   expect(fetch.mock.calls.some(([url])=>String(url).includes('/ai/answers/'))).toBe(false)
  }
+})
+
+it.each([null, '', 'SENTETIK-not-a-receipt', '00000000-0000-0000-0000-000000000000',
+ 'dddddddd-0000-4000-8000-000000000001\n'])(
+ 'never fetches feedback for a malformed general-chat receipt: %s', async answerId => {
+  const fetch=installFetch([AI_PANEL_CAPABILITY],{capabilities:()=>json(READY),ask:()=>json({...GENERAL_RESPONSE,answer:{...GENERAL_RESPONSE.answer,answerId}})})
+  renderShell();const panel=await openPanel();await within(panel).findByRole('textbox',{name:AI_TEXT.questionLabel})
+  await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.generalMode}))
+  await userEvent.type(within(panel).getByRole('textbox',{name:AI_TEXT.questionLabel}),'SENTETIK genel soru')
+  await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.submit}))
+  await waitFor(()=>expect(panel.querySelector('[data-state="malformed-response"]')).not.toBeNull())
+  expect(within(panel).queryByText(GENERAL_RESPONSE.answer.text)).toBeNull()
+  expect(within(panel).queryByRole('region',{name:FEEDBACK.heading})).toBeNull()
+  expect(fetch.mock.calls.some(([url])=>String(url).includes('/ai/answers/'))).toBe(false)
+ })
+
+it('records a general answer evaluation through the existing content-free three-field command only', async () => {
+ const answerId='dddddddd-0000-4000-8000-000000000002',path=`/ai/answers/${answerId}/feedback`
+ let posted=false
+ const fetch=installFetch([AI_PANEL_CAPABILITY],{capabilities:()=>json(READY),
+  ask:()=>json({...GENERAL_RESPONSE,answer:{...GENERAL_RESPONSE.answer,answerId}}),feedback:(_url,init)=>{
+   if(init?.method==='POST'){posted=true;return json({answerId,version:'1',kind:'Accepted',reasonCode:null,originalCorrelationId:'SENTETIK-original',replayed:false})}
+   return json({answerId,version:posted?'1':'0',kind:posted?'Accepted':null,reasonCode:null})
+  }})
+ renderShell();const panel=await openPanel();await within(panel).findByRole('textbox',{name:AI_TEXT.questionLabel})
+ await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.generalMode}))
+ await userEvent.type(within(panel).getByRole('textbox',{name:AI_TEXT.questionLabel}),'SENTETIK özel genel soru')
+ await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.submit}))
+ await userEvent.selectOptions(await within(panel).findByLabelText(FEEDBACK.kind),'Accepted')
+ await userEvent.click(within(panel).getByRole('button',{name:FEEDBACK.save}))
+ await within(panel).findByText(FEEDBACK.done,{exact:false})
+ const sent=fetch.mock.calls.filter(([url,init])=>String(url).includes(path)&&init?.method==='POST')
+ expect(sent).toHaveLength(1)
+ expect(JSON.parse(String(sent[0]![1]!.body))).toEqual({expectedVersion:'0',kind:'Accepted',reasonCode:null})
+ expect(new Headers(sent[0]![1]!.headers).get('X-Company-Id')).toBe(A_ID)
+ expect(new Headers(sent[0]![1]!.headers).get('Idempotency-Key')).not.toBeNull()
+ expect(askCalls(fetch)).toHaveLength(1)
+ expect(JSON.parse(String(askCalls(fetch)[0]![1]!.body))).toEqual({question:'SENTETIK özel genel soru',mode:'general-chat'})
+ expect(panel.textContent).not.toContain(answerId)
+})
+
+it.each(['company','actor','session','mode'] as const)('does not fetch feedback from a late general receipt after %s changes',async change=>{
+ const answerId='dddddddd-0000-4000-8000-000000000003'
+ let release!:(response:Response)=>void
+ let identity={userId:USER_A,authenticationSessionBinding:`v1.${'a1'.repeat(32)}`}
+ const fetch=installFetch([AI_PANEL_CAPABILITY],{identity:()=>identity,capabilities:()=>json(READY),
+  ask:()=>new Promise<Response>(resolve=>{release=resolve}),feedback:()=>json({answerId,version:'0',kind:null,reasonCode:null})})
+ const {queryClient}=renderShell();const panel=await openPanel();await within(panel).findByRole('textbox',{name:AI_TEXT.questionLabel})
+ await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.generalMode}))
+ await userEvent.type(within(panel).getByRole('textbox',{name:AI_TEXT.questionLabel}),'SENTETIK önceki genel soru')
+ await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.submit}))
+ await waitFor(()=>expect(askCalls(fetch)).toHaveLength(1))
+ const signal=askCalls(fetch)[0]![1]!.signal!
+ if(change==='mode')await userEvent.click(within(panel).getByRole('button',{name:AI_TEXT.erpMode}))
+ else if(change==='company')await userEvent.selectOptions(screen.getByRole('combobox'),B_ID)
+ else{
+  identity={userId:change==='actor'?B_ID:USER_A,authenticationSessionBinding:`v1.${'b2'.repeat(32)}`}
+  await act(async()=>{await queryClient.refetchQueries({queryKey:['shell','identity']})})
+ }
+ await waitFor(()=>expect(signal.aborted).toBe(true))
+ await act(async()=>{release(json({...GENERAL_RESPONSE,answer:{...GENERAL_RESPONSE.answer,answerId}}));await Promise.resolve()})
+ expect(screen.queryByText(GENERAL_RESPONSE.answer.text)).toBeNull()
+ expect(screen.queryByRole('region',{name:FEEDBACK.heading})).toBeNull()
+ expect(fetch.mock.calls.some(([url])=>String(url).includes('/ai/answers/'))).toBe(false)
+ expect(askCalls(fetch)).toHaveLength(1)
 })
