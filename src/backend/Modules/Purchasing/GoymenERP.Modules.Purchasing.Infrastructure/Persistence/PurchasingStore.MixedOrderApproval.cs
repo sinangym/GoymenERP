@@ -78,23 +78,17 @@ public sealed partial class PurchasingStore : IPurchaseMixedOrderApprovalStoreV1
     internal sealed class MixedApprovalExecution(PurchasingStore owner, ApprovePurchaseOrderRequest request,
         PurchasingWriteEnvelope envelope, string hash,
         Func<StoredPurchaseOrder, IReadOnlyList<PurchaseServiceOrderState>, CancellationToken, Task<PurchaseMixedOrderApprovalPreparationV1>> prepare,
-        Func<StoredPurchaseOrder, string, PurchaseOrderDetailView> project, Func<CancellationToken, Task> fence)
+        Func<StoredPurchaseOrder, string, PurchaseOrderDetailView> project, Func<CancellationToken, Task> fence) : MixedOwnedExecution(fence)
     {
         internal ApprovePurchaseOrderRequest Request { get; } = request;
-        internal Func<CancellationToken, Task> Fence { get; } = fence;
         internal PurchaseMixedOrderApprovalStoreAnswerV1? Answer { get; set; }
-        internal bool CommitStarted { get; set; }
-        internal bool Committed { get; set; }
-        internal bool Aborted { get; set; }
-        internal bool CleanupComplete { get; set; }
-        internal Exception? OriginalFailure { get; set; }
         private IDbContextTransaction? transaction;
         private StoredPurchaseOrder? parent;
         private IReadOnlyList<PurchaseServiceOrderState>? original;
         private PurchaseMixedOrderApprovalPreparationV1? preparation;
         private IReadOnlyList<PurchaseServiceOrderState>? approved;
 
-        internal void Enter(IDbContextTransaction owned)
+        internal override void Enter(IDbContextTransaction owned)
         {
             if (transaction is not null || !ReferenceEquals(owner.MixedDatabase.Database.CurrentTransaction, owned)
                 || owner.MixedWriter is null || owner.MixedWriter.HasPendingDrafts || owner.MixedDatabase.ChangeTracker.HasChanges())

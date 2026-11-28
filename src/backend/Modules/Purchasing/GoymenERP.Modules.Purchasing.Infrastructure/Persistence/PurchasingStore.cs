@@ -430,10 +430,11 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
 
     private async Task<PurchasingOrderStoreResult?> MutateOrderGuardedCoreAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
         Guid orderId, Action<PurchaseOrder, DateTimeOffset> mutate, PurchasingMutationAudit audit,
-        Func<CancellationToken, Task> freshDecisionFence, MixedApprovalExecution? mixed, CancellationToken cancellationToken)
+        Func<CancellationToken, Task> freshDecisionFence, MixedApprovalExecution? mixed, CancellationToken cancellationToken, MixedMembershipExecution? admission = null)
     {
         ArgumentNullException.ThrowIfNull(freshDecisionFence);
-        if (commandName != PurchasingCommands.OrderApproveV1)
+        MixedOwnedExecution? boundary = mixed ?? (MixedOwnedExecution?)admission;
+        if (commandName != PurchasingCommands.OrderApproveV1 && (admission is null || commandName != PurchaseMixedOrderMembershipV1.Command))
             throw new ArgumentException("Guarded order decision is native approval only.", nameof(commandName));
         // The guard precedes all reads/callbacks, including replay, and remains outside cleanup of owned work.
         if (System.Transactions.Transaction.Current is not null || !dbContext.Database.IsRelational()
@@ -447,7 +448,7 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             await freshDecisionFence(token);
             if (RequireResolvedCompany() != companyId) throw Refused(PurchasingStoreCodes.CompanyContextMismatch, "Company context changed.");
         }
-        if (mixed is not null)
+        if (boundary is not null)
         {
             await Fence(cancellationToken);
             // A token-ignoring authority may have returned with caller-owned work. Never adopt or clear it.
@@ -455,15 +456,21 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
         }
         try
         {
-            if (mixed is null) await Fence(cancellationToken);
-            await using var owned = mixed is null
+            if (boundary is null) await Fence(cancellationToken);
+            await using var owned = boundary is null
                 ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
                 : await dbContext.Database.BeginTransactionAsync(IsolationLevel.Serializable, cancellationToken);
             try
             {
+                boundary?.Enter(owned);
+                if (admission is not null && await admission.ReplayAsync(cancellationToken))
+                {
+                    await Fence(cancellationToken); boundary!.CommitStarted = true;
+                    await owned.CommitAsync(cancellationToken); boundary.Committed = true;
+                    await Fence(cancellationToken); return null;
+                }
                 if (mixed is not null)
                 {
-                    mixed.Enter(owned);
                     mixed.Answer = await ReadMixedOriginalAsync(orderId, mixed.Request, envelope, requestHash, mixed.Fence, cancellationToken);
                     if (mixed.Answer is not null)
                     {
@@ -476,7 +483,7 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
                     }
                 }
                 var result = await MutateOrderCoreAsync(envelope, requestHash, commandName, orderId, mutate, participant: null,
-                    audit, cancellationToken, freshDecisionFence: Fence, mixed: mixed);
+                    audit, cancellationToken, freshDecisionFence: Fence, mixed: mixed, admission: admission);
                 if (mixed is not null)
                 {
                     if (result is null) throw new PurchasingServiceException(404, "not_found");
@@ -487,37 +494,38 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
                     if (decisionAuditWriter!.HasPendingDrafts || dbContext.ChangeTracker.HasChanges())
                         throw new InvalidOperationException("Mixed approval did not flush its owned work.");
                 }
+                if (admission is not null) await admission.VerifySavedAsync(cancellationToken);
                 await Fence(cancellationToken);
-                if (mixed is not null) mixed.CommitStarted = true;
+                if (boundary is not null) boundary.CommitStarted = true;
                 await owned.CommitAsync(cancellationToken);
-                if (mixed is not null) { mixed.Committed = true; await mixed.Fence(cancellationToken); }
+                if (boundary is not null) { boundary.Committed = true; await boundary.Fence(cancellationToken); }
                 return result;
             }
             catch (Exception failure)
             {
-                if (mixed is not null && !mixed.Committed)
+                if (boundary is not null && !boundary.Committed)
                 {
-                    mixed.OriginalFailure = failure;
+                    boundary.OriginalFailure = failure;
                     // A real SQL deadlock victim may already have been rolled back by the server.
                     if (!(MixedDeadlock(failure) && owned.GetDbTransaction() is SqlTransaction { Connection: null }))
                         await owned.RollbackAsync(CancellationToken.None);
-                    mixed.Aborted = true;
+                    boundary.Aborted = true;
                 }
                 throw;
             }
         }
         catch (Exception failure)
         {
-            if (mixed is null) { dbContext.ChangeTracker.Clear(); throw; }
-            var original = mixed.OriginalFailure is { } first && !ReferenceEquals(first, failure)
+            if (boundary is null) { dbContext.ChangeTracker.Clear(); throw; }
+            var original = boundary.OriginalFailure is { } first && !ReferenceEquals(first, failure)
                 ? new AggregateException(first, failure) : failure;
             try { dbContext.ChangeTracker.Clear(); decisionAuditWriter?.DiscardPending(); }
             catch (Exception cleanup) { throw new AggregateException(original, cleanup); }
-            mixed.CleanupComplete = ReferenceEquals(mixed.OriginalFailure, failure);
+            boundary.CleanupComplete = ReferenceEquals(boundary.OriginalFailure, failure);
             if (!ReferenceEquals(original, failure)) throw original;
             throw;
         }
-        finally { if (mixed is null) decisionAuditWriter?.DiscardPending(); } // Only this attempt's drafts: caller-pending state was refused above.
+        finally { if (boundary is null) decisionAuditWriter?.DiscardPending(); } // Only this attempt's drafts: caller-pending state was refused above.
     }
 
     public Task<PurchasingOrderStoreResult?> MutateOrderAsync(PurchasingWriteEnvelope envelope, string requestHash, string commandName,
@@ -547,25 +555,27 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
         PurchasingMutationAudit audit, CancellationToken cancellationToken,
         Func<PurchaseOrder, CancellationToken, Task>? beforeMutation = null, Guid? revisedCompanyAccountId = null,
         Func<CancellationToken, Task>? requireStillAuthorized = null,
-        Func<CancellationToken, Task>? freshDecisionFence = null, MixedApprovalExecution? mixed = null)
+        Func<CancellationToken, Task>? freshDecisionFence = null, MixedApprovalExecution? mixed = null, MixedMembershipExecution? admission = null)
     {
         ArgumentNullException.ThrowIfNull(mutate);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
-        RequireCommand(commandName);
+        if (admission is null) RequireCommand(commandName);
+        else if (commandName != PurchaseMixedOrderMembershipV1.Command) throw new InvalidOperationException("Invalid membership marker.");
         RequireAudit(audit);
-        if (!PurchasingCommands.IsOrderMutation(commandName))
+        if (!PurchasingCommands.IsOrderMutation(commandName) && admission is null)
         {
             throw new ArgumentException("Yalnız onay, kalan iptali, termin, satır kapanışı ve kur komutları bir siparişi değiştirir.", nameof(commandName));
         }
 
+        var ownerReadFence = mixed?.Fence ?? admission?.Fence;
         var companyId = RequireResolvedCompany();
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
         var actorId = envelope.ActorId.Trim();
-        var attempt = await ReadMixedOwnerAsync(() => FindAttemptAsync(commandName, keyHash, cancellationToken), mixed?.Fence, cancellationToken);
+        var attempt = await ReadMixedOwnerAsync(() => FindAttemptAsync(commandName, keyHash, cancellationToken), ownerReadFence, cancellationToken);
         if (attempt is not null)
         {
-            if (mixed is not null) throw Refused(PurchasingStoreCodes.ConcurrentChange, "The original mixed attempt must be read through its immutable receipt.");
+            if (mixed is not null || admission is not null) throw Refused(PurchasingStoreCodes.ConcurrentChange, "The original mixed attempt must be read through its immutable receipt.");
             RequireSameContent(attempt, actorId, requestHash);
             if (attempt.Outcome != AttemptOutcomeRecorded || attempt.OrderId is not { } recordedId)
             {
@@ -597,27 +607,27 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             : null;
 
         // The header and the lines are tracked (the header's version is this write's concurrency token).
-        var row = await ReadMixedOwnerAsync(() => dbContext.Orders.SingleOrDefaultAsync(candidate => candidate.Id == orderId, cancellationToken), mixed?.Fence, cancellationToken);
+        var row = await ReadMixedOwnerAsync(() => dbContext.Orders.SingleOrDefaultAsync(candidate => candidate.Id == orderId, cancellationToken), ownerReadFence, cancellationToken);
         if (row is null)
         {
             return null;
         }
 
-        var lineRows = await ReadMixedOwnerAsync(() => dbContext.OrderLines.Where(line => line.OrderId == orderId).OrderBy(line => line.LineNo).ToListAsync(cancellationToken), mixed?.Fence, cancellationToken);
+        var lineRows = await ReadMixedOwnerAsync(() => dbContext.OrderLines.Where(line => line.OrderId == orderId).OrderBy(line => line.LineNo).ToListAsync(cancellationToken), ownerReadFence, cancellationToken);
         var acceptanceRows = await ReadMixedOwnerAsync(() => dbContext.Acceptances.AsNoTracking().Where(acceptance => acceptance.OrderId == orderId)
-            .OrderBy(acceptance => acceptance.OrderVersionAfter).ThenBy(acceptance => acceptance.AcceptanceId).ToListAsync(cancellationToken), mixed?.Fence, cancellationToken);
+            .OrderBy(acceptance => acceptance.OrderVersionAfter).ThenBy(acceptance => acceptance.AcceptanceId).ToListAsync(cancellationToken), ownerReadFence, cancellationToken);
         var sliceRows = await ReadMixedOwnerAsync(() => dbContext.DeliverySlices.AsNoTracking().Where(slice => slice.OrderId == orderId)
-            .OrderBy(slice => slice.OrderVersionAfter).ThenBy(slice => slice.SliceNo).ToListAsync(cancellationToken), mixed?.Fence, cancellationToken);
+            .OrderBy(slice => slice.OrderVersionAfter).ThenBy(slice => slice.SliceNo).ToListAsync(cancellationToken), ownerReadFence, cancellationToken);
         var closureRows = await ReadMixedOwnerAsync(() => dbContext.LineClosureEvents.AsNoTracking().Where(closure => closure.OrderId == orderId)
-            .OrderBy(closure => closure.OrderVersionAfter).ToListAsync(cancellationToken), mixed?.Fence, cancellationToken);
+            .OrderBy(closure => closure.OrderVersionAfter).ToListAsync(cancellationToken), ownerReadFence, cancellationToken);
         var rateRows = await ReadMixedOwnerAsync(() => dbContext.ExchangeRateChanges.AsNoTracking().Where(rate => rate.OrderId == orderId)
-            .OrderBy(rate => rate.OrderVersionAfter).ToListAsync(cancellationToken), mixed?.Fence, cancellationToken);
-        var adjustmentRows = await ReadMixedOwnerAsync(() => dbContext.ReceiptAdjustments.AsNoTracking().Where(item => item.OrderId == orderId).ToListAsync(cancellationToken), mixed?.Fence, cancellationToken);
-        var cancellationRows = await ReadMixedOwnerAsync(() => dbContext.CancellationHistory.AsNoTracking().Where(item => item.OrderId == orderId).ToListAsync(cancellationToken), mixed?.Fence, cancellationToken);
-        var batchRows = await ReadMixedOwnerAsync(() => dbContext.ReceiptAdjustmentBatches.AsNoTracking().Where(item => item.OrderId == orderId).ToListAsync(cancellationToken), mixed?.Fence, cancellationToken);
-        var membership = await ReadServiceMembershipsAsync([orderId], cancellationToken, mixed?.Fence);
+            .OrderBy(rate => rate.OrderVersionAfter).ToListAsync(cancellationToken), ownerReadFence, cancellationToken);
+        var adjustmentRows = await ReadMixedOwnerAsync(() => dbContext.ReceiptAdjustments.AsNoTracking().Where(item => item.OrderId == orderId).ToListAsync(cancellationToken), ownerReadFence, cancellationToken);
+        var cancellationRows = await ReadMixedOwnerAsync(() => dbContext.CancellationHistory.AsNoTracking().Where(item => item.OrderId == orderId).ToListAsync(cancellationToken), ownerReadFence, cancellationToken);
+        var batchRows = await ReadMixedOwnerAsync(() => dbContext.ReceiptAdjustmentBatches.AsNoTracking().Where(item => item.OrderId == orderId).ToListAsync(cancellationToken), ownerReadFence, cancellationToken);
+        var membership = await ReadServiceMembershipsAsync([orderId], cancellationToken, ownerReadFence);
         var restoredApproval = membership.Members.Count > 0 && row.Status != (int)PurchaseOrderStatus.Draft
-            ? await ReadMixedRestoreReceiptAsync(row, mixed?.Fence, cancellationToken) : null;
+            ? await ReadMixedRestoreReceiptAsync(row, ownerReadFence, cancellationToken) : null;
         var order = RestoreOrder(row, lineRows, acceptanceRows, sliceRows, closureRows, rateRows, adjustmentRows, cancellationRows, batchRows,
             membership.Members, membership.Prepared, restoredApproval);
         var membershipCountBefore = order.ServiceMemberships.Count;
@@ -629,13 +639,14 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
         var now = timeProvider.GetUtcNow();
         // The domain decides; a refusal leaves the tracked rows untouched (nothing below has run).
         if (beforeMutation is not null) await beforeMutation(order, cancellationToken);
+        if (admission is not null) await admission.PrepareAsync(order, row.CompanyAccountId, cancellationToken);
         if (mixed is not null) await mixed.PrepareAsync(new StoredPurchaseOrder(order, row.CompanyAccountId, row.EffectiveOn, VersionsOf(lineRows)) { DocumentNumber = row.DocumentNumber }, cancellationToken);
         if (requireStillAuthorized is not null) await requireStillAuthorized(cancellationToken);
         if (RequireResolvedCompany() != companyId) throw Refused(PurchasingStoreCodes.CompanyContextMismatch, "Şirket bağlamı değişti.");
         if (freshDecisionFence is not null) await freshDecisionFence(cancellationToken);
         mutate(order, now);
         if (order.Version != versionBefore + 1 || order.Id != row.Id || order.CompanyId != companyId || order.Lines.Count != lineRows.Count
-            || order.Acceptances.Count != acceptanceRows.Count || order.ServiceMemberships.Count != membershipCountBefore
+            || order.Acceptances.Count != acceptanceRows.Count || (admission is null ? order.ServiceMemberships.Count != membershipCountBefore : !admission.MatchesAdded(order, membershipCountBefore))
             || (membershipCountBefore > 0 && order.Status != PurchaseOrderStatus.Draft && mixed is null))
         {
             throw new InvalidOperationException("Bir komut tam olarak bir sürüm ilerletir; satır ve kabul payı eklemez.");
@@ -670,7 +681,7 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
         if (commandName != PurchasingCommands.OrderLineScheduleV1 && !PurchasingCommands.IsLineClosure(commandName)
             && order.Status == PurchaseOrderStatus.Approved && order.SourceRequestId is { } sourceRequestId)
         {
-            await RequireSharesWithinNeedAsync(order, sourceRequestId, cancellationToken, mixed?.Fence);
+            await RequireSharesWithinNeedAsync(order, sourceRequestId, cancellationToken, ownerReadFence);
         }
 
         if (participant is not null)
@@ -796,13 +807,15 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             dbContext.ExchangeRateChanges.Add(ExchangeRateChangeRow(companyId, order.Id, order.Version, rateChange, envelope.CorrelationId.Trim()));
         }
 
+        if (admission is not null) admission.StageMemberships(order, versionBefore);
         if (mixed is not null) await mixed.StageChildrenAsync(cancellationToken);
         dbContext.Attempts.Add(Attempt(companyId, commandName, keyHash, requestHash, actorId, envelope, null, order.Id, now));
         Audit(envelope, companyId, OrderEntityType, order.Id, audit.EventType, audit.Operation, versionBefore, order.Version, before,
-            mixed is null ? Snapshot(order) : mixed.RecordAfter(new StoredPurchaseOrder(order, row.CompanyAccountId, row.EffectiveOn, VersionsOf(lineRows)) { DocumentNumber = row.DocumentNumber }, now), audit.Reason);
+            admission is not null ? admission.RecordAfter(new StoredPurchaseOrder(order, row.CompanyAccountId, row.EffectiveOn, VersionsOf(lineRows)) { DocumentNumber = row.DocumentNumber }, now) : mixed is null ? Snapshot(order) : mixed.RecordAfter(new StoredPurchaseOrder(order, row.CompanyAccountId, row.EffectiveOn, VersionsOf(lineRows)) { DocumentNumber = row.DocumentNumber }, now), audit.Reason);
         if (cancelsNumber) await RequireNumberAuthorityAsync(companyId, envelope, cancellationToken);
         if (requireStillAuthorized is not null) await requireStillAuthorized(cancellationToken);
-        if (mixed is null) await SaveAsync(cancellationToken);
+        if (admission is not null) await admission.SaveAsync(cancellationToken);
+        else if (mixed is null) await SaveAsync(cancellationToken);
         else await mixed.SaveAsync(cancellationToken);
         if (cancelsNumber) await RequireNumberAuthorityAsync(companyId, envelope, cancellationToken);
         if (requireStillAuthorized is not null) await requireStillAuthorized(cancellationToken);
