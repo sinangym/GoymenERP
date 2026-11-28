@@ -175,6 +175,7 @@ public sealed partial class SalesStore
         }
 
         var quote = await RestoreQuoteAsync(row, cancellationToken);
+        await RequireSelectedQuoteTargetAsync(quoteId, null, quote.Revision, cancellationToken);
         var before = QuoteAuditState(quote, withLines: false);
         var versionBefore = quote.Version;
         var revisionBefore = quote.Revision;
@@ -211,7 +212,8 @@ public sealed partial class SalesStore
 
         AddQuoteAttempt(companyId, commandName, keyHash, requestHash, actorId, quote.Id, envelope, now);
         auditEvents.Enqueue(QuoteAudit(envelope, companyId, audit.EventType, audit.Operation, quote, versionBefore, before,
-            QuoteAuditState(quote, withLines: quote.Revision != revisionBefore), audit.Reason));
+            QuoteAuditState(quote, withLines: quote.Revision != revisionBefore), audit.Reason)
+            with { ApprovalContextJson = SelectedQuoteApprovalContext() });
         await SaveQuoteApprovalAsync(cancellationToken);
         return new SalesQuoteStoreResult(quote, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }

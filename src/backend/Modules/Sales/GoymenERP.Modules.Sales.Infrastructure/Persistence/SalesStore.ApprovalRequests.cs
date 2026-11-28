@@ -148,6 +148,7 @@ public sealed partial class SalesStore : ISalesApprovalRequestStore
         }
 
         var item = SalesApprovalRequestRows.Restore(row);
+        await RequireSelectedQuoteTargetAsync(subjectId, requestNo, item.SubjectRevision, cancellationToken);
         var before = ApprovalRequestAuditState(item);
         var versionBefore = item.Version;
         var now = timeProvider.GetUtcNow();

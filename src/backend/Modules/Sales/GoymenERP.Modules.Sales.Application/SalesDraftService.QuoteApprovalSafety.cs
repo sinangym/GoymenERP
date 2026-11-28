@@ -9,7 +9,7 @@ public sealed partial class SalesDraftService
     public SalesDraftService WithQuoteApprovalSafety() { quoteApprovalSafety = true; return this; }
 
     private Task<SalesQuoteResponse> RunExpiredQuoteApprovalAsync(Guid id, SalesQuoteExpiryApprovalRequest request,
-        SalesCommandMetadata metadata, CancellationToken token)
+        SalesCommandMetadata metadata, CancellationToken token, SalesQuoteDecisionCommandV1? decision = null)
     {
         ArgumentNullException.ThrowIfNull(request); ArgumentNullException.ThrowIfNull(metadata);
         return RunQuoteDecisionAsync<SalesQuoteResponse>(request.ExpectedVersion, metadata, SalesQuoteCommands.ApproveExpiredConversionV1,
@@ -19,11 +19,11 @@ public sealed partial class SalesDraftService
                 var replay = await FindQuoteReplayAsync(scope, bindings.QuoteExpiredConversionApprovePermission, envelope, hash,
                     SalesQuoteCommands.ApproveExpiredConversionV1, ct);
                 return replay is null ? null : await QuoteReplayedAsync(scope, replay, ct);
-            }, result => result.IsReplay, token);
+            }, result => result.IsReplay, token, decision);
     }
 
     private Task<SalesApprovalRequestCommandResult> RunQuoteConversionRejectionAsync(Guid id, int no, SalesDraftStateCommandRequest request,
-        SalesCommandMetadata metadata, CancellationToken token)
+        SalesCommandMetadata metadata, CancellationToken token, SalesQuoteDecisionCommandV1? decision = null)
     {
         ArgumentNullException.ThrowIfNull(request); ArgumentNullException.ThrowIfNull(metadata);
         return RunQuoteDecisionAsync<SalesApprovalRequestCommandResult>(request.ExpectedVersion, metadata, SalesApprovalRequestCommands.RejectQuoteConversionV1,
@@ -33,13 +33,13 @@ public sealed partial class SalesDraftService
                 var replay = await FindApprovalReplayAsync(scope, bindings.QuoteExpiredConversionApprovePermission, envelope, hash,
                     SalesApprovalRequestCommands.RejectQuoteConversionV1, ct);
                 return replay is null ? null : await ApprovalReplayedAsync(scope, bindings.QuoteExpiredConversionApprovePermission, replay, ct);
-            }, result => result.IsReplay, token);
+            }, result => result.IsReplay, token, decision);
     }
 
     private async Task<T> RunQuoteDecisionAsync<T>(string expectedVersion, SalesCommandMetadata metadata, string command,
         Func<string> payloadHash, Func<CancellationToken, Task<T>> execute,
         Func<Scope, SalesDraftWriteEnvelope, string, CancellationToken, Task<T?>> originalKey,
-        Func<T, bool> isReplay, CancellationToken token) where T : class
+        Func<T, bool> isReplay, CancellationToken token, SalesQuoteDecisionCommandV1? decision = null) where T : class
     {
         token.ThrowIfCancellationRequested();
         var boundary = quotes as ISalesQuoteApprovalStoreV1;
@@ -56,7 +56,7 @@ public sealed partial class SalesDraftService
         {
             return await boundary.RunQuoteApprovalAsync(envelope, hash, command, cleanBefore, execute,
                 ct => originalKey(scope, envelope, hash, ct), isReplay,
-                async ct => { scope = await RequireStillAsync(scope, permission, ct); ct.ThrowIfCancellationRequested(); }, token);
+                async ct => { scope = await RequireStillAsync(scope, permission, ct); ct.ThrowIfCancellationRequested(); }, token, decision);
         }
         catch (SalesDraftStoreException refusal) { throw Store(refusal); }
     }

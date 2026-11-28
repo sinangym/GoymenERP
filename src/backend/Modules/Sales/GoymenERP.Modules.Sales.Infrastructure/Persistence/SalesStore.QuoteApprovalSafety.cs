@@ -9,13 +9,13 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 public sealed partial class SalesStore : ISalesQuoteApprovalStoreV1
 {
     private OwnedQuoteApproval? ownedQuoteApproval;
-    public bool QuoteApprovalEntryIsClean => officialCancellationAuditWriter is not null && ownedQuoteApproval is null
+    public bool QuoteApprovalEntryIsClean => officialCancellationAuditWriter is not null && ownedQuoteApproval is null && quoteDecisionReadFence is null
         && ownedRequestApproval is null && ownedPriceFloorApproval is null && dbContext.Database.IsRelational() && System.Transactions.Transaction.Current is null
         && dbContext.Database.CurrentTransaction is null && !dbContext.ChangeTracker.HasChanges() && !officialCancellationAuditWriter.HasPendingDrafts;
 
     public async Task<T> RunQuoteApprovalAsync<T>(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
         bool cleanBeforeAuthority, Func<CancellationToken, Task<T>> execute, Func<CancellationToken, Task<T?>> readOriginalKey,
-        Func<T, bool> isReplay, Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken) where T : class
+        Func<T, bool> isReplay, Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken, SalesQuoteDecisionCommandV1? decision = null) where T : class
     {
         RequireEnvelope(envelope); RequireHash(requestHash);
         if (commandName is not (SalesQuoteCommands.ApproveExpiredConversionV1 or SalesApprovalRequestCommands.RejectQuoteConversionV1))
@@ -37,7 +37,7 @@ public sealed partial class SalesStore : ISalesQuoteApprovalStoreV1
             var cleanBefore = QuoteApprovalEntryIsClean;
             await freshFence(cancellationToken); cancellationToken.ThrowIfCancellationRequested();
             if (!cleanBeforeAuthority || !cleanBefore || !QuoteApprovalEntryIsClean) throw QuoteApprovalUnavailable();
-            var state = new OwnedQuoteApproval(RequireResolvedCompany(), envelope, requestHash, commandName, freshFence, replayOnly);
+            var state = new OwnedQuoteApproval(RequireResolvedCompany(), envelope, requestHash, commandName, freshFence, replayOnly) { Decision = decision };
             IDbContextTransaction? transaction = null;
             var committed = false; var disposing = false;
             ownedQuoteApproval = state;
@@ -54,6 +54,8 @@ public sealed partial class SalesStore : ISalesQuoteApprovalStoreV1
                 catch (SalesDraftServiceException refusal) when (refusal.IsReplay
                     || state.Saved && state.Terminal is { } recorded && recorded.Status == refusal.Status && recorded.Code == refusal.Code)
                 { terminal = refusal; }
+                if (terminal is null && result is not null && decision is not null)
+                    result = await AttachQuoteDecisionReceiptAsync(result, state, cancellationToken);
                 await QuoteApprovalFenceAsync(cancellationToken); RequireFlushed();
                 if (terminal is null && result is not null && !isReplay(result) && !state.Saved)
                     throw new InvalidOperationException("Native quote decision has no saved attempt.");
@@ -114,7 +116,11 @@ public sealed partial class SalesStore : ISalesQuoteApprovalStoreV1
     }
     private async Task QuoteApprovalFenceAsync(CancellationToken token)
     {
-        if (ownedQuoteApproval is not { } state) return;
+        if (ownedQuoteApproval is not { } state)
+        {
+            if (quoteDecisionReadFence is not null) await quoteDecisionReadFence(token);
+            return;
+        }
         token.ThrowIfCancellationRequested(); RequireCompany(state.CompanyId);
         await state.FreshFence(token);
         token.ThrowIfCancellationRequested(); RequireCompany(state.CompanyId);
@@ -157,7 +163,7 @@ public sealed partial class SalesStore : ISalesQuoteApprovalStoreV1
         new(SalesDraftProblemCodesV1.OwnerReferenceUnavailable, "Teklif güvenli karar sınırı kullanılamıyor.");
     private sealed record OwnedQuoteApproval(Guid CompanyId, SalesDraftWriteEnvelope Envelope, string Hash, string Command,
         Func<CancellationToken, Task> FreshFence, bool ReplayOnly)
-    { internal bool Saved; internal SalesDraftTerminalRefusal? Terminal; }
+    { internal bool Saved; internal SalesDraftTerminalRefusal? Terminal; internal SalesQuoteDecisionCommandV1? Decision; }
     private sealed class QuoteApprovalLostRace(bool nativeConcurrentChange) : Exception
     { internal bool NativeConcurrentChange { get; } = nativeConcurrentChange; }
     private sealed class QuoteApprovalNoWinner : Exception;

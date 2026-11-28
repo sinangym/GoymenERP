@@ -126,7 +126,10 @@ public sealed record SalesQuoteLossReasonOptionV1(Guid ReasonId, string Code, st
 public sealed record SalesQuoteLossReasonsViewV1(DateOnly BusinessDay, bool IsDefined, Guid? ProfileId, string? ProfileVersion,
     IReadOnlyList<SalesQuoteLossReasonOptionV1> Reasons);
 
-public sealed record SalesQuoteResponse(SalesQuoteDetailView Detail, bool IsReplay, string OriginalCorrelationId);
+public sealed record SalesQuoteResponse(SalesQuoteDetailView Detail, bool IsReplay, string OriginalCorrelationId)
+{
+    [JsonIgnore] public SalesQuoteOriginalDecisionReceiptV1? OriginalDecisionReceipt { get; init; }
+}
 
 public sealed record SalesQuoteListResponse(IReadOnlyList<SalesQuoteSummaryView> Items, string? NextCursor);
 
@@ -423,5 +426,5 @@ public interface ISalesQuoteApprovalStoreV1
     bool QuoteApprovalEntryIsClean { get; }
     Task<T> RunQuoteApprovalAsync<T>(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
         bool cleanBeforeAuthority, Func<CancellationToken, Task<T>> execute, Func<CancellationToken, Task<T?>> readOriginalKey,
-        Func<T, bool> isReplay, Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken) where T : class;
+        Func<T, bool> isReplay, Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken, SalesQuoteDecisionCommandV1? decision = null) where T : class;
 }
