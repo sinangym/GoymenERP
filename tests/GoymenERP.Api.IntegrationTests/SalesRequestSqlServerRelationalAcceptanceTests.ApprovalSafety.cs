@@ -57,6 +57,7 @@ public sealed partial class SalesRequestSqlServerRelationalAcceptanceTests
         using var provider = services.BuildServiceProvider(validateScopes: true); using var scope = provider.CreateScope();
         var p = scope.ServiceProvider; var core = p.GetRequiredService<SalesDraftService>();
         Assert.Same(core, p.GetRequiredService<ISalesRequestService>()); Assert.Same(core, p.GetRequiredService<ISalesDraftService>());
+        Assert.Same(core, p.GetRequiredService<ISalesRequestDecisionReadV1>());
         var store = p.GetRequiredService<SalesStore>(); Assert.Same(store, p.GetRequiredService<ISalesRequestStore>());
         var db = p.GetRequiredService<SalesDbContext>(); Assert.Same(db, p.GetRequiredService<SalesDbContext>());
         var collector = p.GetRequiredService<AuditEventCollector>(); Assert.Same(collector, p.GetRequiredService<IAuditEventCollector>());

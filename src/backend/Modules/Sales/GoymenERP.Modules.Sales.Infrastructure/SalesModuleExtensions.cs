@@ -75,6 +75,7 @@ public static class SalesModuleExtensions
         services.AddScoped<ISalesDraftService>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         // API-20 / API-21: the request use cases share the draft service's fence and owner reads (one scoped instance).
         services.AddScoped<ISalesRequestService>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
+        services.AddScoped<ISalesRequestDecisionReadV1>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         services.AddScoped<ISalesQuoteService>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         // WP13 / SAT-D471: the signed approval performs the customer acceptance through the SAME draft command.
         services.AddScoped<ISalesOrderCustomerAcceptanceWithSignedApprovalV1>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
