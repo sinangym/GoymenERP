@@ -216,13 +216,13 @@
             "host_supported": true,
             "owner_permission": "sales.orders.discount-exception.approve",
             "frontend_inbox_registered": true,
-            "frontend_published": false,
-            "frontend_capability": null,
-            "capability_declared": false,
-            "route": null,
-            "route_parity": null,
-            "inbox_capability": null,
-            "inbox_capability_matches_work": null
+            "frontend_published": true,
+            "frontend_capability": "sales.discount-exception.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/sales.discount-exception.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "sales.discount-exception.work-decision",
+            "inbox_capability_matches_work": true
           }
         ],
         "owner_commands": [
@@ -234,7 +234,7 @@
         "native_permissions": [
           "sales.orders.discount-exception.approve"
         ],
-        "status": "BACKEND_WORK_HOST_FRONTEND_UNPUBLISHED",
+        "status": "PAIRED_SOURCE",
         "source": "CHECKED_AT_EXACT_HEAD",
         "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
         "actual_SQL": "NOT_RUN",
@@ -248,6 +248,11 @@
             "head": "1c455df97a4f28ac96fb437ca368eca80f43dcb2",
             "note": "Floor paired UI and exact-number/single-refusal-refresh fixes, Discount selected owner/Host and numbered over-delivery native guard integrated; exact local proofs and retained failures remain separate.",
             "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint/floor_discount_and_over_delivery_followup"
+          },
+          {
+            "head": "f873e03f42c1735ae19d08f4fe8c07ec145f6b61",
+            "note": "Discount paired UI/publication and separate exact-head local proofs; runtime remains NOT_RUN.",
+            "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint/discount_paired_publication_and_native_boundaries"
           }
         ]
       }
@@ -284,7 +289,7 @@
           {
             "kind": "sales.over-delivery-request.v1",
             "source": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesOverDeliveryRequestWorkInboxSourceV1.cs:17",
-            "source_decision_read": false,
+            "source_decision_read": true,
             "host_supported": false,
             "owner_permission": "sales.orders.over-delivery.approve",
             "frontend_inbox_registered": true,
@@ -324,6 +329,11 @@
             "head": "1c455df97a4f28ac96fb437ca368eca80f43dcb2",
             "note": "Floor paired UI and exact-number/single-refusal-refresh fixes, Discount selected owner/Host and numbered over-delivery native guard integrated; exact local proofs and retained failures remain separate.",
             "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint/floor_discount_and_over_delivery_followup"
+          },
+          {
+            "head": "f873e03f42c1735ae19d08f4fe8c07ec145f6b61",
+            "note": "Selected numbered owner/source and genuine original receipts implemented; Host/frontend remain unpublished.",
+            "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint/discount_paired_publication_and_native_boundaries"
           }
         ]
       }
@@ -6494,12 +6504,12 @@
       }
     ],
     "audit_sha256": "7b99cf7b328d015372dc2a31cd0afd74c8c40edebd9e72ae822f61d7ee529680",
-    "current_source_commit": "1c455df97a4f28ac96fb437ca368eca80f43dcb2",
+    "current_source_commit": "f873e03f42c1735ae19d08f4fe8c07ec145f6b61",
     "current_source_summary": {
       "backend_kinds": 59,
-      "frontend_published_kinds": 58,
+      "frontend_published_kinds": 59,
       "backend_supported_flows": 58,
-      "paired_flows": 57,
+      "paired_flows": 58,
       "no_host_flows": [
         4,
         5,
@@ -6517,9 +6527,7 @@
       "native_single_step_no_pending_flows": [
         62
       ],
-      "backend_only_unpublished_flows": [
-        3
-      ]
+      "backend_only_unpublished_flows": []
     }
   },
   "purpose_and_native_merge_checkpoint": {
@@ -7124,6 +7132,82 @@
       "posting_mapping_remount": "First full Work run failed one original-key remount case. Isolated15/15 at a1fa and later1107-case scoped run passed this file; cause not established. Original failure retained; not claimed resolved by retry.",
       "new_SQL_source": "4 Discount receipt and11 numbered over-delivery safety Facts registered and compiled; actualSQL NOT_RUN.",
       "limits": "Normal-host aggregate registry pin failure remains open. Real SQL, normal HTTP/browser, full CI, two independent exact-head K3, business/runtime acceptance NOT_RUN. No grants/policy/activation. Earlier successful CI is not current acceptance."
+    },
+    "discount_paired_publication_and_native_boundaries": {
+      "source_commit": "f873e03f42c1735ae19d08f4fe8c07ec145f6b61",
+      "scope": "BOUNDED_LOCAL_SOURCE_NOT_SQL_HTTP_BROWSER_CI_K3",
+      "discount_publication_commit": "2105bca9744f4374eda89fafdf855cf63da1ec28",
+      "discount_paired_frontend": {
+        "seconds": 284.7313028,
+        "exit": 0,
+        "freeGiB": 3.791088104248047,
+        "head": "2105bca9744f4374eda89fafdf855cf63da1ec28",
+        "total": 3156,
+        "passed": 3156,
+        "failed": 0,
+        "skipped": 0,
+        "artifact": "discount-paired-frontend-20261128/frontend"
+      },
+      "discount_tsc": {
+        "freeGiB": 3.7079086303710938,
+        "head": "2105bca9744f4374eda89fafdf855cf63da1ec28",
+        "exit": 0,
+        "seconds": 63.773496,
+        "artifact": "discount-paired-integrated-20261128/tsc"
+      },
+      "discount_lint": {
+        "freeGiB": 3.7053070068359375,
+        "head": "2105bca9744f4374eda89fafdf855cf63da1ec28",
+        "exit": 0,
+        "seconds": 0.4724802,
+        "artifact": "discount-paired-integrated-20261128/lint"
+      },
+      "sales": {
+        "head": "f873e03f42c1735ae19d08f4fe8c07ec145f6b61",
+        "freeGiB": 3.8087844848632812,
+        "exit": 0,
+        "seconds": 58.4443413,
+        "total": 2883,
+        "passed": 2883,
+        "failed": 0,
+        "skipped": 0,
+        "artifact": "over-risk-membership-integrated-20261128/sales"
+      },
+      "purchasing": {
+        "head": "f873e03f42c1735ae19d08f4fe8c07ec145f6b61",
+        "freeGiB": 3.7122573852539062,
+        "exit": 0,
+        "seconds": 27.2093915,
+        "total": 1549,
+        "passed": 1549,
+        "failed": 0,
+        "skipped": 0,
+        "artifact": "over-risk-membership-integrated-20261128/purchasing"
+      },
+      "api_refresh": {
+        "head": "f873e03f42c1735ae19d08f4fe8c07ec145f6b61",
+        "freeGiB": 3.6817779541015625,
+        "exit": 0,
+        "seconds": 21.6642273,
+        "artifact": "over-risk-membership-integrated-20261128/api_refresh"
+      },
+      "controlled_host": {
+        "head": "f873e03f42c1735ae19d08f4fe8c07ec145f6b61",
+        "freeGiB": 3.6564788818359375,
+        "exit": 0,
+        "seconds": 66.6182015,
+        "total": 255,
+        "passed": 255,
+        "failed": 0,
+        "skipped": 0,
+        "artifact": "over-risk-membership-integrated-20261128/host"
+      },
+      "over_delivery_owner_source": "4f9dad0f2/9a21eae9d: selected native request version and actual original Attempt/Audit; same guarded scoped owner. Host/UI/publication not yet delivered.",
+      "risk_native_safety": "214e87202/0cc90965d: native Request/Withdraw/day/hash unchanged; owned decision boundary and reciprocal/shared read fences; selected Work owner/Host/UI pending.",
+      "mixed_membership": "b3f30661e/f873e03f4: explicit Draft parent edit using existing revise authority, unchanged current child revisions, actual parent Attempt/Audit; API/DI/runtime remains closed pending linked revision and complete wiring.",
+      "new_SQL_sources": "4 selected over-delivery receipt +12 risk safety +8 mixed membership Facts registered and compiled; actual SQL NOT_RUN.",
+      "preserved_runner_error": "discount-paired-integrated frontend runner stopped before execution because a nonexistent test file was listed. Already successful .NET/TSC/lint were not repeated; corrected existing file path ran3156 frontend tests in a separate retained phase.",
+      "limits": "Normal-host aggregate registry pin failure remains open; actualSQL/normalHTTP/browser/fullCI/two independent exact-head K3/business acceptance NOT_RUN. No role/grant/Critical/provider/AI activation."
     }
   }
 }
