@@ -163,6 +163,8 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
   const historicalRetry = receiptRetryKind && attempt.hasPendingRetry
   const [reconcilingHistorical, setReconcilingHistorical] = useState(historicalRetry)
   const query = useQuery({ queryKey: [namespace, shell.routeEntryGeneration, 'work-decision', kind, id],
+    // A fresh Floor refusal releases the frozen attempt and re-enables this query; that transition owns its one refresh.
+    ...(salesPriceFloor ? {staleTime:0} : {}),
     enabled: company !== null && namespace !== null && !capabilityFailClosed(shell) && nativeFinanceAllowed && normalJournalAllowed && accountingPeriodAllowed && journalReversalAllowed && catalogAllowed && mappingAllowed && manufacturingCostAllowed && invoiceLineCogsAllowed && inventoryCostAllowed && inventoryCostCancellationAllowed && sourceVoucherAllowed && organizationCompanyTaxIdAllowed && salesRequestAllowed && salesPriceFloorAllowed && salesQuoteConversionAllowed && identityAccessGrantAllowed && !historicalRetry && !reconcilingHistorical, queryFn: async ({ signal }) => {
       const captured = boundary.capture(); const result = await fetchWorkDecision(company!, kind, id, signal)
       if (result.type === 'http') boundary.report(result.status, captured)
@@ -249,8 +251,7 @@ function Decision({ kind, id }: { readonly kind: WorkDecisionKind; readonly id: 
       ...(overage ? { inventoryTransferOverage: { requestNumber: preview.inventoryTransferOverage!.requestNumber, decidedAtUtc: workDecisionLocalUtc(decisionTime)! } } : {}),
       ...(loss ? { inventoryTransferLoss: { requestNumber: preview.inventoryTransferLoss!.requestNumber, decidedAtUtc: workDecisionLocalUtc(decisionTime)! } } : {}),
       ...(kind === 'manufacturing.plan.v1' && options !== undefined ? { manufacturingPlanReapproval: { selectedLabelIds: [...selectedLabels] } } : {}) })
-    // Re-enabling the stale query may already have started the fresh read; join it instead of cancelling/restarting it.
-    if (salesPriceFloor && answer.type === 'refused') { setFloorReasons({}); setFloorReasonBinding(null); if (answer.status === 409) void query.refetch({cancelRefetch:false}) }
+    if (salesPriceFloor && answer.type === 'refused') { setFloorReasons({}); setFloorReasonBinding(null) }
     if (normalJournal && answer.type === 'refused') { setJournalPeriod('');setJournalPeriodVersion(null);setPeriodReadRevision(value=>value+1) }
     if (answer.type === 'applied') {
       if (salesPriceFloor || identityAccessGrant || salesQuoteConversion || salesRequest || organizationCompanyTaxId || sourceVoucher || inventoryCostCancellation || inventoryCost || invoiceLineCogs || manufacturingCost || mapping || catalog || journalReversal || accountingPeriod || normalJournal || nativeFinance || expensePayment || reversal || officialSales || officialImport || partyCreditLimit || ibanChange || priceList) setReconcilingHistorical(true)
