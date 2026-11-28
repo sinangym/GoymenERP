@@ -770,6 +770,40 @@
             "skipped": 0
           },
           "scope": "Actual current native child view and frozen current version/full line set, initial membership history immutable; readonly Serializable owner scope and native preparation reused.10controlled preview+4pure domain new cases.3SQL source Facts registered/compiled; actualSQL NOT_RUN. No public endpoint/DI or atomic admission yet; mixed Approve stays503."
+        },
+        "native_atomic_approval": {
+          "source_commit": "1c455df97a4f28ac96fb437ca368eca80f43dcb2",
+          "commits": [
+            "c8a31205a",
+            "891c5d6fa",
+            "66597a6d4",
+            "9402c8d01"
+          ],
+          "scope": "Existing parent-owned guarded transaction and native child preparation/transition; one parent Attempt and both actual audit streams. Immutable original receipt reads exact child revisions in technical64-child batches; no business membership cap. Legacy null wire/hash unchanged.",
+          "unit": {
+            "head": "1c455df97a4f28ac96fb437ca368eca80f43dcb2",
+            "seconds": 39.4522935,
+            "exit": 0,
+            "freeGiB": 3.6447677612304688,
+            "artifact": "mixed-atomic-source-unit-20261128/purchasing",
+            "total": 1533,
+            "passed": 1533,
+            "failed": 0,
+            "skipped": 0
+          },
+          "controlled_host": {
+            "freeGiB": 3.734405517578125,
+            "seconds": 70.4918447,
+            "exit": 0,
+            "head": "1c455df97a4f28ac96fb437ca368eca80f43dcb2",
+            "artifact": "mixed-discount-purchasing-host-20261128/host",
+            "total": 164,
+            "passed": 164,
+            "failed": 0,
+            "skipped": 0
+          },
+          "SQL_source": "12 new Facts registered and compiled, actualSQL NOT_RUN.",
+          "runtime": "Closed503: native membership admission and linked supplier revision, preview/API/DI/frontend still pending. Not a completed mixed-order runtime delivery."
         }
       },
       "delivery_tracking": {
@@ -2313,7 +2347,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Floor frontend/publication and Discount selected owner/source in separate writers. Mixed atomic participant/original receipt still pending. All64 runtime unverified; remaining source gaps3,4,5,6,10,11;62 remains native single step. ActualSQL/normalHTTP/browser/pins/fullCI/twoK3 pending.",
+      "next_action": "Pair Discount frontend/publication; complete numbered over-delivery selected owner/source/Host, remaining native Work flows5,6,10,11 and mixed admission/revision. Preserve Cari62 native single-step. All64 runtime unverified; actualSQL/normalHTTP/browser/pins/fullCI/twoK3/business acceptance pending.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -2432,7 +2466,7 @@
         "activation": "No grants/flags/provider changes"
       },
       "execution": {
-        "source_commit": "b5db1126304ad1fdb324a544babdb0004bafb8f1",
+        "source_commit": "1c455df97a4f28ac96fb437ca368eca80f43dcb2",
         "implemented_kinds": [
           "organization.company-tax-id-change.v1",
           "accounting.invoiced-shipment-cost.v1",
@@ -2491,7 +2525,8 @@
           "sales.request.v1",
           "sales.quote-conversion-request.v1",
           "identity.access-grant-request.v1",
-          "sales.price-floor-exception.v1"
+          "sales.price-floor-exception.v1",
+          "sales.discount-exception.v1"
         ],
         "local_checks": {
           "Finance.UnitTests": "1876 passed, 0 skipped",
@@ -2558,7 +2593,8 @@
             },
             "original_failures": "4ccc API full PASS200.2623446s; Finance test-source compile failed on internal Audit.Pending. a3f75 Finance2241PASS0skip16.8405267s; integration source failed4 missing Persistence symbols. ce800 Finance2252PASS0skip16.0868709s; controlled Host865total864PASS1FAIL0skip74.0214885s (maker503 vs403). feeed3344 Finance2254PASS0skip15.8521812s and Host865PASS0skip60.4506076s after real maker403 fix and public collector fixture correction. d512 Finance2284total2283PASS1FAIL0skip16.5263706s (two new screen literals missing); b19 test-only exact expected-set correction. All old logs retained; no assertion or test removed."
           },
-          "quote_floor_discount_mixed_followup": "See existing current checkpoint ref/integrated_floor_quote_discount_mixed_followup for exact heads/durations/counters and retained failures; no aggregate acceptance claim."
+          "quote_floor_discount_mixed_followup": "See existing current checkpoint ref/integrated_floor_quote_discount_mixed_followup for exact heads/durations/counters and retained failures; no aggregate acceptance claim.",
+          "floor_discount_over_delivery": "See WORK_ONAY_KAPSAM_HARITASI_v1.json#quote_work_host_and_mixed_preparation_checkpoint/floor_discount_and_over_delivery_followup; separate exact heads, source scopes and retained failures, not aggregate acceptance."
         },
         "reuse": [
           "existing FinanceCashAccountService commands and durable receipts",

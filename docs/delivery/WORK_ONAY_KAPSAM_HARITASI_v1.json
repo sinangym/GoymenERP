@@ -127,13 +127,13 @@
             "host_supported": true,
             "owner_permission": "sales.orders.price-floor-exception.approve",
             "frontend_inbox_registered": true,
-            "frontend_published": false,
-            "frontend_capability": null,
-            "capability_declared": false,
-            "route": null,
-            "route_parity": null,
-            "inbox_capability": "sales.orders.price-floor-exception.approve",
-            "inbox_capability_matches_work": null
+            "frontend_published": true,
+            "frontend_capability": "sales.price-floor-exception.work-decision",
+            "capability_declared": true,
+            "route": "/onaylarim/sales.price-floor-exception.v1/:approvalId",
+            "route_parity": true,
+            "inbox_capability": "sales.price-floor-exception.work-decision",
+            "inbox_capability_matches_work": true
           }
         ],
         "owner_commands": [
@@ -145,7 +145,7 @@
         "native_permissions": [
           "sales.orders.price-floor-exception.approve"
         ],
-        "status": "BACKEND_WORK_HOST_FRONTEND_UNPUBLISHED",
+        "status": "PAIRED_SOURCE",
         "source": "CHECKED_AT_EXACT_HEAD",
         "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
         "actual_SQL": "NOT_RUN",
@@ -173,6 +173,11 @@
             "head": "14960975831f3363dea947eef9863b0b42512c63",
             "note": "Quote selected UI/publication and Floor native Host integrated. Source proof is bounded at recorded heads; normal-host aggregate registry pin fails until train repin. SQL/browser/CI/K3 remain NOT_RUN.",
             "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint"
+          },
+          {
+            "head": "1c455df97a4f28ac96fb437ca368eca80f43dcb2",
+            "note": "Floor paired UI and exact-number/single-refusal-refresh fixes, Discount selected owner/Host and numbered over-delivery native guard integrated; exact local proofs and retained failures remain separate.",
+            "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint/floor_discount_and_over_delivery_followup"
           }
         ]
       }
@@ -207,8 +212,8 @@
           {
             "kind": "sales.discount-exception.v1",
             "source": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesDiscountExceptionWorkInboxSourceV1.cs:24",
-            "source_decision_read": false,
-            "host_supported": false,
+            "source_decision_read": true,
+            "host_supported": true,
             "owner_permission": "sales.orders.discount-exception.approve",
             "frontend_inbox_registered": true,
             "frontend_published": false,
@@ -229,7 +234,7 @@
         "native_permissions": [
           "sales.orders.discount-exception.approve"
         ],
-        "status": "LEGACY_INBOX_NATIVE_COMMAND_NO_WORK_HOST",
+        "status": "BACKEND_WORK_HOST_FRONTEND_UNPUBLISHED",
         "source": "CHECKED_AT_EXACT_HEAD",
         "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
         "actual_SQL": "NOT_RUN",
@@ -238,7 +243,13 @@
         "K3": "NOT_PERFORMED",
         "map_runtime": "NOT_RUN",
         "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
-        "later_deltas": []
+        "later_deltas": [
+          {
+            "head": "1c455df97a4f28ac96fb437ca368eca80f43dcb2",
+            "note": "Floor paired UI and exact-number/single-refusal-refresh fixes, Discount selected owner/Host and numbered over-delivery native guard integrated; exact local proofs and retained failures remain separate.",
+            "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint/floor_discount_and_over_delivery_followup"
+          }
+        ]
       }
     },
     {
@@ -308,7 +319,13 @@
         "K3": "NOT_PERFORMED",
         "map_runtime": "NOT_RUN",
         "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
-        "later_deltas": []
+        "later_deltas": [
+          {
+            "head": "1c455df97a4f28ac96fb437ca368eca80f43dcb2",
+            "note": "Floor paired UI and exact-number/single-refusal-refresh fixes, Discount selected owner/Host and numbered over-delivery native guard integrated; exact local proofs and retained failures remain separate.",
+            "checkpoint_ref": "quote_work_host_and_mixed_preparation_checkpoint/floor_discount_and_over_delivery_followup"
+          }
+        ]
       }
     },
     {
@@ -6477,14 +6494,13 @@
       }
     ],
     "audit_sha256": "7b99cf7b328d015372dc2a31cd0afd74c8c40edebd9e72ae822f61d7ee529680",
-    "current_source_commit": "14960975831f3363dea947eef9863b0b42512c63",
+    "current_source_commit": "1c455df97a4f28ac96fb437ca368eca80f43dcb2",
     "current_source_summary": {
-      "backend_kinds": 58,
-      "frontend_published_kinds": 57,
-      "backend_supported_flows": 57,
-      "paired_flows": 56,
+      "backend_kinds": 59,
+      "frontend_published_kinds": 58,
+      "backend_supported_flows": 58,
+      "paired_flows": 57,
       "no_host_flows": [
-        3,
         4,
         5,
         6,
@@ -6502,7 +6518,7 @@
         62
       ],
       "backend_only_unpublished_flows": [
-        2
+        3
       ]
     }
   },
@@ -6989,6 +7005,125 @@
         "cause": "Reused strict request-authority fixture expected RequestsApprove for the new Discount command.149609758 binds the exact native expected permission per probe, retaining company/permission/WIP/noSQL assertions. No production policy or broad grant changed."
       },
       "limits": "Bounded exact-head local scopes only. No actualSQL/normalHTTP/browser/fullCI/pins/twoK3/business acceptance. API-only refresh uses freshly built changed Sales/Purchasing dependencies, not full solution build. Mixed atomic approval/receipt is still unavailable; no role/grant/Critical/provider/AI activation. Token telemetry unavailable."
+    },
+    "floor_discount_and_over_delivery_followup": {
+      "source_commit": "1c455df97a4f28ac96fb437ca368eca80f43dcb2",
+      "scope": "BOUNDED_LOCAL_SOURCE_NOT_SQL_HTTP_BROWSER_CI_K3",
+      "floor_publication": "d3f8d92ee; Sales provider1.32/count49; primary Work purpose, native reference unchanged.",
+      "floor_numeric_fix": "a1faed97e reuses exactNativeClrAmount callback; no float/calculator/global native decoder changes.",
+      "floor_single_refresh_fix": "30bdbbb02 uses Floor-only staleTime0 and one query re-enable refresh; exact two total GETs and empty fresh reasons retained.",
+      "discount_owner": "eb03033e6; actual immutable native Attempt/Audit/response receipt; SAT-D37 listed maker exclusion and SAT-D45 unlisted exception retained.",
+      "discount_host": "731064775; same native scoped command/read owner; 15-field human and private proof; frontend not yet published.",
+      "numbered_over_delivery": "fe7244749/bdb4127d8; same scoped owned transaction/audit, reciprocal markers and29 shared read fences; no legacy direct over-delivery substitution.",
+      "sales": {
+        "freeGiB": 3.712677001953125,
+        "head": "bdb4127d8612b0bfd073249045b143a07f82c646",
+        "seconds": 57.5200673,
+        "exit": 0,
+        "artifact": "over-delivery-floor-integrated-20261128/sales",
+        "total": 2821,
+        "passed": 2821,
+        "failed": 0,
+        "skipped": 0
+      },
+      "controlled_composition": {
+        "freeGiB": 3.724864959716797,
+        "exit": 0,
+        "seconds": 72.3962358,
+        "head": "0a806fcac8354f17a99cbb019a37441c54fe4e50",
+        "artifact": "over-delivery-floor-analyzer-fixed-20261128/host",
+        "total": 15,
+        "passed": 15,
+        "failed": 0,
+        "skipped": 0
+      },
+      "frontend_tsc": {
+        "freeGiB": 3.739246368408203,
+        "exit": 0,
+        "seconds": 53.9536931,
+        "head": "0a806fcac8354f17a99cbb019a37441c54fe4e50",
+        "artifact": "over-delivery-floor-analyzer-fixed-20261128/tsc"
+      },
+      "frontend_lint": {
+        "freeGiB": 3.2558021545410156,
+        "exit": 0,
+        "seconds": 0.3271019,
+        "head": "0a806fcac8354f17a99cbb019a37441c54fe4e50",
+        "artifact": "over-delivery-floor-analyzer-fixed-20261128/lint"
+      },
+      "floor_regression": {
+        "exit": 0,
+        "head": "30bdbbb02cdc56b25139ecbcf46c91c91d358af6",
+        "freeGiB": 3.6333694458007812,
+        "seconds": 10.7815242,
+        "artifact": "floor-single-refresh-regression-20261128/frontend",
+        "total": 107,
+        "passed": 107,
+        "failed": 0,
+        "skipped": 0
+      },
+      "discount_floor_host": {
+        "freeGiB": 3.7169342041015625,
+        "head": "30bdbbb02cdc56b25139ecbcf46c91c91d358af6",
+        "exit": 0,
+        "seconds": 66.7736455,
+        "artifact": "discount-floor-host-20261128/host",
+        "total": 170,
+        "passed": 170,
+        "failed": 0,
+        "skipped": 0
+      },
+      "mixed_purchasing_host": {
+        "freeGiB": 3.734405517578125,
+        "seconds": 70.4918447,
+        "exit": 0,
+        "head": "1c455df97a4f28ac96fb437ca368eca80f43dcb2",
+        "artifact": "mixed-discount-purchasing-host-20261128/host",
+        "total": 164,
+        "passed": 164,
+        "failed": 0,
+        "skipped": 0
+      },
+      "preserved_frontend_first_run": {
+        "head": "43bcf2379f1570068994b38c18ab43d703a70b34",
+        "freeGiB": 3.759777069091797,
+        "exit": 1,
+        "seconds": 276.6454294,
+        "artifact": "floor-paired-api-frontend-20261128/frontend",
+        "total": 2984,
+        "passed": 2980,
+        "failed": 4,
+        "skipped": 0
+      },
+      "preserved_frontend_followup": {
+        "freeGiB": 3.243633270263672,
+        "exit": 1,
+        "seconds": 78.7303761,
+        "head": "0a806fcac8354f17a99cbb019a37441c54fe4e50",
+        "artifact": "over-delivery-floor-analyzer-fixed-20261128/frontend",
+        "total": 1107,
+        "passed": 1106,
+        "failed": 1,
+        "skipped": 0
+      },
+      "preserved_join_attempt": {
+        "head": "ac113beec6e777d75e575363789f2777a5c8e22b",
+        "exit": 1,
+        "seconds": 13.2397983,
+        "freeGiB": 3.7174224853515625,
+        "artifact": "floor-409-join-regression-20261128/frontend",
+        "total": 107,
+        "passed": 106,
+        "failed": 1,
+        "skipped": 0
+      },
+      "preserved_compile_failures": [
+        "over-delivery-floor-integrated-20261128/host: missing read-only correlation fixture Set member, fixed0d5b4fcd3",
+        "over-delivery-floor-fixture-fixed-20261128/host: xUnit2029 clean-state predicate assertion, fixed0a806fcac without weakening predicate"
+      ],
+      "posting_mapping_remount": "First full Work run failed one original-key remount case. Isolated15/15 at a1fa and later1107-case scoped run passed this file; cause not established. Original failure retained; not claimed resolved by retry.",
+      "new_SQL_source": "4 Discount receipt and11 numbered over-delivery safety Facts registered and compiled; actualSQL NOT_RUN.",
+      "limits": "Normal-host aggregate registry pin failure remains open. Real SQL, normal HTTP/browser, full CI, two independent exact-head K3, business/runtime acceptance NOT_RUN. No grants/policy/activation. Earlier successful CI is not current acceptance."
     }
   }
 }

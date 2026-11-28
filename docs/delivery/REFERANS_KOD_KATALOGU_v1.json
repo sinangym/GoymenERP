@@ -192,8 +192,8 @@
           "path": "src/backend/Modules/Purchasing/GoymenERP.Modules.Purchasing.Application/PurchasingService.cs",
           "line": 264,
           "anchor": "public async Task<PurchaseOrderResponse> CreateOrderAsync(CreatePurchaseOrderRequest request, PurchasingCommandMetadata metadata,",
-          "sha256": "2b97ff198f7bf5681bff5ecda91f3c1e44218f043310efb0c9551e0df303df75",
-          "git_blob": "4410c3c5ea696d139cc705043eaa910bf53458d1"
+          "sha256": "8e0a58af5900c3b45a1597245dc08781544f62093c6688619d9e22f3f1857b85",
+          "git_blob": "dc5d0ddca12575c6611b615e79ec688485b3a418"
         }
       ],
       "tests": [
@@ -205,7 +205,7 @@
           "git_blob": "bfe2f3194b166e753401085169fd1a2047541a97"
         }
       ],
-      "source_commit": "14960975831f3363dea947eef9863b0b42512c63",
+      "source_commit": "1c455df97a4f28ac96fb437ca368eca80f43dcb2",
       "historical_evidence": "SOURCE_AND_TEST_ONLY",
       "runtime_acceptance": "NOT_RUN",
       "historical_ci_url": "https://github.com/sinangym/GoymenERP/actions/runs/45164205956",
@@ -217,7 +217,7 @@
         "Eski test sonucu yeni kullanım kabulü değildir"
       ],
       "directly_reusable": "Mevcut owner API/port ve fixture; yeni domain verisi doğrudan tabloya yazılmaz.",
-      "adaptations": "Existing multi-line/native approval reused; current mixed readonly child preview preserves initial membership and freezes current child version/all lines.1518 Purchasing unit PASS at986c33d06; atomic mixed approval and actualSQL/browser remain pending.",
+      "adaptations": "Existing native multi-line and guarded parent approval reused for atomic mixed child transitions and immutable receipts.1533 Purchasing unit PASS at1c455df97; membership admission/linked revision/API/UI and actualSQL/browser remain pending.",
       "limitations": [
         "Mevcut satır desteği karma mal/hizmet belgesinin tamamlandığı anlamına gelmez; ALS-D129.",
         "Kaynak ve test gövdeleri bulundu; bu çalışma ERP runtime testini çalıştırmadı."
@@ -241,6 +241,10 @@
         {
           "source_commit": "43d4e5063b3e98eb367c26cb43bed42947e2b254",
           "note": "Previous guarded native purchase source; preserved as historical reference."
+        },
+        {
+          "source_commit": "14960975831f3363dea947eef9863b0b42512c63",
+          "note": "Previous native and mixed readonly preparation reference; exact1518-unit proof remains in the prior checkpoint."
         }
       ]
     },

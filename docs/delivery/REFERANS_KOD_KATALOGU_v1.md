@@ -93,4 +93,4 @@ REF-CARD-01, native kimlik kararı güvenlik artımının `cdc4aac0c` kaynağın
 
 28 Kasım `c3fd261c3` ek kaydı aynı `catalog_owner_mapping_native_checkpoint` altındadır: Flow51 source/DTO ve Flow52 owner kaynakları, f487 Muhasebe1236PASS0skip, ayrı a771 CS0246 hatası ve06e7 SQL kaynak faz düzeltmesi ayrıştırılır. Güncel fullAPI/Host/SQL NOT_RUN; eski head sonuçları taşınmaz. Yeni referans yok;50 referans provenance gövdeleri aynen korunur.
 
-REF-ORDER-01, karma alış salt okunur önizleme değişikliği sonrası `149609758` kaynağına yenilendi. Satınalma birim kapsamı `986c33d06` üzerinde 1.518/1.518 geçti; gerçek SQL/tarayıcı ve karma atomik onay kabulü bekliyor. Kaynak/test kanıt sınıfı ve 50 referans korunur.
+REF-ORDER-01, karma alış atomik onay kaynağı sonrası `1c455df97` sürümüne yenilendi. Aynı sürümde satınalma 1.533/1.533 geçti; admission/revizyon/API/UI, gerçek SQL ve tarayıcı kabulü bekliyor. Önceki referans geçmişi, kaynak/test kanıt sınıfı ve 50 referans korunur.
