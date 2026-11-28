@@ -76,12 +76,36 @@ public sealed partial class WorkCollaborationServiceTests
         Assert.False(database.ChangeTracker.HasChanges());
     }
 
+    [Fact]
+    public async Task Morning_summary_rechecks_owner_grant_revoked_by_the_final_completed_membership_read()
+    {
+        var harness = await MorningHarnessAsync(); await using var database = harness.Database();
+        var company = new MorningMutableCompany(Company); var user = new C5ReadUser(); var fired = false;
+        var probe = new C5ReadProbe();
+        probe.AfterRead = (stage, ordinal) =>
+        {
+            if (stage != "people" || ordinal != 3) return;
+            fired = true; probe.OwnerReadable = false;
+        };
+        var before = (await database.InboxDigests.CountAsync(), await database.InboxDigestItems.CountAsync(),
+            await database.CollaborationAttempts.CountAsync(), harness.Audit.Events.Count);
+        var error = await Assert.ThrowsAsync<WorkCollaborationException>(() =>
+            new WorkMorningSummaryReadV1(database, company, user, probe, probe, probe, harness.Time).ReadAsync());
+        Assert.Equal(403, error.Status); Assert.True(fired);
+        Assert.Equal("record", probe.LastStage); Assert.Equal(2, probe.LastOrdinal);
+        Assert.Equal(Reader, user.Actor); Assert.True(user.Accessible); Assert.Equal(Company, company.CompanyId);
+        Assert.False(database.ChangeTracker.HasChanges());
+        Assert.Equal(before, (await database.InboxDigests.CountAsync(), await database.InboxDigestItems.CountAsync(),
+            await database.CollaborationAttempts.CountAsync(), harness.Audit.Events.Count));
+    }
+
     // Deliberately completes asynchronously even if the caller's token is cancelled.
     // These are source-boundary unit doubles, not scheduler/SQL/provider acceptance.
     private sealed class C5ReadProbe : IWorkPersonDirectoryV1, IWorkRecordAccessPortV1, IWorkDigestScheduleReaderV1
     {
         private readonly Dictionary<string, int> calls = [];
         internal Action<string, int>? AfterRead { get; set; }
+        internal bool OwnerReadable { get; set; } = true;
         internal int TotalCalls { get; private set; }
         internal string? LastStage { get; private set; }
         internal int LastOrdinal { get; private set; }
@@ -94,7 +118,7 @@ public sealed partial class WorkCollaborationServiceTests
         public async Task<WorkPersonOutcomeV1> IsActiveMemberAsync(Guid companyId, Guid userId, CancellationToken token = default)
         { await Completed("people"); return companyId == Company && userId == Reader ? WorkPersonOutcomeV1.Found : WorkPersonOutcomeV1.Denied; }
         public async Task<WorkRecordAccessOutcomeV1> CheckCurrentActorAsync(Guid companyId, WorkRecordRefV1 record, CancellationToken token = default)
-        { await Completed("record"); return companyId == Company && record.RecordId == Draft ? WorkRecordAccessOutcomeV1.Readable : WorkRecordAccessOutcomeV1.NotReadable; }
+        { await Completed("record"); return OwnerReadable && companyId == Company && record.RecordId == Draft ? WorkRecordAccessOutcomeV1.Readable : WorkRecordAccessOutcomeV1.NotReadable; }
         public async Task<WorkDigestScheduleV1> ReadAsync(CancellationToken token = default)
         { await Completed("schedule"); return MorningSchedule(); }
         public Task<WorkPeopleAnswerV1> ResolveAsync(Guid companyId, IReadOnlyList<Guid> ids, CancellationToken token = default) => throw new NotSupportedException();
