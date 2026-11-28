@@ -50,10 +50,10 @@ describe('Sales return complete readonly human and actual common Work protocol (
   })
   it('offers native rejection without a required reason or any finalization/payment/selection action', async () => {
     const calls = installFetch({capabilities: [cap], respond: (url, init) => url.includes(ownerPath) ? init?.method === 'POST' ? result(false) : json(fixture(COMPANY_A)) : undefined})
-    mount(); await screen.findByRole('region', {name: T.title}); expect(screen.getByRole('button', {name: W.reject}).matches(':disabled')).toBe(false)
+    mount(); const facts = await screen.findByRole('region', {name: T.title}); expect(within(facts).queryByRole('combobox')).toBeNull(); expect(screen.getByRole('button', {name: W.reject}).matches(':disabled')).toBe(false)
     fireEvent.click(screen.getByRole('button', {name: W.reject})); await screen.findByText(W.done)
     expect(calls.filter(c => c.method === 'POST').map(c => c.body)).toEqual([{expectedVersion: '9007199254740993', approve: false, reason: '', delegationId: null}])
-    expect(screen.queryByRole('button', {name: 'Kesinleştir'})).toBeNull(); expect(screen.queryByRole('combobox')).toBeNull()
+    expect(screen.queryByRole('button', {name: 'Kesinleştir'})).toBeNull()
   })
   it.each(['same-mount', 'remount'] as const)('reconciles unknown through %s without GET or current Finalized facts replacing the original decision', async mode => {
     Object.assign(IDENTITY, {authenticationSessionBinding: 'SENTETIK-return-unknown'})
@@ -87,11 +87,35 @@ describe('Sales return complete readonly human and actual common Work protocol (
     vi.stubGlobal('fetch', vi.fn(async () => result(approve, true, 'Finalized')))
     expect((await sendWorkDecision(COMPANY_A, kind, id, body, 'SENTETIK-original')).type).toBe('unknown')
   })
-  it.each([401, 403])('keeps ambiguous postcommit status%s unresolved at the transport boundary', async status => {
+  it.each([401, 403])('keeps native first401 refusal and ambiguous postcommit403 with auth reporting status%s', async status => {
     vi.stubGlobal('fetch', vi.fn(async () => problem(status)))
     const report = vi.fn()
-    expect((await sendWorkDecision(COMPANY_A, kind, id, {expectedVersion: '2', approve: true, reason: null, delegationId: null}, 'SENTETIK-key', report)).type).toBe('unknown')
-    expect(report).toHaveBeenCalledExactlyOnceWith(status)
+    expect((await sendWorkDecision(COMPANY_A, kind, id, {expectedVersion: '2', approve: true, reason: null, delegationId: null}, 'SENTETIK-key', report)).type).toBe(status === 403 ? 'unknown' : 'refused')
+    if (status === 403) expect(report).toHaveBeenCalledExactlyOnceWith(403)
+    else expect(report).not.toHaveBeenCalled()
+  })
+  it('reports first403 to the actual shell boundary and retains the same frozen request for fresh-authority recovery without GET', async () => {
+    Object.assign(IDENTITY, {authenticationSessionBinding: 'SENTETIK-return-postcommit403'})
+    const capabilities = [cap]; let posts = 0
+    const calls = installFetch({capabilities, respond: (url, init) => {
+      if (!url.includes(ownerPath)) return undefined
+      if (init?.method !== 'POST') return json(fixture(COMPANY_A))
+      if (++posts === 1) {capabilities.splice(0); return problem(403)}
+      return result(false, true)
+    }})
+    mount(); await screen.findByRole('region', {name: T.title}); const raw = '  SENTETIK retained after403  '
+    fireEvent.change(screen.getByRole('textbox', {name: W.reason}), {target: {value: raw}})
+    fireEvent.click(screen.getByRole('button', {name: W.reject}))
+    // Without the captured boundary.report this mounted route would retain its old capability and stay retryable.
+    await waitFor(() => expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+    expect(screen.queryByRole('region', {name: T.title})).toBeNull(); expect(screen.queryByRole('button', {name: W.retry})).toBeNull()
+    expect(calls.filter(c => c.url.includes(ownerPath) && c.method === 'GET')).toHaveLength(1)
+    cleanup(); capabilities.push(cap); mount(); await screen.findByRole('button', {name: W.retry})
+    fireEvent.click(screen.getByRole('button', {name: W.retry})); await screen.findByText(W.done)
+    const writes = calls.filter(c => c.method === 'POST'); expect(writes).toHaveLength(2)
+    expect(writes[0].headers['Idempotency-Key']).toBe(writes[1].headers['Idempotency-Key']); expect(writes[1].body).toEqual(writes[0].body)
+    expect(writes[1].body).toEqual({expectedVersion: '9007199254740993', approve: false, reason: raw, delegationId: null})
+    expect(calls.filter(c => c.url.includes(ownerPath) && c.method === 'GET')).toHaveLength(1)
   })
   it.each([403, 503])('read refusal%s exposes no human data and sends no decision', async status => {
     const calls = installFetch({capabilities: [cap], respond: url => url.includes(ownerPath) ? problem(status) : undefined})
