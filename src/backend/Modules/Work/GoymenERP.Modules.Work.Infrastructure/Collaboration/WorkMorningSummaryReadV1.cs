@@ -14,19 +14,20 @@ public sealed class WorkMorningSummaryReadV1(WorkDbContext database, ICompanyCon
 {
     public async Task<WorkMorningSummaryV1?> ReadAsync(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var scope = Capture();
         await MemberAsync(scope, cancellationToken);
         var now = time.GetUtcNow();
-        Fence(scope);
+        Fence(scope, cancellationToken);
         var schedule = await schedules.ReadAsync(cancellationToken);
-        Fence(scope);
+        Fence(scope, cancellationToken);
         var slot = MorningSlot(schedule, scope.CompanyId, now) ?? throw Unavailable();
         var first = await ReadSourceAsync(scope, slot, cancellationToken);
         await CheckItemsAsync(scope, first, cancellationToken);
         await MemberAsync(scope, cancellationToken);
-        Fence(scope);
+        Fence(scope, cancellationToken);
         var currentSchedule = await schedules.ReadAsync(cancellationToken);
-        Fence(scope);
+        Fence(scope, cancellationToken);
         if (MorningSlot(currentSchedule, scope.CompanyId, now) != slot || currentSchedule.Version != schedule.Version)
             throw Unavailable();
         var second = await ReadSourceAsync(scope, slot, cancellationToken);
@@ -34,7 +35,7 @@ public sealed class WorkMorningSummaryReadV1(WorkDbContext database, ICompanyCon
         // Revalidate every owner's read after the last source await; a removed grant must not release cached counts.
         await CheckItemsAsync(scope, second, cancellationToken);
         await MemberAsync(scope, cancellationToken);
-        Fence(scope);
+        Fence(scope, cancellationToken);
         if (second.Digest is not { } digest) return null;
         if (digest.ScheduleVersion != schedule.Version) throw Unavailable();
         return new(scope.CompanyId, digest.Id, digest.SlotUtc, digest.ScheduleVersion,
@@ -50,11 +51,11 @@ public sealed class WorkMorningSummaryReadV1(WorkDbContext database, ICompanyCon
 
     private async Task<Source> ReadSourceAsync(Scope scope, DateTimeOffset slot, CancellationToken token)
     {
-        Fence(scope);
+        Fence(scope, token);
         var digest = await database.InboxDigests.AsNoTracking()
             .Where(row => row.CompanyId == scope.CompanyId && row.RecipientUserId == scope.Actor && row.SlotUtc == slot)
             .Select(row => new Digest(row.Id, row.SlotUtc, row.ScheduleVersion)).SingleOrDefaultAsync(token);
-        Fence(scope);
+        Fence(scope, token);
         if (digest is null) return new(null, []);
         var items = await (from link in database.InboxDigestItems.AsNoTracking()
             join item in database.InboxNotifications.AsNoTracking()
@@ -63,7 +64,7 @@ public sealed class WorkMorningSummaryReadV1(WorkDbContext database, ICompanyCon
             orderby item.Id
             select new Item(item.Id, item.RecipientUserId, item.Kind, item.Class, item.SourceId, item.RecordType, item.RecordId))
             .Take(WorkCollaborationLimitsV1.PageSize + 1).ToArrayAsync(token);
-        Fence(scope);
+        Fence(scope, token);
         if (items.Length > WorkCollaborationLimitsV1.PageSize) throw Unavailable();
         return new(digest, items);
     }
@@ -72,7 +73,7 @@ public sealed class WorkMorningSummaryReadV1(WorkDbContext database, ICompanyCon
     {
         foreach (var item in source.Items)
         {
-            Fence(scope);
+            Fence(scope, token);
             if (item.Recipient != scope.Actor || item.Class != (int)WorkInboxNotificationClassV1.Digest
                 || !Enum.IsDefined((WorkInboxNotificationKindV1)item.Kind)
                 || WorkInboxNotificationClassesV1.Of((WorkInboxNotificationKindV1)item.Kind) != WorkInboxNotificationClassV1.Digest)
@@ -81,7 +82,7 @@ public sealed class WorkMorningSummaryReadV1(WorkDbContext database, ICompanyCon
                 && Enum.IsDefined((WorkRecordTypeV1)type))
             {
                 var access = await records.CheckCurrentActorAsync(scope.CompanyId, new((WorkRecordTypeV1)type, id), token);
-                Fence(scope);
+                Fence(scope, token);
                 if (access == WorkRecordAccessOutcomeV1.NotReadable) throw Denied();
                 if (access != WorkRecordAccessOutcomeV1.Readable) throw Unavailable();
             }
@@ -91,7 +92,7 @@ public sealed class WorkMorningSummaryReadV1(WorkDbContext database, ICompanyCon
                 var personal = await database.Tasks.AsNoTracking().AnyAsync(task => task.CompanyId == scope.CompanyId
                     && task.Id == item.SourceId && task.AssigneeUserId == scope.Actor
                     && task.RecordType == null && task.RecordId == null, token);
-                Fence(scope);
+                Fence(scope, token);
                 if (!personal) throw Unavailable();
             }
             else throw Unavailable(); // Event-only sources need an authoritative current owner read before this slice can include them.
@@ -100,9 +101,9 @@ public sealed class WorkMorningSummaryReadV1(WorkDbContext database, ICompanyCon
 
     private async Task MemberAsync(Scope scope, CancellationToken token)
     {
-        Fence(scope);
+        Fence(scope, token);
         var membership = await people.IsActiveMemberAsync(scope.CompanyId, scope.Actor, token);
-        Fence(scope);
+        Fence(scope, token);
         if (membership == WorkPersonOutcomeV1.Denied) throw Denied();
         if (membership != WorkPersonOutcomeV1.Found) throw Unavailable();
     }
@@ -115,8 +116,9 @@ public sealed class WorkMorningSummaryReadV1(WorkDbContext database, ICompanyCon
         return new(company.CompanyId, actor, user.UserId!);
     }
 
-    private void Fence(Scope scope)
+    private void Fence(Scope scope, CancellationToken token)
     {
+        token.ThrowIfCancellationRequested();
         if (!user.IsAuthenticated || user.UserId != scope.ActorId || !company.IsResolved
             || company.CompanyId != scope.CompanyId || !user.CanAccessCompany(scope.CompanyId)) throw Denied();
     }
