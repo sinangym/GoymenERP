@@ -112,6 +112,8 @@ public sealed class SalesShellCapabilityProviderTests
                     $"{SalesPermissionManifestV1.DraftsRead}+{SalesPermissionManifestV1.OrdersSourcePlanWrite}", "sales.drafts.detail"),
                 // UI-20 (shell contract 1.8): the S-01 quote screens and their two controls — revision/loss on the quote write
                 // name, conversion on the quote write name AND the order create name (the two names the command measures).
+                ("sales.quote-conversion-request.work-decision", "/onaylarim/sales.quote-conversion-request.v1/:approvalId",
+                    SalesPermissionManifestV1.QuotesExpiredConversionApprove, null),
                 ("sales.quotes.convert", "/satis/teklifler/:quoteId",
                     $"{SalesPermissionManifestV1.QuotesRead}+{SalesPermissionManifestV1.QuotesWrite}+{SalesPermissionManifestV1.DraftsCreate}",
                     "sales.quotes.detail"),
@@ -126,6 +128,8 @@ public sealed class SalesShellCapabilityProviderTests
                 // UI-80 (1.11): the Sales reports screen on its own read name.
                 ("sales.reports.view", "/satis/raporlar", SalesPermissionManifestV1.ReportsRead, null),
                 // UI-20: the S-01 request screens and the SAT-D22 single-approver decision control of the detail.
+                ("sales.request.work-decision", "/onaylarim/sales.request.v1/:approvalId",
+                    SalesPermissionManifestV1.RequestsApprove, null),
                 ("sales.requests.approve", "/satis/talepler/:requestId",
                     $"{SalesPermissionManifestV1.RequestsRead}+{SalesPermissionManifestV1.RequestsApprove}", "sales.requests.detail"),
                 ("sales.requests.create", "/satis/talepler/yeni", SalesPermissionManifestV1.RequestsWrite, null),

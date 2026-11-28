@@ -28,7 +28,7 @@ const WP4_KINDS = {
   'sales.customer-return.v1': SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY,
   'sales.contract-discount.v1': null,
   // SAT-D476 / SAT-D475: the request-based kinds.
-  'sales.quote-conversion-request.v1': SALES_POOL_CAPABILITY_ID.quotesApproveExpired,
+  'sales.quote-conversion-request.v1': SALES_WORK_DECISION_CAPABILITY.quoteConversion,
   'sales.over-delivery-request.v1': SALES_OVER_DELIVERY_APPROVE_CAPABILITY,
 } as const
 
@@ -43,6 +43,7 @@ describe('WP4 Sales inbox kinds', () => {
     expect(WORK_INBOX_CAPABILITIES).toEqual(expect.arrayContaining([
       SALES_WORK_DECISION_CAPABILITY.request, SALES_WORK_DECISION_CAPABILITY.invoice, SALES_WORK_DECISION_CAPABILITY.subcontractInvoice, SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY,
     ]))
+    expect(WORK_INBOX_CAPABILITIES).not.toContain(SALES_POOL_CAPABILITY_ID.quotesApproveExpired)
     expect(WORK_INBOX_CAPABILITIES).not.toContain(SALES_POOL_CAPABILITY_ID.requestsDecide)
     expect(WORK_INBOX_KINDS).toHaveLength(69)
     expect(SALES_INBOX_KINDS).toHaveLength(11)

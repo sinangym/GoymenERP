@@ -11,7 +11,7 @@ describe('staged Work journal reversal native contract',()=>{
   const value=journalReversalFixture(company,id,2147483647)
   expect(decodeWorkDecisionPreview(value,company,kind,id)?.accountingJournalReversal).toEqual(value.accountingJournalReversal)
   expect(Object.keys(value.accountingJournalReversal.proposal)).toHaveLength(16)
-  expect(isWorkDecisionKind(kind)).toBe(true);expect(WORK_DECISION_KINDS.filter(value=>value===kind)).toEqual([kind]);expect(WORK_DECISION_KINDS).toHaveLength(56)
+  expect(isWorkDecisionKind(kind)).toBe(true);expect(WORK_DECISION_KINDS.filter(value=>value===kind)).toEqual([kind]);expect(WORK_DECISION_KINDS).toHaveLength(57)
  })
  it.each(['text-version','unsafe','overflow','fraction','zero','version-LF','status','partial','source-equal','foreign','id','reason-trim','reason-over','decision-reason','date-default','bad-calendar','utc','private','cross-proof','rule','actual','caption','ref-id','ref-role','ref-label','ref-link','reject','reason-required'] as const)('rejects malformed native proof: %s',fault=>{
   const value=journalReversalFixture(company,id),p=value.accountingJournalReversal.proposal;let raw:unknown=value

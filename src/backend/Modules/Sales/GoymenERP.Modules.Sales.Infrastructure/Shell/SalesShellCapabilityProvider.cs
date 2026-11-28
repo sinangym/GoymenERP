@@ -55,8 +55,9 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Shell;
 public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
-    // 1.30: selected price-free request decisions reuse RequestsApprove; SAT-D22 remains native.
-    public const string OwnerContractVersion = "1.30";
+    // 1.31: selected quote conversion decisions reuse their native permission and price disclosure.
+    public const string OwnerContractVersion = "1.31";
+    public const string QuoteConversionWorkDecisionCapabilityId = "sales.quote-conversion-request.work-decision";
     public const string RequestWorkDecisionCapabilityId = "sales.request.work-decision";
     public const string OrderWorkDecisionCapabilityId = "sales.order-draft.work-decision";
     public const string SubcontractInvoiceWorkDecisionCapabilityId = "sales.subcontract-invoice.work-decision";
@@ -304,6 +305,10 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
         return
         [
         // WP8: purpose decision routes require the native command names, with no browse/read grant added.
+        new ShellCapabilityDeclaration(QuoteConversionWorkDecisionCapabilityId,"sales-quote-conversion-request-work-decision",
+            "/onaylarim/sales.quote-conversion-request.v1/:approvalId","W-SALES-QUOTE-CONVERSION-REQUEST-01",ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            ShellCapabilityContextRequirement.SingleCompany,ShellCapabilityScopeRequirement.CompanyWide,
+            [SalesPermissionManifestV1.QuotesExpiredConversionApprove],ImplementationAvailable:true),
         new ShellCapabilityDeclaration(RequestWorkDecisionCapabilityId,"sales-request-work-decision",
             "/onaylarim/sales.request.v1/:approvalId","W-SALES-REQUEST-01",ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
             ShellCapabilityContextRequirement.SingleCompany,ShellCapabilityScopeRequirement.CompanyWide,

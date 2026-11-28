@@ -26,12 +26,13 @@ public sealed class SalesRequestBasedWorkInboxSourcesV1Tests
         var item = Assert.Single(result.Items!);
         Assert.Equal(("sales.quote-conversion-request.v1", SalesPermissionManifestV1.QuotesExpiredConversionApprove),
             (source.Kind, source.ApproverPermission));
-        Assert.Equal(("TKL-SNT-0001 #2", $"/satis/teklifler/{Quote:D}", T0.ToUniversalTime()),
+        Assert.Equal(("TKL-SNT-0001 #2", $"/onaylarim/sales.quote-conversion-request.v1/{item.ItemId:D}", T0.ToUniversalTime()),
             (item.DocumentLabel, item.Link, item.WaitingSinceUtc));
         Assert.Null(item.PreparedBy);
         Assert.Equal(new WorkApprovalRuleResultV1(SalesQuoteConversionRequestWorkInboxSourceV1.RequestedRule, null, null, null, null),
             Assert.Single(item.Rules));
         Assert.Equal(("sales-quote", (Guid?)Quote), (Assert.Single(item.References).Role, item.References[0].RecordId));
+        Assert.Equal($"/satis/teklifler/{Quote:D}", Assert.Single(item.References).Link);
         AssertContractShape(source, result, ownerNamesMaker: false);
     }
 

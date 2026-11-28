@@ -23,7 +23,7 @@ public sealed class SalesQuoteConversionWorkDecisionSourceV1Tests
         Assert.Equal((detail.Request.Version,"9",approve,reject),(p.RequestVersion,p.QuoteVersion,p.ApprovalSupported,p.RejectionSupported));
         Assert.Equal((Id,Quote,3,0),(p.RequestId,p.QuoteId,p.RequestNo,p.SubjectRevision));Assert.True(SalesQuoteConversionDecisionBindingV1.MatchesDecisionSnapshot(snapshot,detail));
         Assert.Null(snapshot.Item.PreparedBy);Assert.Null(snapshot.Item.ExcludedDeciders);Assert.False(snapshot.Item.Excludes(Maker));
-        Assert.Equal($"/satis/teklifler/{Quote:D}",snapshot.Item.Link);Assert.Equal(Quote,Assert.Single(snapshot.Item.References).RecordId);
+        Assert.Equal($"/onaylarim/sales.quote-conversion-request.v1/{Id:D}",snapshot.Item.Link);Assert.Equal($"/satis/teklifler/{Quote:D}",Assert.Single(snapshot.Item.References).Link);Assert.Equal(Quote,Assert.Single(snapshot.Item.References).RecordId);
         Assert.Empty(store.Calls);Assert.Equal(1,owner.Reads);Assert.Equal(0,owner.Commands);
         Assert.All(authority.Asked,p=>Assert.Equal(SalesPermissionManifestV1.QuotesExpiredConversionApprove,p));
         using var json=JsonDocument.Parse(JsonSerializer.Serialize(snapshot,SalesDraftJson.Options));

@@ -28,7 +28,7 @@ describe('shell ↔ Sales lane capability ids', () => {
     expect(NAV_GROUPS.find((group) => group.id === 'sales')?.entries).toContain(CAPABILITY.salesOfficialInvoiceCancellation)
   })
 
-  it.each(['request', 'order', 'invoice', 'subcontractInvoice'] as const)('mounts the Sales %s purpose route exactly once ahead of the legacy generic detail', key => {
+  it.each(['quoteConversion', 'request', 'order', 'invoice', 'subcontractInvoice'] as const)('mounts the Sales %s purpose route exactly once ahead of the legacy generic detail', key => {
     const capability = SALES_WORK_DECISION_CAPABILITY[key]
     const path = SALES_WORK_DECISION_ROUTE[key]
     expect(Object.values(CAPABILITY)).toContain(capability)
@@ -162,4 +162,11 @@ it('retains the native request detail path beside the new purpose without granti
  expect(SALES_POOL_ROUTE.requestDetail).toBe('/satis/talepler/:requestId')
  expect(SALES_WORK_DECISION_CAPABILITY.request).not.toBe(SALES_POOL_CAPABILITY_ID.requestsDetail)
  expect(matchRoutes(shellRoutes,'/satis/talepler/cccccccc-0000-4000-8000-0000000000f1')?.at(-1)?.route.path).toBe('satis/talepler/:requestId')
+})
+
+it('retains the native quote detail path and separates its browse capability from conversion decisions',()=>{
+ expect(SALES_WORK_DECISION_ROUTE.quoteConversion).toBe('/onaylarim/sales.quote-conversion-request.v1/:approvalId')
+ expect(SALES_POOL_ROUTE.quoteDetail).toBe('/satis/teklifler/:quoteId')
+ expect(SALES_WORK_DECISION_CAPABILITY.quoteConversion).not.toBe(SALES_POOL_CAPABILITY_ID.quotesDetail)
+ expect(matchRoutes(shellRoutes,'/satis/teklifler/cccccccc-0000-4000-8000-0000000000f1')?.at(-1)?.route.path).toBe('satis/teklifler/:quoteId')
 })

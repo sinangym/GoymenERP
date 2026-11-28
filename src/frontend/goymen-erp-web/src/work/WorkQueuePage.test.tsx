@@ -206,3 +206,16 @@ it('opens the one inbox with only the Sales request purpose and preserves the na
  expect(within(card).getByRole('link',{name:WORK_INBOX_TEXT.openOwnerLabel('Satış talebi onayı',item.documentLabel)}).getAttribute('href')).toBe(item.link)
  expect(inboxCalls()).toEqual([{url:'/api/v1/work/inbox?view=awaiting-my-decision',companyId:COMPANY}]);expect(queueCalls()).toEqual([])
 })
+
+it('opens the one inbox with only the quote conversion purpose and preserves its native quote reference',async()=>{
+ const kind='sales.quote-conversion-request.v1',cap='sales.quote-conversion-request.work-decision'
+ const item={...importItem,module:'sales',kind,itemId:FIRST,documentLabel:'SENTETIK TKL-8 #3',link:`/onaylarim/${kind}/${FIRST}`,
+  awaitingPermission:'sales.quotes.expired-conversion.approve',ruleVersion:`work.approval-rule:${kind}:0`,
+  explanation:{rules:[{ruleCode:'sales.quote-expired-conversion-requested',threshold:null,actual:null,deviation:null,unit:null}],
+   references:[{role:'sales-quote',label:'SENTETIK TKL-8',recordId:FIRST,link:`/satis/teklifler/${FIRST}`}]}}
+ const {inboxCalls,queueCalls}=installFetch([cap],()=>json(inbox({items:[item],sources:[source('sales',kind,'sales.quotes.expired-conversion.approve')]})))
+ await renderAt('/onaylarim/kuyruk');await screen.findByTestId('work-inbox-list');expect(cards()).toHaveLength(1)
+ const card=cards()[0]!;expect(card.getAttribute('data-kind')).toBe(kind)
+ expect(within(card).getByRole('link',{name:WORK_INBOX_TEXT.openOwnerLabel('Süresi dolmuş teklif dönüşüm talebi',item.documentLabel)}).getAttribute('href')).toBe(item.link)
+ expect(inboxCalls()).toEqual([{url:'/api/v1/work/inbox?view=awaiting-my-decision',companyId:COMPANY}]);expect(queueCalls()).toEqual([])
+})

@@ -196,7 +196,7 @@ describe('shell mounts the D-05 Onaylarım routes on ANY connected owner\'s own 
 })
 
 describe('Sales purpose decisions through the real shell', () => {
-  it.each(['request', 'order', 'invoice'] as const)('opens %s with only its purpose capability and no Sales browse grant', async key => {
+  it.each(['quoteConversion', 'request', 'order', 'invoice'] as const)('opens %s with only its purpose capability and no Sales browse grant', async key => {
     const calls = installFetch([SALES_WORK_DECISION_CAPABILITY[key]])
     await renderShellAt(SALES_WORK_DECISION_ROUTE[key].replace(':approvalId', 'cccccccc-0000-4000-8000-0000000000f1'))
     expect(await screen.findByRole('heading', { level: 1, name: WORK_DECISION_TEXT.title })).toBeTruthy()
@@ -204,7 +204,7 @@ describe('Sales purpose decisions through the real shell', () => {
     expect(calls.some(url => url.includes('/api/v1/sales/'))).toBe(false)
     expect(notFoundBlock()).toBeNull()
   })
-  it.each(['request', 'order', 'invoice'] as const)('keeps %s closed with browse grants but no purpose capability', async key => {
+  it.each(['quoteConversion', 'request', 'order', 'invoice'] as const)('keeps %s closed with browse grants but no purpose capability', async key => {
     const calls = installFetch([CAPABILITY.salesDraftsList, CAPABILITY.salesDraftsDetail, CAPABILITY.salesInvoicesList])
     await renderShellAt(SALES_WORK_DECISION_ROUTE[key].replace(':approvalId', 'cccccccc-0000-4000-8000-0000000000f1'))
     await waitFor(() => expect(notFoundBlock()).not.toBeNull())

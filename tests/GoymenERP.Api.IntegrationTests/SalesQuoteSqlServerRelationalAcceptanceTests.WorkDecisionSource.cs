@@ -16,7 +16,7 @@ public sealed partial class SalesQuoteSqlServerRelationalAcceptanceTests
         var pending=Assert.IsType<WorkApprovalDecisionSnapshotV1>(await source.ReadDecisionAsync(context,target.RequestId,default));
         Assert.True(pending.Pending);Assert.Null(pending.Item.PreparedBy);Assert.False(pending.Item.Excludes(run.Actor));
         Assert.Equal(target.RequestId,Assert.Single((await source.ListPendingAsync(context,10,default)).Items!).ItemId);
-        Assert.Equal($"/satis/teklifler/{q.Id:D}",pending.Item.Link);Assert.Equal(target,SalesQuoteConversionDecisionBindingV1.Target(pending.SalesQuoteConversionProof!));
+        Assert.Equal($"/onaylarim/sales.quote-conversion-request.v1/{target.RequestId:D}",pending.Item.Link);Assert.Equal($"/satis/teklifler/{q.Id:D}",Assert.Single(pending.Item.References).Link);Assert.Equal(target,SalesQuoteConversionDecisionBindingV1.Target(pending.SalesQuoteConversionProof!));
         var body=new SalesQuoteExpiryApprovalRequest("1");var approved=await safe.Service.ApproveSelectedQuoteConversionAsync(target,body,run.Metadata("quote-source-approve","quote-source-original"));
         Assert.True(SalesQuoteConversionDecisionBindingV1.MatchesOriginalDecisionReceipt(pending,target,approved,body,"quote-source-approve",run.Actor));
         var after=Assert.IsType<WorkApprovalDecisionSnapshotV1>(await source.ReadDecisionAsync(context,target.RequestId,default));

@@ -33,7 +33,13 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.True(request.ImplementationAvailable);
         Assert.Equal(("sales-request-work-decision","/onaylarim/sales.request.v1/:approvalId","W-SALES-REQUEST-01"),
             (request.RouteId,request.RoutePath,request.ScreenId));
-        Assert.All(new[]{order,invoice,subcontract,request},item=>Assert.Equal(ShellCapabilityContextRequirement.SingleCompany,item.ContextRequirement));
+        var quote=Assert.Single(declarations,item=>item.CapabilityId==SalesShellCapabilityProvider.QuoteConversionWorkDecisionCapabilityId);
+        Assert.Equal([SalesPermissionManifestV1.QuotesExpiredConversionApprove],quote.RequiredPermissions);
+        Assert.Null(quote.ParentCapabilityId);Assert.True(quote.ImplementationAvailable);
+        Assert.Equal(ShellCapabilityScopeRequirement.CompanyWide,quote.ScopeRequirement);
+        Assert.Equal(("sales-quote-conversion-request-work-decision","/onaylarim/sales.quote-conversion-request.v1/:approvalId","W-SALES-QUOTE-CONVERSION-REQUEST-01"),
+            (quote.RouteId,quote.RoutePath,quote.ScreenId));
+        Assert.All(new[]{order,invoice,subcontract,request,quote},item=>Assert.Equal(ShellCapabilityContextRequirement.SingleCompany,item.ContextRequirement));
     }
     private const string FrontendCapabilities = "src/frontend/goymen-erp-web/src/sales/capabilities.ts";
 
@@ -78,9 +84,9 @@ public sealed class SalesShellCapabilityProviderContractTests
         // API-40 / UI-70b / SAT-D288..SAT-D294 (1.25, merged after API-07 1.24): registers the four return names (manifest v30), the S-10
         // return list, create and detail screens and the detail's submission, approval and finalisation controls.
         // API-33 / API-36 (1.27): the four invoice controls of the S-09 list (write, approve, match, finalize); no new name.
-        // WP8 1.30 adds the price-free request purpose; 1.29 adds the subcontract native decision purpose alongside the two earlier routes without a browsing read permission or a new grant.
-        Assert.Equal(("SALES", "1.30"), (provider.Owner, provider.ContractVersion));
-        Assert.Equal(47, declarations.Count);
+        // WP8 1.31 adds the quote conversion purpose with its native disclosure; 1.30 adds the price-free request purpose; 1.29 adds the subcontract native decision purpose alongside the two earlier routes without a browsing read permission or a new grant.
+        Assert.Equal(("SALES", "1.31"), (provider.Owner, provider.ContractVersion));
+        Assert.Equal(48, declarations.Count);
         foreach (var declaration in declarations)
         {
             Assert.Contains($"'{declaration.CapabilityId}'", source);
@@ -301,9 +307,14 @@ public sealed class SalesShellCapabilityProviderContractTests
         Assert.Equal([SalesPermissionManifestV1.RequestsApprove], requestPurpose.RequiredPermissions);
         Assert.Null(requestPurpose.ParentCapabilityId);
         Assert.Contains($"'{requestPurpose.CapabilityId}'", source);
+        var quotePurpose = Assert.Single(declarations, item => item.CapabilityId == SalesShellCapabilityProvider.QuoteConversionWorkDecisionCapabilityId);
+        Assert.Equal([SalesPermissionManifestV1.QuotesExpiredConversionApprove], quotePurpose.RequiredPermissions);
+        Assert.Null(quotePurpose.ParentCapabilityId);
+        Assert.Contains($"'{quotePurpose.CapabilityId}'", source);
         // No pool declaration asks for an order name it does not use, and no draft/order declaration gained a pool name.
         var poolIds = routes.Select(item => item.Id).Concat(controls.Select(item => item.Id)).ToHashSet(StringComparer.Ordinal);
         Assert.True(poolIds.Add(requestPurpose.CapabilityId));
+        Assert.True(poolIds.Add(quotePurpose.CapabilityId));
         var poolNames = new[]
         {
             SalesPermissionManifestV1.RequestsRead, SalesPermissionManifestV1.RequestsWrite, SalesPermissionManifestV1.RequestsApprove,

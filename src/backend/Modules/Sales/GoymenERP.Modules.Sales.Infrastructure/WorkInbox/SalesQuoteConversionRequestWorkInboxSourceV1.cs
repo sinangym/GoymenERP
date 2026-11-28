@@ -9,7 +9,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.WorkInbox;
 /// <summary>
 /// WP4 (SAT-D476): the salespeople's conversion requests for expired quotes, for the Work inbox. Only a request waits — an expired
 /// quote without one is never counted — and only while it stands as asked (its quote is open on the asked revision without that
-/// revision's approval). It is decided on the quote screen by the quote's own expired-conversion approval
+/// revision's approval). Its purpose route uses the quote's own expired-conversion approval
 /// (<c>sales.quotes.expired-conversion.approve</c>), which SAT-D44 (2) opens to the quote's creator too: the owner names no maker
 /// ≠ checker, so the item names no maker and no excluded decider. The rule carries no numbers.
 /// </summary>
@@ -55,7 +55,7 @@ internal sealed partial class SalesQuoteConversionRequestWorkInboxSourceV1(
                 request.Id,
                 label,
                 request.RequestedAtUtc.ToUniversalTime(),
-                link,
+                $"/onaylarim/{KindName}/{request.Id:D}",
                 PreparedBy: null,
                 [new WorkApprovalRuleResultV1(RequestedRule, null, null, null, null)],
                 [new WorkApprovalReferenceV1(SalesWorkInboxItemsV1.QuoteRole, documentNo, request.QuoteId, link)]));

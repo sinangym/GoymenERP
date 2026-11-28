@@ -122,7 +122,7 @@ describe('paired source voucher shared Work transport',()=>{
  it('publishes the actual closed human wrapper and exactly one new kind with all other native facts unchanged',()=>{
   const value=sourceVoucherFixture(COMPANY_A),before=JSON.stringify(value)
   expect(decodeWorkDecisionPreview(value,COMPANY_A.toUpperCase(),kind,id.toUpperCase())?.sourceVoucher).toEqual(value.sourceVoucher)
-  expect(JSON.stringify(value)).toBe(before);expect(WORK_DECISION_KINDS).toHaveLength(56);expect(WORK_DECISION_KINDS.filter(k=>k===kind)).toEqual([kind])
+  expect(JSON.stringify(value)).toBe(before);expect(WORK_DECISION_KINDS).toHaveLength(57);expect(WORK_DECISION_KINDS.filter(k=>k===kind)).toEqual([kind])
  })
  it.each(['79228162514264337593543950335','-79228162514264337593543950335','0.0000000000000000000000000001','-0.0000000000000000000000000001'])('uses the existing native CLR callback losslessly at %s',raw=>{
   const value=sourceVoucherFixture(COMPANY_A);value.sourceVoucher.voucher={...value.sourceVoucher.voucher,functionalPayable:raw,lines:value.sourceVoucher.voucher.lines.map(line=>({...line,functionalAmount:raw}))};value.rules[0]!.actual=raw
