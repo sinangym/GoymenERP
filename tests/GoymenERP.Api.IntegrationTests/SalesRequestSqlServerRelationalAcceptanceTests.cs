@@ -39,7 +39,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// ports (Cari / Product / Settings answers): it proves the request slice and the store, not any owner's rule; through the
 /// real host a create meets the real Cari owner and answers its honest refusal. Every identity is SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class SalesRequestSqlServerRelationalAcceptanceTests
+public sealed partial class SalesRequestSqlServerRelationalAcceptanceTests
 {
     private static readonly Guid CompanyA = TestCompanyIds.CompanyA;
     private static readonly Guid CompanyB = TestCompanyIds.CompanyB;

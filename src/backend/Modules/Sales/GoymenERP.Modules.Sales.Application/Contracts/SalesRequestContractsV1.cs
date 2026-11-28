@@ -175,6 +175,17 @@ public interface ISalesRequestStore
         CancellationToken cancellationToken = default);
 }
 
+/// <summary>The native request decision's persistence boundary. It owns no create/read policy and never retries mutation.</summary>
+public interface ISalesRequestApprovalStoreV1
+{
+    bool RequestApprovalEntryIsClean { get; }
+
+    Task<SalesRequestResponse> RunRequestApprovalAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
+        bool cleanBeforeAuthority, Func<CancellationToken, Task<SalesRequestResponse>> execute,
+        Func<CancellationToken, Task<SalesRequestResponse?>> readOriginalKey,
+        Func<CancellationToken, Task> freshFence, CancellationToken cancellationToken);
+}
+
 /// <summary>
 /// API-20 / API-21: the sales request use cases. Company, actor and authority come from the authenticated server scope and
 /// are measured afresh on every call (the draft service's fence); a request of another company is 404.

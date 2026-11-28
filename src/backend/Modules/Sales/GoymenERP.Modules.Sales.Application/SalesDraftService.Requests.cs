@@ -180,7 +180,15 @@ public sealed partial class SalesDraftService
             (target, actor, version, now) => target.Reject(version, actor, request.Reason, now),
             new SalesDraftStateAudit("sales.request.rejected.v1", "Reject", "Satış talebi reddedildi"), cancellationToken);
 
-    private async Task<SalesRequestResponse> DecideRequestAsync(Guid requestId, SalesDraftStateCommandRequest request,
+    private Task<SalesRequestResponse> DecideRequestAsync(Guid requestId, SalesDraftStateCommandRequest request,
+        SalesCommandMetadata metadata, string commandName, Action<SalesRequest, string, long, DateTimeOffset> decide,
+        SalesDraftStateAudit audit, CancellationToken cancellationToken) =>
+        requestApprovalSafety
+            ? RunRequestApprovalAsync(requestId, request, metadata, commandName,
+                token => DecideRequestCoreAsync(requestId, request, metadata, commandName, decide, audit, token), cancellationToken)
+            : DecideRequestCoreAsync(requestId, request, metadata, commandName, decide, audit, cancellationToken);
+
+    private async Task<SalesRequestResponse> DecideRequestCoreAsync(Guid requestId, SalesDraftStateCommandRequest request,
         SalesCommandMetadata metadata, string commandName, Action<SalesRequest, string, long, DateTimeOffset> decide,
         SalesDraftStateAudit audit, CancellationToken cancellationToken)
     {

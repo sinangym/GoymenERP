@@ -66,10 +66,11 @@ public sealed partial class SalesStore
         RequireEnvelope(envelope);
         RequireHash(requestHash);
         RequireRequestCommand(commandName);
+        RequireRequestApprovalCommand(envelope, requestHash, commandName, writes: false);
         RequireResolvedCompany();
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
-        var attempt = await dbContext.RequestAttempts.AsNoTracking()
-            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken);
+        var attempt = await RequestApprovalReadAsync(() => dbContext.RequestAttempts.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken), cancellationToken);
         if (attempt is null)
         {
             return null;
@@ -105,6 +106,7 @@ public sealed partial class SalesStore
         RequireEnvelope(envelope);
         RequireHash(requestHash);
         RequireRequestCommand(commandName);
+        RequireRequestApprovalCommand(envelope, requestHash, commandName, writes: true);
         var companyId = RequireResolvedCompany();
         if (refusal.Status is < 400 or > 599 || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null
             || refusal.Errors.Any(error => error is null || string.IsNullOrWhiteSpace(error.Field) || string.IsNullOrWhiteSpace(error.Code)))
@@ -118,7 +120,7 @@ public sealed partial class SalesStore
         }
 
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
-        if (await RequestAttemptExistsAsync(commandName, keyHash, cancellationToken))
+        if (await RequestApprovalReadAsync(() => RequestAttemptExistsAsync(commandName, keyHash, cancellationToken), cancellationToken))
         {
             throw Refused(SalesDraftStoreCodes.ConcurrentChange, "Bu anahtar zaten bir deneme taşıyor; tekrar onu alır.");
         }
@@ -136,7 +138,7 @@ public sealed partial class SalesStore
             CorrelationId = envelope.CorrelationId.Trim(),
             RecordedAtUtc = timeProvider.GetUtcNow(),
         });
-        await SaveAsync(cancellationToken);
+        await SaveRequestApprovalAsync(cancellationToken, refusal);
     }
 
     public async Task<SalesRequestStoreResult?> DecideRequestAsync(SalesDraftWriteEnvelope envelope, string requestHash, string commandName,
@@ -146,6 +148,7 @@ public sealed partial class SalesStore
         ArgumentNullException.ThrowIfNull(audit);
         RequireEnvelope(envelope);
         RequireHash(requestHash);
+        RequireRequestApprovalCommand(envelope, requestHash, commandName, writes: true);
         if (commandName is not (SalesRequestCommands.ApproveV1 or SalesRequestCommands.RejectV1))
         {
             throw new ArgumentException("Yalnız onay ve ret bir talebin durumunu değiştirir.", nameof(commandName));
@@ -159,8 +162,8 @@ public sealed partial class SalesStore
         var companyId = RequireResolvedCompany();
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
         var actorId = envelope.ActorId.Trim();
-        var attempt = await dbContext.RequestAttempts.AsNoTracking()
-            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken);
+        var attempt = await RequestApprovalReadAsync(() => dbContext.RequestAttempts.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken), cancellationToken);
         if (attempt is not null)
         {
             return await ReplayRequestAttemptAsync(attempt, actorId, requestHash, cancellationToken);
@@ -172,19 +175,20 @@ public sealed partial class SalesStore
         }
 
         // The header is tracked (its version is the concurrency token of this write); the lines are read as before.
-        var row = await dbContext.Requests.SingleOrDefaultAsync(candidate => candidate.Id == requestId, cancellationToken);
+        var row = await RequestApprovalReadAsync(() => dbContext.Requests.SingleOrDefaultAsync(candidate => candidate.Id == requestId, cancellationToken), cancellationToken);
         if (row is null)
         {
             return null;
         }
 
-        var lines = await dbContext.RequestLines.AsNoTracking().Where(line => line.RequestId == requestId).ToListAsync(cancellationToken);
+        var lines = await RequestApprovalReadAsync(() => dbContext.RequestLines.AsNoTracking().Where(line => line.RequestId == requestId).ToListAsync(cancellationToken), cancellationToken);
         var request = SalesRequestRows.Restore(row, lines);
         // No 161 (fail-closed): a request with any order that is not cancelled — converted from a quote covering it — is not
         // rejected; the order is cancelled first. Asked here, inside the rejection's own read, before the domain decides;
         // nothing is written when it holds. A conversion racing this rejection touches this request's row in its own save, so
         // the row version tracked here makes one of the two the loser (409 concurrent_change, nothing stored).
-        if (commandName == SalesRequestCommands.RejectV1 && await HasLiveOrderAsync(request.Id, cancellationToken))
+        if (commandName == SalesRequestCommands.RejectV1
+            && await RequestApprovalReadAsync(() => HasLiveOrderAsync(request.Id, cancellationToken), cancellationToken))
         {
             throw new SalesRuleException(SalesRuleCodes.RequestHasApprovedOrder,
                 "Onaylı siparişi olan satış talebi reddedilmez; önce sipariş iptal edilir.");
@@ -209,20 +213,20 @@ public sealed partial class SalesStore
         AddRequestAttempt(companyId, commandName, keyHash, requestHash, actorId, request.Id, envelope, now);
         auditEvents.Enqueue(RequestAudit(envelope, companyId, audit.EventType, audit.Operation, request, versionBefore, before,
             RequestAuditState(request, withLines: false), audit.Reason));
-        await SaveAsync(cancellationToken);
+        await SaveRequestApprovalAsync(cancellationToken);
         return new SalesRequestStoreResult(request, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 
     public async Task<SalesRequest?> FindRequestAsync(Guid requestId, CancellationToken cancellationToken = default)
     {
         RequireResolvedCompany();
-        var row = await dbContext.Requests.AsNoTracking().SingleOrDefaultAsync(candidate => candidate.Id == requestId, cancellationToken);
+        var row = await RequestApprovalReadAsync(() => dbContext.Requests.AsNoTracking().SingleOrDefaultAsync(candidate => candidate.Id == requestId, cancellationToken), cancellationToken);
         if (row is null)
         {
             return null;
         }
 
-        var lines = await dbContext.RequestLines.AsNoTracking().Where(line => line.RequestId == requestId).ToListAsync(cancellationToken);
+        var lines = await RequestApprovalReadAsync(() => dbContext.RequestLines.AsNoTracking().Where(line => line.RequestId == requestId).ToListAsync(cancellationToken), cancellationToken);
         return SalesRequestRows.Restore(row, lines);
     }
 
