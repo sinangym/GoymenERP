@@ -1,6 +1,8 @@
 using GoymenERP.BuildingBlocks.Work;
 using GoymenERP.Modules.Organization.Application.Contracts;
 using GoymenERP.Modules.Organization.Domain.Companies;
+using GoymenERP.Modules.Organization.Infrastructure.Persistence;
+using GoymenERP.Modules.Idempotency.Domain.Executions;
 
 namespace GoymenERP.Modules.Organization.Infrastructure.WorkInbox;
 
@@ -11,6 +13,12 @@ public static class OrganizationCompanyTaxIdDecisionBindingV1
     public const string KindName = OrganizationCompanyTaxIdChangeWorkInboxSourceV1.KindName;
     public const string ScreenPath = OrganizationCompanyTaxIdChangeWorkInboxSourceV1.ScreenPath;
     public const string PurposePath = "/onaylarim/organization.company-tax-id-change.v1";
+    public const string DecisionCommand = OrganizationMasterDataService.DecideCompanyTaxIdChangeCommandName;
+    public static string DecisionKeyHash(string key) => IdempotencyHash.ComputeKey(key);
+    public static string DecisionPayloadHash(Guid companyId, Guid id, DecideCompanyTaxIdChange command) =>
+        OrganizationMasterDataService.TaxIdDecisionPayloadHash(companyId, id, command);
+    public static string OriginalResultDigest(CommandResponseSnapshot response) =>
+        OrganizationMasterDataService.TaxIdOriginalResultDigest(response);
     public static WorkInboxItemV1? Item(Guid id, string proposedVkn, string requestedBy, DateTimeOffset requestedAtUtc, bool firstVkn, bool isCurrent, bool pending = true)
     {
         if (id == Guid.Empty || string.IsNullOrWhiteSpace(requestedBy) || string.IsNullOrWhiteSpace(proposedVkn)) return null;
