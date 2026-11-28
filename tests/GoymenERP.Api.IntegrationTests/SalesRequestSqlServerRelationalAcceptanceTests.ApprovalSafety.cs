@@ -32,7 +32,19 @@ public sealed partial class SalesRequestSqlServerRelationalAcceptanceTests
     [InlineData("caller-audit-second-await")]
     [InlineData("caller-dirty-second-await")]
     [InlineData("missing-writer")]
-    public async Task Real_Sales_module_request_aliases_preserve_caller_work_and_refuse_without_SQL(string fault)
+    public Task Real_Sales_module_request_aliases_preserve_caller_work_and_refuse_without_SQL(string fault) =>
+        VerifyGuardedNativeComposition(fault, discount: false);
+
+    [Theory]
+    [InlineData("caller-audit")]
+    [InlineData("caller-dirty")]
+    [InlineData("caller-audit-second-await")]
+    [InlineData("caller-dirty-second-await")]
+    [InlineData("missing-writer")]
+    public Task Actual_Sales_discount_aliases_preserve_caller_work_and_refuse_without_SQL(string fault) =>
+        VerifyGuardedNativeComposition(fault, discount: true);
+
+    private static async Task VerifyGuardedNativeComposition(string fault, bool discount)
     {
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -70,8 +82,12 @@ public sealed partial class SalesRequestSqlServerRelationalAcceptanceTests
             if (fault.StartsWith("caller-audit", StringComparison.Ordinal)) collector.Enqueue(CallerRequestAudit());
             if (fault.StartsWith("caller-dirty", StringComparison.Ordinal)) db.DocumentCounters.Add(caller);
         };
-        var failure = await Assert.ThrowsAsync<SalesDraftServiceException>(() => core.ApproveRequestAsync(Guid.NewGuid(), new("1"),
-            new("SENTETIK-composition-key", "SENTETIK-composition", null, DateTimeOffset.UtcNow)));
+        var failure = await Assert.ThrowsAsync<SalesDraftServiceException>(async () =>
+        {
+            var metadata = new SalesCommandMetadata("SENTETIK-composition-key", "SENTETIK-composition", null, DateTimeOffset.UtcNow);
+            if (discount) await core.ApproveDiscountExceptionsAsync(Guid.NewGuid(), new("1", []), metadata);
+            else await core.ApproveRequestAsync(Guid.NewGuid(), new("1"), metadata);
+        });
         Assert.Equal((503, "service_unavailable"), (failure.Status, failure.Code)); Assert.Equal(callerPhase, authority.Reads);
         Assert.Null(db.Database.CurrentTransaction); Assert.Equal(0, opens.Opens);
         if (fault.StartsWith("caller-dirty", StringComparison.Ordinal)) Assert.Same(caller, Assert.Single(db.ChangeTracker.Entries()).Entity);
