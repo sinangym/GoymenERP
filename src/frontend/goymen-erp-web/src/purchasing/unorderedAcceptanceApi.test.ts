@@ -52,6 +52,31 @@ describe('NOPO native transport and original attempt, controlled fetch only (not
     expect(fetcher.mock.calls[1][1].body).toBe(fetcher.mock.calls[0][1].body)
     expect(new Headers(fetcher.mock.calls[1][1].headers).get('Idempotency-Key')).toBe('SENTETIK-original-key')
   })
+  it.each(['fresh-false', 'fresh-garbage', 'fresh-original', 'fresh-foreign-original', 'fresh-duplicate-replayed', 'fresh-duplicate-original',
+    'replay-missing', 'replay-missing-original', 'replay-false', 'replay-garbage', 'replay-foreign-original', 'replay-duplicate-replayed', 'replay-duplicate-original'])(
+    'retains contradictory or missing replay headers %s as unknown until the same original command reconciles', async fault => {
+      const r = rig(), replay = fault.startsWith('replay-'), headers = new Headers()
+      if (replay && fault !== 'replay-missing') headers.set('Idempotency-Replayed', 'true')
+      if (replay && fault !== 'replay-missing' && fault !== 'replay-missing-original') headers.set('Idempotency-Original-Correlation-Id', 'SENTETIK-original')
+      if (fault.endsWith('-false')) headers.set('Idempotency-Replayed', 'false')
+      if (fault.endsWith('-garbage')) headers.set('Idempotency-Replayed', 'SENTETIK-garbage')
+      if (fault === 'fresh-original' || fault === 'fresh-duplicate-original') headers.set('Idempotency-Original-Correlation-Id', 'SENTETIK-original')
+      if (fault.endsWith('-foreign-original')) headers.set('Idempotency-Original-Correlation-Id', 'SENTETIK-foreign')
+      if (fault.endsWith('-duplicate-replayed')) {
+        headers.set('Idempotency-Replayed', 'true'); headers.append('Idempotency-Replayed', 'true')
+      }
+      if (fault.endsWith('-duplicate-original')) headers.append('Idempotency-Original-Correlation-Id', 'SENTETIK-original')
+      const fetcher = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(r.answer(replay)), { status: 201, headers }))
+        .mockResolvedValueOnce(json(r.answer(true), 201, true))
+      vi.stubGlobal('fetch', fetcher)
+      const attempt = prepareUnorderedAcceptanceAttempt(r.scope, r.request, 'SENTETIK-header-original')!
+      expect(await recordUnorderedAcceptance(attempt, r.read)).toEqual({ type: 'unknown', reason: 'malformed' })
+      expect(recallUnorderedAcceptanceAttempt(r.scope)).toBe(attempt)
+      expect(prepareUnorderedAcceptanceAttempt(r.scope, r.request, 'SENTETIK-new-key')).toBeNull()
+      expect((await recordUnorderedAcceptance(attempt, r.read)).type).toBe('applied')
+      expect(fetcher.mock.calls[1][1].body).toBe(fetcher.mock.calls[0][1].body)
+      expect(new Headers(fetcher.mock.calls[1][1].headers).get('Idempotency-Key')).toBe(attempt.key)
+    })
   it('freezes the whole request before awaited work; caller evidence/Reason changes cannot rebind original JSON', async () => {
     const r = rig(), controls = [r.request.occurrence.evidence], request = { ...r.request, occurrence: { ...r.request.occurrence, controlEvidence: controls } }
     const attempt = prepareUnorderedAcceptanceAttempt(r.scope, request, 'SENTETIK-frozen')!, body = attempt.body

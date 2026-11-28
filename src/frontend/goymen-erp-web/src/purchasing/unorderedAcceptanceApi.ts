@@ -2,6 +2,7 @@ import { API_BASE, purchasingHeaders } from './api'
 import { decodeRecordUnorderedAcceptance, decodeUnorderedAcceptanceSource, decodeUnorderedAcceptanceWrite, unorderedGuid,
   type RecordUnorderedAcceptance, type UnorderedAcceptanceSource, type UnorderedAcceptanceWrite } from './unorderedAcceptanceContract'
 import type { ViewOutcome } from '../shell/uiState'
+import { replayHeadersAgree } from '../finance/wireShape'
 
 const PATH = `${API_BASE}/purchasing/unordered-acceptances`
 /** Caller supplies the current authorized shell scope; null after logout, route permission loss or an unresolved company. */
@@ -75,7 +76,7 @@ export async function recordUnorderedAcceptance(attempt: UnorderedAcceptanceAtte
     }
     const decoded = decodeUnorderedAcceptanceWrite(body, attempt.scope.companyId, attempt.scope.actorId, attempt.request,
       response.headers.get('Idempotency-Replayed') === 'true', response.headers.get('Idempotency-Original-Correlation-Id'))
-    if (decoded === null) return { type: 'unknown', reason: 'malformed' }
+    if (decoded === null || !replayHeadersAgree(response.headers, decoded.isReplay, decoded.originalCorrelationId)) return { type: 'unknown', reason: 'malformed' }
     pending.delete(index)
     return { type: 'applied', response: decoded }
   } catch { return { type: 'unknown', reason: current(execution, getCurrentScope, signal) ? 'network-error' : 'fence-stale' } }
