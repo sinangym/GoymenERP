@@ -14,9 +14,10 @@ namespace GoymenERP.Modules.Organization.Infrastructure.WorkInbox;
 /// (<see cref="CompanyTaxIdChangeRequest.IsRequestedBy"/>). A request prepared against a company version or VKN that has
 /// moved since can only be rejected; its rule says so. The label is the proposed VKN (a company tax number, not personal data).
 /// </summary>
-internal sealed class OrganizationCompanyTaxIdChangeWorkInboxSourceV1(
+internal sealed partial class OrganizationCompanyTaxIdChangeWorkInboxSourceV1(
     OrganizationDbContext database,
-    WorkInboxCompanyWideFenceV1 fence) : IWorkInboxSourceV1
+    WorkInboxCompanyWideFenceV1 fence,
+    IOrganizationCompanyTaxIdDecisionReadV1? owner = null) : IWorkInboxSourceV1
 {
     public const string ModuleName = "organization";
     public const string KindName = "organization.company-tax-id-change.v1";
@@ -90,19 +91,8 @@ internal sealed class OrganizationCompanyTaxIdChangeWorkInboxSourceV1(
                 return WorkInboxSourceResultV1.Unavailable();
             }
 
-            var rules = new List<WorkApprovalRuleResultV1>(3) { new(ApprovalRequiredRule, null, null, null, null) };
-            if (row.CurrentVkn is null)
-            {
-                rules.Add(new(FirstVknRule, null, null, null, null));
-            }
-
-            if (!row.IsCurrentFor(company!))
-            {
-                rules.Add(new(StaleRule, null, null, null, null));
-            }
-
-            items.Add(new WorkInboxItemV1(ModuleName, KindName, row.Id, row.ProposedVkn, row.RequestedAtUtc.ToUniversalTime(),
-                ScreenPath, row.RequestedBy, rules, []));
+            items.Add(OrganizationCompanyTaxIdDecisionBindingV1.Item(row.Id, row.ProposedVkn, row.RequestedBy,
+                row.RequestedAtUtc, row.CurrentVkn is null, row.IsCurrentFor(company!))!);
         }
 
         return WorkInboxSourceResultV1.Found(context.CompanyId, items, total > rows.Count);

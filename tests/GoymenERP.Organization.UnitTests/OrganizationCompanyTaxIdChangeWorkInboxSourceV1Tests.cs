@@ -13,7 +13,7 @@ namespace GoymenERP.Organization.UnitTests;
 /// WP7-2 (AI-D31/AI-D32, KIM-D28): the company VKN change Work inbox source lists the caller company's pending request with its
 /// preparer as maker, flags a stale request, and is denied without a company-wide approve grant. SENTETIK / NOT_ENV.
 /// </summary>
-public sealed class OrganizationCompanyTaxIdChangeWorkInboxSourceV1Tests
+public sealed partial class OrganizationCompanyTaxIdChangeWorkInboxSourceV1Tests
 {
     private const string CurrentVkn = "1234567890";
     private const string ProposedVkn = "4100046586";
