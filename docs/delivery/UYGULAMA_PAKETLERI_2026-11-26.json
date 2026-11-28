@@ -2210,7 +2210,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Complete remaining owner adapters, typed native receipts and human/UI purpose bindings, then actualSQL/normalHTTP/browser, pin/fullCI and independent K3 acceptance across64 flows; native Flow32/33 safety prerequisites do not complete their Work purposes. No new grants or production activation.",
+      "next_action": "Connect Flow7 owner source to Work Host/typed DTO and paired UI, then Flow58 with actual original-impact receipt; preserve SAT-D22 and native Critical SoD. Finish KIM-D59 atomic seen-impact binding. Current 54 paired kinds/53 mapped flows are source only; all64 runtime acceptance NOT_RUN.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -4116,7 +4116,7 @@
           "delivery_scope": "Flow51 catalog and Flow52 posting mapping owner/source/DTO/WorkHost/full human UI are paired in source:47 backend/47 frontend/0 staged. Flow53 native whole-approval safety integrated; owner read follow-up is frozen in its separate author branch, not yet integrated. Source pairing is not runtime acceptance.",
           "runtime_acceptance": "NOT_RUN"
         },
-        "current_checkpoint_ref": "invoice_and_inventory_cost_work_checkpoint",
+        "current_checkpoint_ref": "WORK_ONAY_KAPSAM_HARITASI_v1.json:purpose_and_native_merge_checkpoint",
         "native_cost_work_checkpoint": {
           "source_commit": "c1a3809ad3fab2235f75fc5e91f671e3b557b938",
           "evidence_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#native_cost_work_checkpoint",
@@ -6000,7 +6000,7 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Approved profile fields and their existing form/detail UI are source-delivered. Complete documented instrument cross-credit release/uniqueness after the pending user answer, NonCash actual reimbursement/bank links and full group movement evidence. Actual SQL/browser/CI/K3 remain; no role/grant/activation.",
+      "next_action": "Approved four profile field lists and leasing VAT component exist. Two new four-group native movement/replay/outbox SQL source cases are compiled, NOT_RUN. Instrument reuse awaits explicit release-policy answer; do not infer NonCash compensation direction or actual ledger mappings. Actual SQL/browser/CI/K3 remain.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [

@@ -439,7 +439,7 @@
           {
             "kind": "sales.request.v1",
             "source": "src/backend/Modules/Sales/GoymenERP.Modules.Sales.Infrastructure/WorkInbox/SalesRequestWorkInboxSourceV1.cs:15",
-            "source_decision_read": false,
+            "source_decision_read": true,
             "host_supported": false,
             "owner_permission": "sales.requests.approve",
             "frontend_inbox_registered": true,
@@ -465,7 +465,7 @@
         "native_permissions": [
           "sales.requests.approve"
         ],
-        "status": "LEGACY_INBOX_NATIVE_COMMAND_NO_WORK_HOST",
+        "status": "SELECTED_OWNER_SOURCE_READY_NO_WORK_HOST",
         "source": "CHECKED_AT_EXACT_HEAD",
         "local_tests": "MAP_HISTORY_NOT_REVALIDATED",
         "actual_SQL": "NOT_RUN",
@@ -476,10 +476,10 @@
         "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
         "later_deltas": [],
         "native_prerequisite": {
-          "source_commit": "14d92c566",
+          "source_commit": "a44ba2f6cc8a2147297ee4a82ea11cc883b72aa9",
           "state": "SOURCE_IMPLEMENTED_BOUNDED_LOCAL",
-          "local_evidence": "2494SalesPASS at6f0",
-          "remaining": "Postcleanup refusal-release P2 fix pending; original decision proof and selected read/Work Host/UI not delivered."
+          "local_evidence": "2556 Sales cases PASS, fail0/skip0; actual SQL NOT_RUN",
+          "remaining": "Root Host/DTO, publication, frontend and native SQL/browser acceptance; cleanup release P2 fixed at22fe013d3, no pending source fix."
         }
       }
     },
@@ -4303,10 +4303,10 @@
         "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
         "later_deltas": [],
         "native_prerequisite": {
-          "source_commit": "2abb4c72f",
+          "source_commit": "a44ba2f6cc8a2147297ee4a82ea11cc883b72aa9",
           "state": "SOURCE_IMPLEMENTED_BOUNDED_LOCAL",
-          "local_evidence": "907IdentityPASS at9386",
-          "remaining": "Owner selected purpose read, original receipt and Work Host/UI."
+          "local_evidence": "924 Identity and145 Audit cases PASS, fail0/skip0; SQL source compiled, actual SQL NOT_RUN",
+          "remaining": "Work selected source/Host/UI; narrow read-only context adaptation in progress. Legacy original effect proof stays unavailable, never reconstructed from current role permissions."
         }
       }
     },
@@ -4573,14 +4573,14 @@
         "note": "Direct group-level native merge; no pending request/Inbox kind. Requires merge+read in all affected companies, not a fabricated maker/checker workflow.",
         "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
         "later_deltas": [],
-        "open_decision_ref": "docs/decisions/SINAN_KARARLARI_2026-11-15_DALGA2_EK11.md:96",
+        "open_decision_ref": null,
         "answered_decision_ref": "docs/decisions/SINAN_KARARLARI_2026-11-28_CARI_BIRLESTIRME.md:KIM-D59",
-        "decision_note": "KIM-D59: user approved current direct group-authorized single step; no separate pending request. Work native-link and affected counterparties/company/records preview are being checked. No extra approval or permission.",
+        "decision_note": "KIM-D59 approved existing group-authorized native single step. Existing Cari screen is linked from Work with actual merge AND list capabilities; no pending approval, extra grant or stage.",
         "native_preview": {
-          "source_commit": "696e73c64",
-          "state": "SOURCE_IMPLEMENTED_BOUNDED_LOCAL",
-          "local_evidence": "415CounterpartyPASS at9386",
-          "remaining": "Native UI/Work entry plus atomic viewed-membership-to-decision binding; no separate pending request under KIM-D59."
+          "source_commit": "5cea429f766213b65c9605f057b53de8f1c45680",
+          "state": "SOURCE_AND_UI_IMPLEMENTED_BOUNDED_LOCAL",
+          "local_evidence": "164 frontend/416 Counterparty/2251 controlled API PASS at5cea only; fail0/skip0",
+          "remaining": "Viewed-membership-to-mutation atomic binding in progress; actual SQL/normal HTTP/browser/CI/K3 NOT_RUN."
         }
       }
     },
@@ -5767,7 +5767,7 @@
     "source_peers": "Bounded full native53 owner/source/WorkHost/UI and native54/55 safety peers, shared composition/inventory peer; publication peers found link/count/duplicate issues and source-closed finalc1. Some reviewers authored earlier native pieces; none of these are formal independent exact-head K3 acceptance.",
     "limits": "41packages/50references/64 flow rows unchanged; all64 semantics NOT_VERIFIED/runtime NOT_RUN/verified_runtime_flows0. Old CI does not transfer. ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3/business acceptance remain pending. Provider/grant/role/Critical/deployment/AI activation unchanged. Token telemetry unavailable; phase durations are measured local artifacts."
   },
-  "current_checkpoint_ref": "invoice_and_inventory_cost_work_checkpoint",
+  "current_checkpoint_ref": "purpose_and_native_merge_checkpoint",
   "invoice_and_inventory_cost_work_checkpoint": {
     "source_commit": "9386df64820c0e99137a6dada429e3185be96113",
     "status": "SOURCE_AND_BOUNDED_LOCAL_TESTS_ONLY",
@@ -6417,7 +6417,7 @@
       }
     ],
     "audit_sha256": "7b99cf7b328d015372dc2a31cd0afd74c8c40edebd9e72ae822f61d7ee529680",
-    "current_source_commit": "5884ecfd2c878012b542e3b09f8f45707505c9f3",
+    "current_source_commit": "a44ba2f6cc8a2147297ee4a82ea11cc883b72aa9",
     "current_source_summary": {
       "backend_kinds": 54,
       "frontend_published_kinds": 54,
@@ -6446,5 +6446,70 @@
         62
       ]
     }
+  },
+  "purpose_and_native_merge_checkpoint": {
+    "source_commit": "a44ba2f6cc8a2147297ee4a82ea11cc883b72aa9",
+    "scope": "BOUNDED_SOURCE_AND_LOCAL_PROOF_NOT_TRAIN_ACCEPTANCE",
+    "native_merge_publication": {
+      "source_commit": "5cea429f766213b65c9605f057b53de8f1c45680",
+      "tsc": 0,
+      "lint": 0,
+      "frontend": {
+        "files": 10,
+        "passed": 164,
+        "failed": 0,
+        "skipped": 0
+      },
+      "sales": 2528,
+      "counterparty": 416,
+      "controlled_API": 2251,
+      "note": "These counters belong only to this source head; controlled API is not real SQL/normal HTTP/browser acceptance."
+    },
+    "native_purpose_sources": {
+      "source_commit": "a44ba2f6cc8a2147297ee4a82ea11cc883b72aa9",
+      "sales": {
+        "passed": 2556,
+        "failed": 0,
+        "skipped": 0
+      },
+      "identity": {
+        "passed": 924,
+        "failed": 0,
+        "skipped": 0
+      },
+      "audit": {
+        "passed": 145,
+        "failed": 0,
+        "skipped": 0
+      },
+      "api_build": {
+        "exit": 0,
+        "warnings": 0,
+        "errors": 0
+      },
+      "api_test_source_build": {
+        "exit": 0,
+        "warnings": 0,
+        "errors": 0
+      },
+      "audit_restore": "Original no-restore exit0 produced no TRX and was rejected, not PASS. Missing Audit project assets restored from existing locked dependencies; 145 positive cases then passed. Prior logs retained."
+    },
+    "source_peer": "Identity a965 and Sales source25a complete bounded deltas read independently; no open concrete P0/P1/P2, NOT_K3.",
+    "new_SQL_source_cases": {
+      "sales_request_work_source": 2,
+      "identity_purpose_and_borrowed_audit": 3,
+      "credit_group_movements": 2,
+      "compiled": true,
+      "actual_SQL": "NOT_RUN"
+    },
+    "remaining": [
+      "Flow7 root Host/DTO/publication/frontend not connected at this source head; source pending membership and Approved reject support remain distinct.",
+      "Flow58 Work source/Host/UI still missing; owner purpose read/original impact receipt now present. Read-only narrow context adaptation is in progress in the assigned clone.",
+      "KIM-D59 native preview/UI/Work link delivered; atomic viewed account-membership to native mutation binding is still in progress, not accepted.",
+      "Credit profile fields are present; instrument release decision pending, NonCash reimbursement/bank policy and runtime links unresolved.",
+      "Actual SQL, normal HTTP/browser, pins/full CI and two independent exact-head K3 remain."
+    ],
+    "activation": "NONE",
+    "runtime_verified_flows": 0
   }
 }
