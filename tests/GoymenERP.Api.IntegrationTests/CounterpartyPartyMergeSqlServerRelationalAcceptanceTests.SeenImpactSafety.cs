@@ -231,6 +231,51 @@ public sealed partial class CounterpartyPartyMergeSqlServerRelationalAcceptanceT
     }
 
     [SqlServerFact]
+    public async Task Seen_merge_initial_unsafe_caller_cannot_become_owned_when_first_permission_await_cleans_caller_state()
+    {
+        var probe = new MergePurposeProbe(); await using var test = new MergeTest(true, services => ConfigureMergePurpose(services, probe)); using var client = test.Client();
+        var survivor = await CreatePartyAsync(client, "SENTETIK initial caller survivor"); var merged = await CreatePartyAsync(client, "SENTETIK initial caller duplicate");
+        probe.Actor = await MergeActorAsync(test, survivor);
+        foreach (var entry in new[] { "dirty", "audit", "borrowed" })
+        {
+            await using var scope = test.Factory.Services.CreateAsyncScope(); scope.ServiceProvider.GetRequiredService<ICompanyContext>().Set(TestCompanyIds.CompanyA);
+            var service = Assert.IsAssignableFrom<ICounterpartyPartyMergePurposeV1>(scope.ServiceProvider.GetRequiredService<ICounterpartyPartyMergeService>());
+            var db = scope.ServiceProvider.GetRequiredService<CounterpartyDbContext>();
+            var writer = scope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>();
+            var preview = await service.PreviewPurposeAsync(survivor, new(merged, "1", "1"), _ => Task.CompletedTask); Assert.NotNull(preview.SeenImpactDigest);
+            var metadata = MergePurposeMetadata(probe.Actor!, Guid.NewGuid().ToString("N"));
+            await using var borrowed = entry == "borrowed" ? await db.Database.BeginTransactionAsync() : null;
+            var pending = new Party(Guid.NewGuid(), PartyCode.FromSequence(999997), PartyKind.LegalEntity, "SENTETIK initial caller owned", null);
+            if (entry == "dirty") db.Parties.Add(pending);
+            if (entry == "audit") scope.ServiceProvider.GetRequiredService<IAuditEventCollector>().Enqueue(new AuditEventDraft(
+                metadata.CompanyId, "SENTETIK.caller.v1", "Counterparty.Party", survivor.ToString("D"), "Read", null, null,
+                AuditActorTypes.User, metadata.ActorId, ErpPermissions.CounterpartyPartiesRead, [], "{}", "{}", "SENTETIK initial caller draft",
+                null, AuditAiInvolvement.None, null, "Web", null, null, metadata.CorrelationId, null, metadata.IdempotencyKey));
+            var discards = probe.Discards; var cleanedByCaller = false; var consumerCalls = 0;
+            probe.FirstPermissionRead = async () =>
+            {
+                // The caller itself relinquishes its state while the first actual permission read is awaited.
+                // This is not permission to adopt a new transaction or clean up on the caller's behalf.
+                if (entry == "dirty") { Assert.Equal(EntityState.Added, db.Entry(pending).State); db.ChangeTracker.Clear(); }
+                if (entry == "audit") { Assert.True(writer.HasPendingDrafts); writer.DiscardPending(); }
+                if (entry == "borrowed") { var callerTransaction = Assert.IsAssignableFrom<IDbContextTransaction>(borrowed); Assert.Same(callerTransaction, db.Database.CurrentTransaction); await callerTransaction.RollbackAsync(); await callerTransaction.DisposeAsync(); }
+                Assert.False(db.ChangeTracker.HasChanges()); Assert.False(writer.HasPendingDrafts); Assert.Null(db.Database.CurrentTransaction);
+                cleanedByCaller = true;
+            };
+            var result = await service.ApprovePurposeAsync(survivor, new(merged, "1", "1", "SENTETIK initial caller"), preview.SeenImpactDigest, metadata,
+                _ => { consumerCalls++; return Task.CompletedTask; });
+            Assert.True(cleanedByCaller); Assert.Null(probe.FirstPermissionRead);
+            Assert.Equal(CounterpartyPartyMergePurposeStatusV1.Unavailable, result.Status); Assert.Null(result.Execution);
+            Assert.Equal(0, consumerCalls); Assert.Equal(discards + (entry == "audit" ? 1 : 0), probe.Discards);
+            Assert.False(db.ChangeTracker.HasChanges()); Assert.False(writer.HasPendingDrafts); Assert.Null(db.Database.CurrentTransaction);
+            Assert.False(await db.Parties.AsNoTracking().AnyAsync(x => x.Id == pending.Id));
+            Assert.False(await db.CommandExecutions.AsNoTracking().AnyAsync(x => x.OriginalCorrelationId == metadata.CorrelationId));
+        }
+        Assert.Equal(0, await test.ScalarAsync<int>("SELECT COUNT(*) FROM [counterparty].[PartyMerges] WHERE [MergedPartyId]=@Party;", merged));
+        Assert.Equal(0, await test.ScalarAsync<int>("SELECT COUNT(*) FROM [audit].[AuditEvents] WHERE [Operation]='ApproveMerge' AND [EntityId]=CONVERT(nvarchar(36),@Party);", merged));
+    }
+
+    [SqlServerFact]
     public async Task Controlled_seen_merge_1205_1222_aborts_once_then_reads_only_the_original_key_without_mutation_retry()
     {
         var probe = new MergePurposeProbe(); await using var test = new MergeTest(true, services => ConfigureMergePurpose(services, probe)); using var client = test.Client();
@@ -323,6 +368,7 @@ public sealed partial class CounterpartyPartyMergeSqlServerRelationalAcceptanceT
         internal bool Saved; internal bool AuditWritten; internal bool Committed; internal bool Denied; internal bool Fired; internal bool RangeRead;
         internal int SavedFences; internal int Discards; internal bool ReceiptRead; internal int ReceiptFences;
         internal int SqlNumber; internal int Injections; internal int SaveAttempts; internal Func<Task>? AfterAbort;
+        internal Func<Task>? FirstPermissionRead;
         internal TaskCompletionSource RangeHeld = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource ReleaseRange = new(TaskCreationOptions.RunContinuationsAsynchronously);
         internal TaskCompletionSource LinkInsertStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -347,6 +393,19 @@ public sealed partial class CounterpartyPartyMergeSqlServerRelationalAcceptanceT
         public string? UserId => probe.Actor ?? inner.UserId;
         public IReadOnlySet<Guid> AllowedCompanyIds => probe.Actor is null ? inner.AllowedCompanyIds : new HashSet<Guid> { TestCompanyIds.CompanyA, TestCompanyIds.CompanyB };
         public bool CanAccessCompany(Guid company) => probe.Actor is null ? inner.CanAccessCompany(company) : AllowedCompanyIds.Contains(company);
+    }
+    private sealed class MergePurposeAuthorization(IErpAuthorizationService inner, MergePurposeProbe probe) : IErpAuthorizationService
+    {
+        public Task<AuthorizationSnapshot> GetAuthorizationSnapshotAsync(Guid companyId, IReadOnlyCollection<string> permissions, CancellationToken cancellationToken = default)
+            => inner.GetAuthorizationSnapshotAsync(companyId, permissions, cancellationToken);
+        public Task<bool> HasPermissionAsync(string permission, Guid companyId, CancellationToken cancellationToken = default)
+            => inner.HasPermissionAsync(permission, companyId, cancellationToken);
+        public async Task<PermissionScope> GetPermissionScopeAsync(string permission, Guid companyId, CancellationToken cancellationToken = default)
+        {
+            var actual = await inner.GetPermissionScopeAsync(permission, companyId, cancellationToken);
+            if (probe.FirstPermissionRead is { } callerCleanup) { probe.FirstPermissionRead = null; await callerCleanup(); }
+            return actual;
+        }
     }
     private sealed class MergePurposeAuthority(IErpAuthorityRevalidationService inner, MergePurposeProbe probe) : IErpAuthorityRevalidationService
     {
@@ -408,6 +467,7 @@ public sealed partial class CounterpartyPartyMergeSqlServerRelationalAcceptanceT
         services.AddDbContext<CounterpartyDbContext>((_, options) => options.AddInterceptors(new MergePurposeSave(probe), new MergePurposeTransaction(probe), new MergePurposeRead(probe)));
         services.AddDbContext<AuditDbContext>((_, options) => options.AddInterceptors(new MergePurposeRead(probe)));
         Decorate<ICurrentUser>(inner => new MergePurposeUser(inner, probe));
+        Decorate<IErpAuthorizationService>(inner => new MergePurposeAuthorization(inner, probe));
         Decorate<IErpAuthorityRevalidationService>(inner => new MergePurposeAuthority(inner, probe));
         Decorate<IAuditTransactionWriterV1>(inner => new MergePurposeAudit(inner, probe));
         void Decorate<T>(Func<T, T> wrap) where T : class

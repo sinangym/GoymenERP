@@ -20,6 +20,9 @@ internal sealed partial class CounterpartyCommandService
         ValidateCommandMetadata(metadata);
         var captured = CounterpartyContactInformationAuthorityFence.Capture(currentUser, companyContext);
         if (captured.CompanyId != metadata.CompanyId || captured.ActorId != metadata.ActorId) throw new UnauthorizedAccessException();
+        // Ownership eligibility is captured before either initial authority await. A caller that saves,
+        // flushes or closes its own work during those awaits cannot turn this call into an owned command.
+        var cleanBeforeAuthority = Clean();
         await RequireCompanyWidePermissionAsync(CounterpartyPartyMergePermissionsV1.Approve, cancellationToken);
         await RequireCompanyWidePermissionAsync(GoymenERP.BuildingBlocks.Security.ErpPermissions.CounterpartyPartiesRead, cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
@@ -38,7 +41,7 @@ internal sealed partial class CounterpartyCommandService
             && mergePurpose is null && identityDecision is null && createWithTaxIdentity is null;
         async Task<CounterpartyPartyMergePurposeResultV1> Attempt(bool readOnly)
         {
-            if (!Clean()) return new(CounterpartyPartyMergePurposeStatusV1.Unavailable, null);
+            if (!cleanBeforeAuthority || !Clean()) return new(CounterpartyPartyMergePurposeStatusV1.Unavailable, null);
             await consumerFence(cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             await captured.RequireStillAsync(currentUser, companyContext, authorityRevalidationService, PartyMergePermissions, cancellationToken);
