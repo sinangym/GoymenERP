@@ -90,6 +90,7 @@ public static class PurchasingModuleExtensions
         services.AddScoped<IPurchaseMixedOrderMembershipServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
         services.AddScoped<IPurchaseMixedOrderApprovalPreviewV1>(provider => provider.GetRequiredService<PurchasingService>());
         services.AddScoped<IPurchaseMixedServicePriceRevisionServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
+        services.AddScoped<IPurchaseMixedServicePriceRevisionPreviewV1>(provider => provider.GetRequiredService<PurchasingService>());
         services.AddScoped<IPurchasingSupplierRevisionServiceV1>(provider => provider.GetRequiredService<PurchasingService>());
         services.AddScoped<IPurchasingOrderRecordReadSourceV1>(provider => provider.GetRequiredService<PurchasingService>());
         services.AddScoped<IPurchasingOrderReadServiceV1, PurchasingOrderReadServiceV1>();

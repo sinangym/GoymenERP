@@ -33,6 +33,24 @@ public static partial class PurchasingEndpoints
             .ProducesErpBadRequest("validation_failed").ProducesErpCodeLessNotFound()
             .ProducesErpConflict(PurchasingProblemCodesV1.VersionConflict).ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
 
+        group.MapGet("/{id:guid}/service-price-revision-preview", async (Guid id, HttpContext http,
+            [FromServices] IPurchaseMixedServicePriceRevisionPreviewV1 service, ICorrelationContext correlation, CancellationToken token) =>
+        {
+            SetPrivateNoStore(http.Response);
+            if (http.Request.Query.Count != 1 || !http.Request.Query.TryGetValue("expectedVersion", out var versions)
+                || versions.Count != 1 || versions[0] is not { } version) return Problem(400, "validation_failed", correlation);
+            try
+            {
+                _ = PurchaseMixedOrderMembershipV1.SelectedChildVersion(version);
+                return Results.Json(await service.ReadMixedServicePriceRevisionPreviewAsync(id, version, token), PurchasingJson.Options);
+            }
+            catch (PurchasingServiceException exception) { return Problem(http, exception, correlation); }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception) { return Problem(503, "service_unavailable", correlation); }
+        }).WithName("GetPurchaseMixedServicePriceRevisionPreviewV1").Produces<PurchaseMixedServicePriceRevisionPreviewV1>()
+            .ProducesErpBadRequest("validation_failed").ProducesErpCodeLessNotFound()
+            .ProducesErpConflict(PurchasingProblemCodesV1.VersionConflict).ProducesErpServiceUnavailable().ProducesErpAuthenticatedProblems();
+
         MapRevisionMutation(group.MapPost("/{id:guid}/service-price-revisions", (Guid id, HttpContext http,
             [FromServices] IPurchaseMixedServicePriceRevisionServiceV1 service, ICorrelationContext correlation, CancellationToken token) =>
         {
