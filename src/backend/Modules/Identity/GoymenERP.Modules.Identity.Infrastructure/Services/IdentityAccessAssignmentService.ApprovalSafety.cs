@@ -22,7 +22,8 @@ internal sealed partial class IdentityAccessAssignmentService
 
     // Only the runtime approval facade enters this scope. Other ID-3 commands retain their native protocol.
     private async Task<IdentityAccessCommandResultV1> RunAccessApprovalAsync(
-        Func<Task<IdentityAccessCommandResultV1>> native, bool validShape, IdentityAccessCommandMetadataV1 metadata, CancellationToken token)
+        Func<Task<IdentityAccessCommandResultV1>> native, bool validShape, IdentityAccessCommandMetadataV1 metadata, CancellationToken token,
+        AccessPurposeAttempt? purpose = null)
     {
         token.ThrowIfCancellationRequested();
         var company = RequireContextCompany();
@@ -36,6 +37,7 @@ internal sealed partial class IdentityAccessAssignmentService
         // The authority await may have introduced another caller's work; ownership starts only after this second check.
         if (!CleanEntry()) return Unstored(Answers.Unavailable(), metadata);
         var state = new AccessApprovalScope(metadata);
+        state.Purpose = purpose;
         accessApproval = state;
         try
         {
@@ -74,6 +76,12 @@ internal sealed partial class IdentityAccessAssignmentService
         try
         {
             await RequireStillAsync(IdentityPermissionManifestV1.AccessApprove, state.Metadata.CompanyId, token);
+            if (state.Purpose is { } purpose)
+            {
+                await purpose.ConsumerFence(token);
+                token.ThrowIfCancellationRequested();
+                await RequireStillAsync(IdentityPermissionManifestV1.AccessApprove, state.Metadata.CompanyId, token);
+            }
             token.ThrowIfCancellationRequested();
             if (!SameAccessApprovalContext(state.Metadata)) throw new UnauthorizedAccessException();
         }
@@ -186,10 +194,14 @@ internal sealed partial class IdentityAccessAssignmentService
         internal bool Committed;
         internal bool CleanupAttempted;
         internal bool Cleaned;
+        internal AccessPurposeAttempt? Purpose;
     }
 
-    private sealed class GuardedAccessAssignmentService(IdentityAccessAssignmentService core) : IIdentityAccessAssignmentService
+    private sealed class GuardedAccessAssignmentService(IdentityAccessAssignmentService core) : IIdentityAccessAssignmentService, IIdentityAccessGrantDecisionV1
     {
+        public Task<IdentityAccessGrantDecisionDetailV1?> ReadDecisionAsync(Guid id, IdentityAccessCommandMetadataV1 context, Func<CancellationToken, Task> consumerFence, CancellationToken cancellationToken = default) => core.ReadDecisionAsync(id, context, consumerFence, cancellationToken);
+        public Task<IdentityAccessGrantDecisionReceiptV1?> ReadDecisionReceiptAsync(Guid id, bool approve, string version, string? reason, IdentityAccessCommandMetadataV1 context, Func<CancellationToken, Task> consumerFence, CancellationToken cancellationToken = default) => core.ReadDecisionReceiptAsync(id, approve, version, reason, context, consumerFence, cancellationToken);
+        public Task<IdentityAccessCommandResultV1> DecidePurposeAsync(Guid id, bool approve, string version, string? reason, string impact, IdentityAccessCommandMetadataV1 context, Func<CancellationToken, Task> consumerFence, CancellationToken cancellationToken = default) => core.DecidePurposeAsync(id, approve, version, reason, impact, context, consumerFence, cancellationToken);
         public Task<IdentityAccessCommandResultV1> ApproveAsync(Guid id, ApproveAccessGrantRequestV1 request, IdentityAccessCommandMetadataV1 metadata, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(request);

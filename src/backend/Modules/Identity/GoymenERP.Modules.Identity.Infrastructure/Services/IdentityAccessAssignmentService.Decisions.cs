@@ -200,6 +200,12 @@ internal sealed partial class IdentityAccessAssignmentService
             return Step.Refuse(refused);
         }
 
+        // Purpose content binding uses the very list subsequently passed to AddPermissionChanges.
+        // This does not assert that another role writer holds the company's administration lock.
+        if (accessApproval?.Purpose is { } purpose
+            && !string.Equals(purpose.ExpectedImpactDigest, AccessDecisionImpact(pending, target.RoleCode, target.Permissions), StringComparison.Ordinal))
+            return Step.Refuse(Answers.VersionConflict());
+
         var alreadyAssigned = await HasActiveAssignmentAsync(command.CompanyId, pending.TargetUserId, pending.RoleId, now, cancellationToken);
         await AccessApprovalFenceAsync(cancellationToken);
         if (alreadyAssigned)
@@ -226,7 +232,7 @@ internal sealed partial class IdentityAccessAssignmentService
             Answers.Ok(pending.Id, pending.Version, pending.Status.ToString(), assignment.Id),
             [
                 Audit(command, RequestApprovedEvent, GrantRequestEntityType, pending.Id, Operations.Approve,
-                    versionBefore, pending.Version, before, RequestImage(pending),
+                    versionBefore, pending.Version, before, PurposeApprovedRequestImage(pending, target.RoleCode, target.Permissions),
                     "Kritik rol talebi ikinci kişi tarafından onaylandı.", context),
                 Audit(command, AssignmentGrantedEvent, RoleAssignmentEntityType, assignment.Id, Operations.Assign,
                     versionBefore: null, assignment.Version, before: null,
