@@ -132,12 +132,20 @@ public sealed partial class SalesDraftService : ISalesApprovalRequestService
 
     public Task<SalesApprovalRequestCommandResult> RejectOverDeliveryRequestAsync(Guid draftId, int requestNo,
         SalesDraftStateCommandRequest request, SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
-        RejectApprovalRequestAsync(SalesApprovalRequestKind.OverDelivery, draftId, requestNo, request,
-            SalesApprovalRequestCommands.RejectOverDeliveryV1, bindings.OverDeliveryApprovePermission, metadata,
-            OverDeliveryRequestRejectedAudit, cancellationToken);
+        overDeliveryRequestApprovalSafety
+            ? RunOverDeliveryRequestApprovalAsync(draftId, requestNo, request, metadata, false, cancellationToken)
+            : RejectApprovalRequestAsync(SalesApprovalRequestKind.OverDelivery, draftId, requestNo, request,
+                SalesApprovalRequestCommands.RejectOverDeliveryV1, bindings.OverDeliveryApprovePermission, metadata,
+                OverDeliveryRequestRejectedAudit, cancellationToken);
 
-    public async Task<SalesApprovalRequestCommandResult> ApproveOverDeliveryRequestAsync(Guid draftId, int requestNo,
-        SalesDraftStateCommandRequest request, SalesCommandMetadata metadata, CancellationToken cancellationToken = default)
+    public Task<SalesApprovalRequestCommandResult> ApproveOverDeliveryRequestAsync(Guid draftId, int requestNo,
+        SalesDraftStateCommandRequest request, SalesCommandMetadata metadata, CancellationToken cancellationToken = default) =>
+        overDeliveryRequestApprovalSafety
+            ? RunOverDeliveryRequestApprovalAsync(draftId, requestNo, request, metadata, true, cancellationToken)
+            : ApproveOverDeliveryRequestCoreAsync(draftId, requestNo, request, metadata, cancellationToken);
+
+    private async Task<SalesApprovalRequestCommandResult> ApproveOverDeliveryRequestCoreAsync(Guid draftId, int requestNo,
+        SalesDraftStateCommandRequest request, SalesCommandMetadata metadata, CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(metadata);

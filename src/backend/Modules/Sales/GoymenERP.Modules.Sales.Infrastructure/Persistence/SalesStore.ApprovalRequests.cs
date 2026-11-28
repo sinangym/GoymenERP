@@ -25,6 +25,7 @@ public sealed partial class SalesStore : ISalesApprovalRequestStore
         RequireEnvelope(envelope);
         RequireHash(requestHash);
         RequireQuoteApprovalCommand(envelope, requestHash, commandName, writes: false);
+        RequireOverDeliveryRequestApprovalCommand(envelope, requestHash, commandName, writes: false);
         RequireApprovalRequestCommand(commandName);
         RequireResolvedCompany();
         var attempt = await FindApprovalRequestAttemptAsync(commandName, IdempotencyKeyHash(envelope.IdempotencyKey), cancellationToken);
@@ -86,6 +87,7 @@ public sealed partial class SalesStore : ISalesApprovalRequestStore
         RequireEnvelope(envelope);
         RequireHash(requestHash);
         RequireQuoteApprovalCommand(envelope, requestHash, commandName, writes: true);
+        RequireOverDeliveryRequestApprovalCommand(envelope, requestHash, commandName, writes: true);
         RequireApprovalRequestCommand(commandName);
         var companyId = RequireResolvedCompany();
         if (refusal.Status is < 400 or > 599 || string.IsNullOrWhiteSpace(refusal.Code) || refusal.Errors is null
@@ -108,7 +110,7 @@ public sealed partial class SalesStore : ISalesApprovalRequestStore
         dbContext.ApprovalRequestAttempts.Add(NewApprovalRequestAttempt(companyId, commandName, keyHash, requestHash,
             envelope.ActorId.Trim(), subjectId, AttemptOutcomeRefused, null, JsonSerializer.Serialize(refusal, Json), envelope.CorrelationId,
             timeProvider.GetUtcNow()));
-        await SaveQuoteApprovalAsync(cancellationToken, refusal);
+        await SaveApprovalRequestDecisionAsync(cancellationToken, refusal);
     }
 
     public async Task<SalesApprovalRequestStoreResult?> RejectApprovalRequestAsync(SalesDraftWriteEnvelope envelope, string requestHash,
@@ -120,6 +122,7 @@ public sealed partial class SalesStore : ISalesApprovalRequestStore
         RequireEnvelope(envelope);
         RequireHash(requestHash);
         RequireQuoteApprovalCommand(envelope, requestHash, commandName, writes: true);
+        RequireOverDeliveryRequestApprovalCommand(envelope, requestHash, commandName, writes: true);
         RequireApprovalRequestCommand(commandName);
         if (commandName is not (SalesApprovalRequestCommands.RejectQuoteConversionV1 or SalesApprovalRequestCommands.RejectOverDeliveryV1))
         {
@@ -140,8 +143,8 @@ public sealed partial class SalesStore : ISalesApprovalRequestStore
             return null;
         }
 
-        var row = await QuoteApprovalReadAsync(() => dbContext.ApprovalRequests.SingleOrDefaultAsync(candidate => candidate.Kind == (int)kind
-            && candidate.SubjectId == subjectId && candidate.RequestNo == requestNo, cancellationToken), cancellationToken);
+        var row = await OverDeliveryRequestApprovalReadAsync(() => QuoteApprovalReadAsync(() => dbContext.ApprovalRequests.SingleOrDefaultAsync(candidate => candidate.Kind == (int)kind
+            && candidate.SubjectId == subjectId && candidate.RequestNo == requestNo, cancellationToken), cancellationToken), cancellationToken);
         if (row is null)
         {
             return null;
@@ -163,7 +166,7 @@ public sealed partial class SalesStore : ISalesApprovalRequestStore
         dbContext.ApprovalRequestAttempts.Add(NewApprovalRequestAttempt(companyId, commandName, keyHash, requestHash, actorId, subjectId,
             AttemptOutcomeRecorded, item.Id, null, envelope.CorrelationId, now));
         EnqueueApprovalRequestAudit(envelope, companyId, audit, item, versionBefore, before);
-        await SaveQuoteApprovalAsync(cancellationToken);
+        await SaveApprovalRequestDecisionAsync(cancellationToken);
         return new SalesApprovalRequestStoreResult(item, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 
@@ -179,6 +182,7 @@ public sealed partial class SalesStore : ISalesApprovalRequestStore
         RequireEnvelope(envelope);
         RequireHash(requestHash);
         const string commandName = SalesApprovalRequestCommands.ApproveOverDeliveryV1;
+        RequireOverDeliveryRequestApprovalCommand(envelope, requestHash, commandName, writes: true);
         var companyId = RequireResolvedCompany();
         var keyHash = IdempotencyKeyHash(envelope.IdempotencyKey);
         var actorId = envelope.ActorId.Trim();
@@ -193,21 +197,22 @@ public sealed partial class SalesStore : ISalesApprovalRequestStore
             return null;
         }
 
-        var requestRow = await dbContext.ApprovalRequests.SingleOrDefaultAsync(candidate =>
+        var requestRow = await OverDeliveryRequestApprovalReadAsync(() => dbContext.ApprovalRequests.SingleOrDefaultAsync(candidate =>
             candidate.Kind == (int)SalesApprovalRequestKind.OverDelivery && candidate.SubjectId == orderId
-            && candidate.RequestNo == requestNo, cancellationToken);
+            && candidate.RequestNo == requestNo, cancellationToken), cancellationToken);
         var draftRow = requestRow is null
             ? null
-            : await dbContext.Drafts.SingleOrDefaultAsync(candidate => candidate.Id == orderId, cancellationToken);
+            : await OverDeliveryRequestApprovalReadAsync(() => dbContext.Drafts.SingleOrDefaultAsync(candidate => candidate.Id == orderId, cancellationToken), cancellationToken);
         if (requestRow is null || draftRow is null)
         {
             return null;
         }
 
         var request = SalesApprovalRequestRows.Restore(requestRow);
-        var draft = (await RestoreAsync([draftRow], cancellationToken)).Single();
+        var draft = (await OverDeliveryRequestApprovalReadAsync(() => RestoreAsync([draftRow], cancellationToken), cancellationToken)).Single();
         var input = await beforeWrite(draft, request, cancellationToken)
             ?? throw new InvalidOperationException("Fazla teslim talebinin onayı, yeniden okunan yargı olmadan kaydedilmez.");
+        await OverDeliveryRequestApprovalFenceAsync(cancellationToken);
         var requestBefore = ApprovalRequestAuditState(request);
         var requestVersionBefore = request.Version;
         var draftVersionBefore = draft.Version;
@@ -283,7 +288,7 @@ public sealed partial class SalesStore : ISalesApprovalRequestStore
             envelope.CorrelationId,
             envelope.CausationId,
             envelope.IdempotencyKey));
-        await SaveAsync(cancellationToken);
+        await SaveApprovalRequestDecisionAsync(cancellationToken);
         return new SalesApprovalRequestStoreResult(request, SalesDraftWriteOutcome.Recorded, envelope.CorrelationId.Trim());
     }
 
@@ -374,8 +379,8 @@ public sealed partial class SalesStore : ISalesApprovalRequestStore
 
     private Task<ApprovalRequestAttemptRow?> FindApprovalRequestAttemptAsync(string commandName, string keyHash,
         CancellationToken cancellationToken) =>
-        QuoteApprovalReadAsync(() => dbContext.ApprovalRequestAttempts.AsNoTracking()
-            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken), cancellationToken);
+        OverDeliveryRequestApprovalReadAsync(() => QuoteApprovalReadAsync(() => dbContext.ApprovalRequestAttempts.AsNoTracking()
+            .SingleOrDefaultAsync(row => row.CommandName == commandName && row.IdempotencyKeyHash == keyHash, cancellationToken), cancellationToken), cancellationToken);
 
     private static ApprovalRequestAttemptRow NewApprovalRequestAttempt(Guid companyId, string commandName, string keyHash,
         string requestHash, string actorId, Guid subjectId, int outcome, Guid? requestId, string? refusalJson, string correlationId,
@@ -453,8 +458,8 @@ public sealed partial class SalesStore : ISalesApprovalRequestStore
     {
         if (attempt.Outcome == AttemptOutcomeRecorded && attempt.RequestId is { } requestId)
         {
-            var row = await QuoteApprovalReadAsync(() => dbContext.ApprovalRequests.AsNoTracking()
-                .SingleOrDefaultAsync(candidate => candidate.Id == requestId, cancellationToken), cancellationToken)
+            var row = await OverDeliveryRequestApprovalReadAsync(() => QuoteApprovalReadAsync(() => dbContext.ApprovalRequests.AsNoTracking()
+                .SingleOrDefaultAsync(candidate => candidate.Id == requestId, cancellationToken), cancellationToken), cancellationToken)
                 ?? throw new InvalidOperationException("Kayıtlı deneme kaydının onay talebi bulunamadı.");
             return new SalesApprovalRequestReplay(SalesApprovalRequestRows.Restore(row), null, attempt.CorrelationId);
         }
