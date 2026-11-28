@@ -541,6 +541,10 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             catch (Exception cleanup) { throw new AggregateException(original, cleanup); }
             boundary.CleanupComplete = ReferenceEquals(boundary.OriginalFailure, failure);
             if (!ReferenceEquals(original, failure)) throw original;
+            // Rollback/disposal can complete after authority or cancellation changes. Cleanup faults keep priority;
+            // races already perform their one fresh readonly pass, while other owned refusals need a release fence here.
+            if (boundary.Aborted && !boundary.Committed && boundary.CleanupComplete && !MixedWinnerFailure(failure))
+            { await boundary.Fence(cancellationToken); cancellationToken.ThrowIfCancellationRequested(); }
             throw;
         }
         finally { if (boundary is null) decisionAuditWriter?.DiscardPending(); } // Only this attempt's drafts: caller-pending state was refused above.
