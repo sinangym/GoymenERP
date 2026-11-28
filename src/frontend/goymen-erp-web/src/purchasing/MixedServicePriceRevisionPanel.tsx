@@ -1,7 +1,7 @@
 import { useId, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { PurchaseOrderCommandResponse, PurchaseOrderSummary } from './contract'
-import { fetchMixedServicePricePreview, mixedPriceVersion, sendMixedServicePriceRevision, type MixedPriceService, type MixedServicePriceRequest } from './mixedServicePriceRevisionApi'
+import { fetchMixedServicePricePreview, mixedPriceVersion, sendMixedServicePriceRevision, type MixedPriceService, type MixedServicePricePreview, type MixedServicePriceRequest } from './mixedServicePriceRevisionApi'
 import { MIXED_SERVICE_PRICE_TEXT as T } from './mixedServicePriceRevisionText'
 import { SERVICE_ORDER_TEXT as N } from './serviceOrderText'
 import { useReceiptAdjustmentAttempt } from './useReceiptAdjustmentAttempt'
@@ -25,7 +25,7 @@ export function MixedServicePriceRevisionPanel(props: MixedServicePriceRevisionP
 }
 function PriceRevision(props: MixedServicePriceRevisionPanelProps) {
   const shell = useShellState(), boundary = useAuthBoundary(), heading = useId()
-  const [open, setOpen] = useState(false), [prices, setPrices] = useState<Readonly<Record<string, string>>>({}), [reason, setReason] = useState(''), [invalid, setInvalid] = useState(false)
+  const [open, setOpen] = useState(false)
   const authorized = props.canEdit && props.actorId !== null && contextKey(shell) !== null && shell.activeContext?.scopeMode === 'single'
     && shell.activeContext.companyId === props.companyId && shell.activeContext.userId === props.actorId && shell.sessionEpoch === props.sessionEpoch
     && hasCapability(shell, PURCHASING_CAPABILITY.orderSupplierRevise)
@@ -50,8 +50,30 @@ function PriceRevision(props: MixedServicePriceRevisionPanelProps) {
   const preview = authorized && open && !pending && !applied && !read.isFetching && read.data?.type === 'ok-single'
     && read.data.data.companyId === props.companyId && read.data.data.parent.order.companyId === props.companyId
     && read.data.data.parent.order.id === props.order.id && read.data.data.parent.order.version === props.order.version ? read.data.data : null
-  function submit() {
+  function submit(payload: MixedServicePriceRequest) {
     if (!authorized || preview === null || pending || applied || !mixedPriceVersion(props.order.version, true)) return
+    attempt.submit(payload)
+  }
+  return <section aria-labelledby={heading} className={styles.card}><h2 id={heading}>{T.heading}</h2><p>{T.note}</p>
+    {!authorized ? <p role="status">{T.denied}</p> : <>
+      <Button type="button" variant="secondary" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? T.close : T.open}</Button>
+      {attempt.sending ? <p role="status">{T.busy}</p> : pending ? <div role="alert"><p>{T.unknown}</p><p>{T.retained}</p>
+        <Button type="button" onClick={attempt.retry}>{T.retry}</Button></div> : null}
+      {applied ? <p role="status">{T.saved}</p> : attempt.outcome?.type === 'failed' ? <p role="alert">{attempt.outcome.status === 409 ? T.stale : T.refused}</p> : null}
+      {open && !pending && !applied && props.order.status === 'Approved' && preview === null
+        ? <StateBlock subject={T.subject} state={read.isFetching || read.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(read.data)} onRetry={() => void read.refetch()} /> : null}
+      {preview !== null ? <PriceRevisionForm key={JSON.stringify([props.fenceKey, props.order.version, preview])} preview={preview}
+        disabled={!mixedPriceVersion(props.order.version, true)} onSubmit={submit} /> : null}
+    </>}
+  </section>
+}
+// Editable intent belongs only to this complete human preview. Hiding/refetching/closing or changing any preview fact
+// unmounts/rekeys this form; the separate scoped native attempt above keeps its original unknown body/key unchanged.
+function PriceRevisionForm({ preview, disabled, onSubmit }: { readonly preview: MixedServicePricePreview; readonly disabled: boolean
+  readonly onSubmit: (payload: MixedServicePriceRequest) => void }) {
+  const [prices, setPrices] = useState<Readonly<Record<string, string>>>({}), [reason, setReason] = useState(''), [invalid, setInvalid] = useState(false)
+  function submit() {
+    if (disabled) return
     const changes: MixedServicePriceRequest['changes'][number][] = []
     for (const entry of preview.services) {
       const lines: { lineId: string; unitPrice: string }[] = []
@@ -66,26 +88,16 @@ function PriceRevision(props: MixedServicePriceRevisionPanelProps) {
     }
     if (changes.length === 0 || !reason.trim() || reason.trim().length > 1000) { setInvalid(true); return }
     setInvalid(false)
-    attempt.submit({ expectedVersion: preview.parent.order.version, services: preview.services.map(x => x.selection), changes, reason: reason.trim() })
+    onSubmit({ expectedVersion: preview.parent.order.version, services: preview.services.map(x => x.selection), changes, reason: reason.trim() })
   }
-  return <section aria-labelledby={heading} className={styles.card}><h2 id={heading}>{T.heading}</h2><p>{T.note}</p>
-    {!authorized ? <p role="status">{T.denied}</p> : <>
-      <Button type="button" variant="secondary" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? T.close : T.open}</Button>
-      {attempt.sending ? <p role="status">{T.busy}</p> : pending ? <div role="alert"><p>{T.unknown}</p><p>{T.retained}</p>
-        <Button type="button" onClick={attempt.retry}>{T.retry}</Button></div> : null}
-      {applied ? <p role="status">{T.saved}</p> : attempt.outcome?.type === 'failed' ? <p role="alert">{attempt.outcome.status === 409 ? T.stale : T.refused}</p> : null}
-      {open && !pending && !applied && props.order.status === 'Approved' && preview === null
-        ? <StateBlock subject={T.subject} state={read.isFetching || read.data === undefined ? { kind: 'initial-loading' } : classifyOutcome(read.data)} onRetry={() => void read.refetch()} /> : null}
-      {preview !== null ? <form onSubmit={event => { event.preventDefault(); submit() }}>
-        <p>{preview.parent.order.effectiveOn} · {T.version}: {preview.parent.order.version} · {preview.parent.currency?.currencyCode}</p>
-        <fieldset disabled={pending || !mixedPriceVersion(props.order.version, true)}><legend>{T.heading}</legend>
-          {preview.services.map(entry => <ServicePriceFacts key={entry.service.orderId} entry={entry} prices={prices} setPrices={setPrices} />)}
-          <Field label={T.reason}>{p => <textarea {...p} required maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} />}</Field>
-        </fieldset>{invalid ? <p role="alert">{T.invalid}</p> : null}
-        <Button type="submit" disabled={pending || !mixedPriceVersion(props.order.version, true)}>{T.save}</Button>
-      </form> : null}
-    </>}
-  </section>
+  return <form onSubmit={event => { event.preventDefault(); submit() }}>
+    <p>{preview.parent.order.effectiveOn} · {T.version}: {preview.parent.order.version} · {preview.parent.currency?.currencyCode}</p>
+    <fieldset disabled={disabled}><legend>{T.heading}</legend>
+      {preview.services.map(entry => <ServicePriceFacts key={entry.service.orderId} entry={entry} prices={prices} setPrices={setPrices} />)}
+      <Field label={T.reason}>{p => <textarea {...p} required maxLength={1000} value={reason} onChange={event => setReason(event.target.value)} />}</Field>
+    </fieldset>{invalid ? <p role="alert">{T.invalid}</p> : null}
+    <Button type="submit" disabled={disabled}>{T.save}</Button>
+  </form>
 }
 function ServicePriceFacts({ entry, prices, setPrices }: { readonly entry: MixedPriceService; readonly prices: Readonly<Record<string, string>>
   readonly setPrices: (change: (old: Readonly<Record<string, string>>) => Readonly<Record<string, string>>) => void }) {
