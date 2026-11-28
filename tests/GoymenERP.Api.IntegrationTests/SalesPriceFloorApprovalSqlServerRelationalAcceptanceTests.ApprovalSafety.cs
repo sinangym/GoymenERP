@@ -80,10 +80,11 @@ public sealed partial class SalesPriceFloorApprovalSqlServerRelationalAcceptance
                     if (safe.Writer.HasPendingDrafts) pendingSeen = true;
                     if (permission == SalesPermissionManifestV1.OrdersPriceFloorExceptionApprove)
                     {
-                        // Actual Audit flush precedes Sales Save. Post-Save fence 1, completed native answer fence 2,
-                        // actual precommit fence 3. The separate price-disclosure measurement is not an approval fence.
+                        // Actual Audit flush precedes Sales Save. Post-Save fence 1; receipt fences 2/3/4 surround
+                        // the exact attempt/Audit reads; completed native answer 5; actual precommit 6.
+                        // The separate price-disclosure measurement is not an approval fence.
                         var hit = phase == "after-audit" ? pendingSeen && !safe.Writer.HasPendingDrafts && !probe.Saved
-                            : probe.Saved && ++savedFences == (phase == "precommit" ? 3 : 1);
+                            : probe.Saved && ++savedFences == (phase == "precommit" ? 6 : 1);
                         if (hit) { fired = true; safe.Authority.Granted = false; }
                     }
                     return Task.CompletedTask;
@@ -313,7 +314,7 @@ public sealed partial class SalesPriceFloorApprovalSqlServerRelationalAcceptance
     private static Task<int> FloorDecisionCount(Run run, Guid id) => run.ScalarAsync<int>("SELECT COUNT(*) FROM sales.DraftAttempts WHERE DraftId=@id AND CommandName=@cmd", ("@id", id), ("@cmd", SalesDraftCommands.ApprovePriceFloorExceptionsV1));
     private static Task<int> FloorAuditCount(Run run, Guid id) => run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents WHERE EntityId=@id AND EventType=N'sales.order-draft.price-floor-exceptions-approved.v1'", ("@id", id.ToString("D")));
 
-    private static FloorScope SafeFloorScope(Run run, IInterceptor? interceptor = null, string actor = Approver)
+    private static FloorScope SafeFloorScope(Run run, IInterceptor? interceptor = null, string actor = Approver, IInterceptor? extraInterceptor = null)
     {
         using var template = run.Context(Company);
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
@@ -330,6 +331,7 @@ public sealed partial class SalesPriceFloorApprovalSqlServerRelationalAcceptance
         var builder = new DbContextOptionsBuilder<SalesDbContext>().UseSqlServer(template.Database.GetConnectionString(), sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", SalesDbContext.Schema))
             .AddInterceptors(new AuditSaveChangesInterceptor(collector, company));
         if (interceptor is not null) builder.AddInterceptors(interceptor);
+        if (extraInterceptor is not null) builder.AddInterceptors(extraInterceptor);
         var db = new SalesDbContext(builder.Options, company); var store = new SalesStore(db, company, collector, TimeProvider.System, officialCancellationAuditWriter: writer);
         var authority = new FloorAuthority(); var user = new FloorUser(actor);
         // Approval consumes only the already-recorded native commercial facts; no new Cari/Product/Settings lookup is allowed.

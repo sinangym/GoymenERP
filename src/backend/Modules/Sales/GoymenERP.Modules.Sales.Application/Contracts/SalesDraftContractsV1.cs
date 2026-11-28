@@ -389,7 +389,11 @@ public sealed record SalesOrderDraftDetailView(
     IReadOnlyList<SalesOrderDraftRemovedLineV1>? RemovedLines = null);
 
 public sealed record SalesOrderDraftResponse(
-    SalesOrderDraftDetailView Detail, bool IsReplay, string OriginalCorrelationId);
+    SalesOrderDraftDetailView Detail, bool IsReplay, string OriginalCorrelationId)
+{
+    [JsonIgnore]
+    public SalesPriceFloorOriginalReceiptV1? OriginalFloorApprovalReceipt { get; init; }
+}
 
 public sealed record SalesOrderDraftListResponse(
     IReadOnlyList<SalesOrderDraftSummaryView> Items, string? NextCursor);

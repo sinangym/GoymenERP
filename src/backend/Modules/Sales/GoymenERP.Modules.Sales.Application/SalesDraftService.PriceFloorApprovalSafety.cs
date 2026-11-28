@@ -32,7 +32,7 @@ public sealed partial class SalesDraftService
         var envelope = Envelope(scope, metadata, permission!);
         try
         {
-            return await boundary.RunPriceFloorApprovalAsync(envelope, hash, cleanBeforeAuthority,
+            var result = await boundary.RunPriceFloorApprovalAsync(envelope, hash, cleanBeforeAuthority,
                 ct => ApprovePriceFloorExceptionsCoreAsync(draftId, request, metadata, ct),
                 async ct =>
                 {
@@ -40,6 +40,23 @@ public sealed partial class SalesDraftService
                     return replay is null ? null : await ReplayedAsync(scope, replay, ct);
                 },
                 async ct => { scope = await RequireStillAsync(scope, permission, ct); ct.ThrowIfCancellationRequested(); }, token);
+            scope = await RequireStillAsync(scope, permission, token); token.ThrowIfCancellationRequested();
+            var disclosure = await ReplayDisclosureAsync(scope, token); token.ThrowIfCancellationRequested();
+            scope = await RequireStillAsync(disclosure.Scope, permission, token); token.ThrowIfCancellationRequested();
+            // Receipt reads and release fences may revoke PriceRead after the native core chose its response.
+            // Only reduce visibility; a newly granted PriceRead never upgrades the first Withheld answer.
+            var finalPrice = await DiscloseAsync(scope, token); token.ThrowIfCancellationRequested();
+            if (disclosure.Disclosure == SalesPriceDisclosure.Withheld || finalPrice == SalesPriceDisclosure.Withheld)
+            {
+                var hidden = result.OriginalFloorApprovalReceipt?.OriginalResult.Withheld
+                    ?? result.Detail with { Lines = result.Detail.Lines.Select(line => line with
+                    { UnitPrice = null, PriceUnitId = null, DiscountPercent = null, PriceDisclosure = SalesPriceDisclosure.Withheld }).ToArray() };
+                result = result with { Detail = hidden with { IsOwnDecisionRestricted = hidden.IsOwnDraft && scope.IsSalesSupport } };
+            }
+            if (result.OriginalFloorApprovalReceipt is { } receipt)
+                result = result with { OriginalFloorApprovalReceipt = receipt with
+                { CurrentResponseDigest = SalesPriceFloorDecisionDigestsV1.CurrentResponseDigest(result) } };
+            return result;
         }
         catch (SalesDraftStoreException exception) { throw Store(exception); }
     }

@@ -64,6 +64,9 @@ public sealed partial class SalesStore : ISalesPriceFloorApprovalStoreV1
                     // A recorded terminal native refusal is itself this command's durable answer.
                     terminal = refusal;
                 }
+                if (result is not null)
+                    result = result with { OriginalFloorApprovalReceipt = await ReadOriginalPriceFloorReceiptAsync(
+                        envelope, requestHash, result, cancellationToken) };
                 await PriceFloorApprovalFenceAsync(cancellationToken); RequireFlushed();
                 if (terminal is null && result is { IsReplay: false } && !state.Saved)
                     throw new InvalidOperationException("Taban fiyat istisnası kararı kaydedilmiş bir deneme taşımıyor.");
