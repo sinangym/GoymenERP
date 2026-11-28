@@ -153,7 +153,8 @@ public sealed class SalesRemainingApprovalWorkInboxSourcesV1Tests
 
         var item = Assert.Single(result.Items!);
         Assert.Equal("MUS-IADE-0001", item.DocumentLabel);
-        Assert.Equal($"/satis/iadeler/{item.ItemId:D}", item.Link);
+        Assert.Equal($"/onaylarim/sales.customer-return.v1/{item.ItemId:D}", item.Link);
+        Assert.Equal($"/satis/iadeler/{item.ItemId:D}", Assert.Single(item.References, reference => reference.Role == "sales-customer-return").Link);
         var original = Assert.Single(item.References, reference => reference.Role == "sales-invoice");
         Assert.Equal(("FTR-SNT-0009", "/satis/faturalar"), (original.Label, original.Link));
         Assert.True(item.Excludes(Maker) && item.Excludes(Submitter));

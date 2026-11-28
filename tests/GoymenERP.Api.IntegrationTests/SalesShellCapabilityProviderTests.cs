@@ -37,6 +37,8 @@ public sealed class SalesShellCapabilityProviderTests
             [
                 ("sales.contract-discount.work-decision", "/onaylarim/sales.contract-discount.v1/:approvalId",
                     SalesPermissionManifestV1.ContractsDiscountApprove, (string?)null),
+                ("sales.customer-return.work-decision", "/onaylarim/sales.customer-return.v1/:approvalId",
+                    $"{SalesPermissionManifestV1.ReturnsApprove}+{SalesPermissionManifestV1.OrdersPriceRead}", (string?)null),
                 // UI-70b (Sales 1.25; SAT-D290): the S-10 customer return screens on the returns names plus the price read (the
                 // answers carry amounts), and the submit / approve / finalize CONTROLS of the return detail.
                 ("sales.customer-returns.approve", "/satis/iadeler/:returnId",

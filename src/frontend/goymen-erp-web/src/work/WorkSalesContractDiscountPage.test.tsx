@@ -21,7 +21,7 @@ function mount(client = new QueryClient({defaultOptions: {queries: {retry: false
 function result(approve = true, replayed = false) {return json({companyId: COMPANY_A, kind, itemId: id, state: approve ? 'Active' : 'DiscountRejected', replayed, originalCorrelationId: 'SENTETIK-original-contract'}, 200, replayed ? {'Idempotency-Replayed': 'true', 'Idempotency-Original-Correlation-Id': 'SENTETIK-original-contract'} : undefined)}
 describe('Actual Contract purpose route, canonical prepared reason and immutable original-key recovery', () => {
   it('publishes one purpose beside all62 previous handlers and decodes only its own complete human wire', () => {
-    expect(WORK_DECISION_KINDS).toHaveLength(63); expect(WORK_DECISION_KINDS.filter(k => k === kind)).toEqual([kind])
+    expect(WORK_DECISION_KINDS).toHaveLength(64); expect(WORK_DECISION_KINDS.filter(k => k === kind)).toEqual([kind])
     expect(workRoutes.filter(r => r.path === `onaylarim/${kind}/:approvalId`)).toHaveLength(1)
     const value = fixture(COMPANY_A); expect(decodeWorkDecisionPreview(value, COMPANY_A, kind, id)).not.toBeNull()
     expect(decodeWorkDecisionPreview({...value, salesRiskException: {}}, COMPANY_A, kind, id)).toBeNull()

@@ -54,7 +54,7 @@ internal sealed partial class SalesCustomerReturnWorkInboxSourceV1(
                 item.Id,
                 label,
                 SalesWorkInboxItemsV1.RequireTime(item.SubmittedAtUtc),
-                link,
+                $"/onaylarim/{KindName}/{item.Id:D}",
                 maker,
                 [new WorkApprovalRuleResultV1(ApprovalRule, null, null, null, null)],
                 SalesWorkInboxItemsV1.References(

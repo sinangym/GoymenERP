@@ -6,7 +6,6 @@
 
 import { describe, expect, it } from 'vitest'
 import {
-  SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY,
   SALES_OVER_DELIVERY_APPROVE_CAPABILITY,
   SALES_POOL_CAPABILITY_ID,
   SALES_WORK_DECISION_CAPABILITY,
@@ -25,7 +24,7 @@ const WP4_KINDS = {
   'sales.request.v1': SALES_WORK_DECISION_CAPABILITY.request,
   'sales.invoice.v1': SALES_WORK_DECISION_CAPABILITY.invoice,
   'sales.subcontract-invoice.v1': SALES_WORK_DECISION_CAPABILITY.subcontractInvoice,
-  'sales.customer-return.v1': SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY,
+  'sales.customer-return.v1': SALES_WORK_DECISION_CAPABILITY.customerReturn,
   'sales.contract-discount.v1': SALES_WORK_DECISION_CAPABILITY.contractDiscount,
   // SAT-D476 / SAT-D475: the request-based kinds.
   'sales.quote-conversion-request.v1': SALES_WORK_DECISION_CAPABILITY.quoteConversion,
@@ -41,7 +40,7 @@ describe('WP4 Sales inbox kinds', () => {
       expect(SALES_INBOX_KINDS).toContain(entries[0])
     }
     expect(WORK_INBOX_CAPABILITIES).toEqual(expect.arrayContaining([
-      SALES_WORK_DECISION_CAPABILITY.request, SALES_WORK_DECISION_CAPABILITY.invoice, SALES_WORK_DECISION_CAPABILITY.subcontractInvoice, SALES_CUSTOMER_RETURN_APPROVE_CAPABILITY,
+      SALES_WORK_DECISION_CAPABILITY.request, SALES_WORK_DECISION_CAPABILITY.invoice, SALES_WORK_DECISION_CAPABILITY.subcontractInvoice, SALES_WORK_DECISION_CAPABILITY.customerReturn,
     ]))
     expect(WORK_INBOX_CAPABILITIES).toContain(SALES_WORK_DECISION_CAPABILITY.overDeliveryRequest)
     expect(WORK_INBOX_CAPABILITIES).not.toContain(SALES_OVER_DELIVERY_APPROVE_CAPABILITY)

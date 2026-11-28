@@ -56,9 +56,10 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
 {
     public const string OwnerId = "SALES";
     // 1.37: the contract discount purpose uses its existing approval only; optional prices remain owner-controlled.
-    public const string OwnerContractVersion = "1.37";
+    public const string OwnerContractVersion = "1.38";
     public const string ContractDiscountWorkDecisionCapabilityId = "sales.contract-discount.work-decision";
     public const string RiskExceptionWorkDecisionCapabilityId = "sales.risk-exception.work-decision";
+    public const string CustomerReturnWorkDecisionCapabilityId = "sales.customer-return.work-decision";
     public const string RemainderChangeWorkDecisionCapabilityId = "sales.remainder-change.work-decision";
     public const string OverDeliveryRequestWorkDecisionCapabilityId = "sales.over-delivery-request.work-decision";
     public const string DiscountWorkDecisionCapabilityId = "sales.discount-exception.work-decision";
@@ -315,6 +316,10 @@ public sealed class SalesShellCapabilityProvider : IShellCapabilityProvider
             "/onaylarim/sales.contract-discount.v1/:approvalId","W-SALES-CONTRACT-DISCOUNT-01",ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
             ShellCapabilityContextRequirement.SingleCompany,ShellCapabilityScopeRequirement.CompanyWide,
             [SalesPermissionManifestV1.ContractsDiscountApprove],ImplementationAvailable:true),
+        new ShellCapabilityDeclaration(CustomerReturnWorkDecisionCapabilityId,"sales-customer-return-work-decision",
+            "/onaylarim/sales.customer-return.v1/:approvalId","W-SALES-CUSTOMER-RETURN-01",ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
+            ShellCapabilityContextRequirement.SingleCompany,ShellCapabilityScopeRequirement.CompanyWide,
+            [SalesPermissionManifestV1.ReturnsApprove,SalesPermissionManifestV1.OrdersPriceRead],ImplementationAvailable:true),
         new ShellCapabilityDeclaration(RemainderChangeWorkDecisionCapabilityId,"sales-remainder-change-work-decision",
             "/onaylarim/sales.remainder-change.v1/:approvalId","W-SALES-REMAINDER-CHANGE-01",ShellCapabilityRoutePrecedence.ParameterizedAfterStatic,
             ShellCapabilityContextRequirement.SingleCompany,ShellCapabilityScopeRequirement.CompanyWide,

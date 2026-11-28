@@ -8,7 +8,7 @@ afterEach(()=>vi.unstubAllGlobals())
 const decode=(v:unknown)=>decodeWorkDecisionPreview(v,COMPANY_A,kind,id)
 const record=(v:unknown)=>v as Record<string,unknown>
 describe('remainder native quantity-only Work profile',()=>{
- it('publishes one remainder purpose beside all existing61 kinds',()=>{expect(WORK_DECISION_KINDS).toHaveLength(63);expect(WORK_DECISION_KINDS.filter(k=>k===kind)).toEqual([kind])})
+ it('publishes one remainder purpose beside all existing61 kinds',()=>{expect(WORK_DECISION_KINDS).toHaveLength(64);expect(WORK_DECISION_KINDS.filter(k=>k===kind)).toEqual([kind])})
  it('preserves complete10/19/9 facts and raw text without mutation, calculations or a numeric version',()=>{
   const v=fixture(COMPANY_A),before=JSON.stringify(v),d=decode(v);expect(d).not.toBeNull();expect(JSON.stringify(v)).toBe(before)
   const h=d!.salesRemainderChange!;expect(Object.keys(h)).toHaveLength(10);expect(Object.keys(h.change)).toHaveLength(19);expect(Object.keys(h.line)).toHaveLength(9)
