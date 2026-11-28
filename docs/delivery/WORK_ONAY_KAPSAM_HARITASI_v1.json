@@ -154,7 +154,13 @@
         "K3": "NOT_PERFORMED",
         "map_runtime": "NOT_RUN",
         "source_commit": "7cfd84229140279f7642229f6fddd4aee3e4b954",
-        "later_deltas": []
+        "later_deltas": [
+          {
+            "head": "79a38c60c1370c602146b08a97381ca4d3fd3257",
+            "note": "Native floor approval now owns its transaction/audit/fences; original complete-line maker check and commercial invalidation retained. Selected owner/Work Host still absent.",
+            "checkpoint_ref": "selected_quote_and_floor_native_checkpoint"
+          }
+        ]
       }
     },
     {
@@ -559,6 +565,11 @@
           {
             "head": "1538fb93fa7a252bc84654fa18feb3214a23f926",
             "note": "Native quote owned transaction/audit safety and DI connected;11 unit cases within2567Sales PASS.14 SQL source fixtures compile after test-only26ff fix; actualSQL NOT_RUN. Selected owner receipt/Host not yet delivered."
+          },
+          {
+            "head": "79a38c60c1370c602146b08a97381ca4d3fd3257",
+            "note": "Selected quote owner read, bound approve/reject target and genuine original receipt integrated; separate request and quote versions and SAT-D44 maker exception retained. Final PriceRead P2 fixed and tested; Work source/Host not yet integrated.",
+            "checkpoint_ref": "selected_quote_and_floor_native_checkpoint"
           }
         ]
       }
@@ -5792,7 +5803,7 @@
     "source_peers": "Bounded full native53 owner/source/WorkHost/UI and native54/55 safety peers, shared composition/inventory peer; publication peers found link/count/duplicate issues and source-closed finalc1. Some reviewers authored earlier native pieces; none of these are formal independent exact-head K3 acceptance.",
     "limits": "41packages/50references/64 flow rows unchanged; all64 semantics NOT_VERIFIED/runtime NOT_RUN/verified_runtime_flows0. Old CI does not transfer. ActualSQL/normalHTTP/browser/fullCI/pins/two independent exact-head K3/business acceptance remain pending. Provider/grant/role/Critical/deployment/AI activation unchanged. Token telemetry unavailable; phase durations are measured local artifacts."
   },
-  "current_checkpoint_ref": "purpose_and_native_merge_checkpoint",
+  "current_checkpoint_ref": "selected_quote_and_floor_native_checkpoint",
   "invoice_and_inventory_cost_work_checkpoint": {
     "source_commit": "9386df64820c0e99137a6dada429e3185be96113",
     "status": "SOURCE_AND_BOUNDED_LOCAL_TESTS_ONLY",
@@ -6442,7 +6453,7 @@
       }
     ],
     "audit_sha256": "7b99cf7b328d015372dc2a31cd0afd74c8c40edebd9e72ae822f61d7ee529680",
-    "current_source_commit": "26ff071bfac60d0c74b125f5807d741bdd574dcc",
+    "current_source_commit": "79a38c60c1370c602146b08a97381ca4d3fd3257",
     "current_source_summary": {
       "backend_kinds": 56,
       "frontend_published_kinds": 56,
@@ -6529,7 +6540,7 @@
     "remaining": [
       "Flow7 and58 source/Host/typed preview/paired frontend published. Client frozen seen-impact and original native receipt preserved; actualSQL/normalHTTP/browser not accepted.",
       "KIM-D59 native single-step purpose preview/header/UI binding delivered. Company-account snapshot is canonicalized consistently for SQL uniqueidentifier versus Guid ordering. ActualSQL/restart/range-lock proof pending.",
-      "Flow8 native owned approval safety delivered; selected conversion-request provenance and Work Host/paired UI still in development. Floor flow2 native safety in separate author branch.",
+      "Flow8 selected owner/read/private receipt and native safety delivered with bounded local proof; Work source/binding/Host in author branch. Floor native safety delivered; selected owner read/receipt in progress.",
       "Credit profile fields are present; instrument release decision pending; NonCash reimbursement/bank policy and runtime links unresolved.",
       "ActualSQL, normalHTTP/browser, pins/fullCI and two independent exact-head K3 remain."
     ],
@@ -6690,5 +6701,53 @@
       "activation": "NONE",
       "limits": "Each count belongs only to its stated source and bounded suite. No sum is train acceptance. All64 runtime NOT_RUN; native quote selected receipt/Work Host are still being developed."
     }
+  },
+  "selected_quote_and_floor_native_checkpoint": {
+    "source_commit": "79a38c60c1370c602146b08a97381ca4d3fd3257",
+    "scope": "NATIVE_PREREQUISITES_AND_BOUNDED_LOCAL_PROOF_NOT_WORK_OR_TRAIN_ACCEPTANCE",
+    "native_floor_safety": {
+      "source_commit": "7554b2659",
+      "sales_passed": 2578,
+      "failed": 0,
+      "skipped": 0,
+      "controlled_API_passed": 2360,
+      "API_build_errors": 0,
+      "API_build_warnings": 0,
+      "actual_SQL": "NOT_RUN",
+      "source_SQL_facts": 10,
+      "artifact": "floor-owned-source-20261128"
+    },
+    "selected_quote_and_mixed_invoice_source": {
+      "source_commit": "f3373bd70",
+      "sales_passed": 2615,
+      "failed": 0,
+      "skipped": 0,
+      "controlled_API_passed": 2360,
+      "API_build_errors": 0,
+      "API_build_warnings": 0,
+      "quote_SQL_facts": 6,
+      "mixed_invoice_SQL_facts": 3,
+      "SQL_source_compiled": true,
+      "actual_SQL": "NOT_RUN",
+      "artifact": "selected-quote-mixed-source-20261128"
+    },
+    "quote_price_disclosure_fix": {
+      "source_commit": "79a38c60c1370c602146b08a97381ca4d3fd3257",
+      "sales_passed": 2616,
+      "failed": 0,
+      "skipped": 0,
+      "artifact": "quote-final-disclosure-fixed-20261128",
+      "bounded_independent_source_review": "13 owner files read at570922: one P2 final PriceRead disclosure followed by later async approval fence. Two-file85d7 fix fully read independently; reported P2 closed in source. NOT_K3.",
+      "change": "Native final price disclosure now follows all other awaited fences; synchronous actor/company/cancellation and projection only afterwards. New normal-completing final-authority revocation regression passed."
+    },
+    "reused": "Existing Sales native approve/reject rules, body/hash, same scoped Audit writer, original Attempt/Audit, quote current-row HTTP replay; existing Purchasing goods/service/expense owner fixture and invoice workflow.",
+    "new_permission_or_role_assignment": false,
+    "new_schema": false,
+    "actual_SQL": "NOT_RUN",
+    "normal_HTTP_browser": "NOT_RUN",
+    "CI": "NO_CURRENT_HEAD_EVIDENCE",
+    "K3": "NOT_PERFORMED",
+    "runtime_verified_flows": 0,
+    "remaining": "Quote selected Work source/binding and Host are in separate author branch, not yet integrated. Floor selected owner read/private receipt in progress. Mixed invoice test source is not one mixed commercial PO/approval or real Finance debt proof."
   }
 }

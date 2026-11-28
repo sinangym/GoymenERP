@@ -643,7 +643,8 @@
       ],
       "reuse_mode": "SMALL_EXTENSION",
       "source_findings": [
-        "Mal siparişi ve hizmet siparişi ayrı mevcut sözleşmeler; tek satırlı UI yi düzeltmek karma belge desteğini kanıtlamaz."
+        "Mal siparişi ve hizmet siparişi ayrı mevcut sözleşmeler; tek satırlı UI yi düzeltmek karma belge desteğini kanıtlamaz.",
+        "Existing invoice workflow can select goods, service and expense owner sources together; new3 SQL source facts compile atf337. This is not a shared mixed commercial PO or its approval proof. Existing service approval uses the same OrdersApprove permission; default participant remains closed until one owner transaction and reference validations are connected."
       ],
       "decisions": [
         "ALS-D129",
@@ -669,7 +670,7 @@
       ],
       "migration_owner": "Codex; aynı şemada tek yazar; timestamp/THROW canlı envanterden ayrılır",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Önce listedeki dosya/metot ve test davranışını aç; yalnız farkı uygula. Bu paket kaydı ownership lease veya otomatik START-GO değildir.",
+      "next_action": "Bind existing goods PO and service owner through explicit immutable company/supplier/account/currency/version/line membership and same native OrdersApprove transaction. First domain/application contract increment is in progress; no API, persistence or mixed runtime approval is enabled. Reuse existing partial acceptance/invoice owners.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -680,7 +681,18 @@
         "tests/GoymenERP.Purchasing.UnitTests/PurchaseIncomingInvoiceWorkflowTests.cs",
         "tests/GoymenERP.Purchasing.UnitTests/PurchasingServiceTests.cs"
       ],
-      "change_files": []
+      "change_files": [],
+      "execution": {
+        "mixed_invoice_source_checkpoint": {
+          "source_commit": "e39493db1",
+          "compile_source_commit": "f3373bd70",
+          "SQL_source_facts": 3,
+          "actual_SQL": "NOT_RUN",
+          "real_Finance_debt": "NOT_RUN",
+          "new_runtime_command": false
+        },
+        "shared_commercial_order_contract": "IN_PROGRESS_IN_SEPARATE_AUTHOR_BRANCH_NOT_INTEGRATED"
+      }
     },
     {
       "id": "W2-SATINALMA/NOPO-MIN",
@@ -2210,7 +2222,7 @@
       ],
       "migration_owner": "No WP8 migration; Work schema unchanged. Finance owner transaction and cross-module contract remain K3.",
       "stop_condition": "Açıklanamayan stok/para farkı, çift hareket, yetki ihlali veya açık işletme politikası varsa ilgili yazma yolu kapalı.",
-      "next_action": "Finish native quote conversion and floor selected-owner/Work connections, then remaining no-Host flows under existing decisions. Current56 backend/56paired frontend kinds,55mapped flows; Cari62 is approved native no-pending exception. All64runtime acceptance NOT_RUN; actualSQL/normalHTTP/browser/pins/fullCI/two K3 pending.",
+      "next_action": "Integrate selected quote Work source/binding/Host, then pair UI and validate each current flow. Floor native safety is local-tested; its selected read/receipt follows. Current56 backend/56frontend kinds/55mapped flows; nativeCari62 remains no-pending exception. All64 runtime NOT_RUN; SQL/HTTP/browser/pins/fullCI/twoK3 pending.",
       "planned_owner": "Codex backend; Claude frontend",
       "files_purpose": "Navigation candidates, not a write lease; change_files are scoped at package start.",
       "reference_files": [
@@ -4117,7 +4129,7 @@
           "delivery_scope": "Flow51 catalog and Flow52 posting mapping owner/source/DTO/WorkHost/full human UI are paired in source:47 backend/47 frontend/0 staged. Flow53 native whole-approval safety integrated; owner read follow-up is frozen in its separate author branch, not yet integrated. Source pairing is not runtime acceptance.",
           "runtime_acceptance": "NOT_RUN"
         },
-        "current_checkpoint_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#purpose_and_native_merge_checkpoint.paired_access_and_seen_native_merge",
+        "current_checkpoint_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#selected_quote_and_floor_native_checkpoint",
         "native_cost_work_checkpoint": {
           "source_commit": "c1a3809ad3fab2235f75fc5e91f671e3b557b938",
           "evidence_ref": "docs/delivery/WORK_ONAY_KAPSAM_HARITASI_v1.json#native_cost_work_checkpoint",
