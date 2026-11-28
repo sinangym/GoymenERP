@@ -13,6 +13,7 @@ describe('Floor exact Work contract with unchanged native pricing decoder',()=>{
   expect(h?.lines[0]?.quantity).toBe('0001.2500');expect(h?.version).toBe('9007199254740993');expect(h?.lines[0]?.productVersion).toBe('9007199254740993')
   if(visible)expect(h?.lines[0]?.pricing?.unitPrice).toBe('90.5000');else expect(h?.lines.every(l=>l.pricing===null)).toBe(true)
  })
+ it('accepts native canonical links for equivalent uppercase route and company GUIDs',()=>{const f=fixture(company);expect(decodeWorkDecisionPreview(f,company.toUpperCase(),kind,id.toUpperCase())).toEqual(f)})
  it.each(['1','9223372036854775807'])('retains fullInt64 terminal bounds %s',version=>{const f=fixture(company,false,version);expect(decodeWorkDecisionPreview(f,company,kind,id)).toEqual(f)})
  it('leaves native default decoder compatibility untouched while Work requires exact discountCheck',()=>{
   const p=clone(human(company).lines[0]!.pricing)!;const {discountCheck:omitted,...legacy}=p;expect(omitted).toBeNull()

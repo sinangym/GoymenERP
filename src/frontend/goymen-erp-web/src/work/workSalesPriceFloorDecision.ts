@@ -77,7 +77,7 @@ export function validSalesPriceFloorPreview(v:Record<string,unknown>,company:str
  const floor=h.lines.filter(l=>l.floorException!==null).sort((a,b)=>a.lineNo-b.lineNo)
  if(floor.length===0||v.rules.length!==Math.min(floor.length,8)||v.references.length===0||v.references.length>12)return false
  const first=v.references[0]
- if(!record(first)||first.role!=='sales-order-draft'||first.label!==h.documentNo||!same(first.recordId,id)||first.link!==`/satis/siparisler/${id}`)return false
+ if(!record(first)||first.role!=='sales-order-draft'||first.label!==h.documentNo||!same(first.recordId,id)||typeof first.link!=='string'||first.link.toLowerCase()!==`/satis/siparisler/${id.toLowerCase()}`)return false
  return v.references.every(r=>record(r)&&hasExactKeys(r,['role','label','recordId','link'])&&text(r.label)&&r.label.length<=200&&guid(r.recordId)
   &&(r.role==='sales-order-draft'?same(r.recordId,id)&&r.label===h.documentNo&&r.link===first.link:r.link===null&&(r.role==='price-list'||r.role==='product'&&h.lines.some(l=>same(r.recordId,l.productId)))))
   &&v.rules.every(r=>record(r)&&hasExactKeys(r,['ruleCode','threshold','actual','deviation','unit'])&&r.ruleCode==='sales.price-below-floor'
