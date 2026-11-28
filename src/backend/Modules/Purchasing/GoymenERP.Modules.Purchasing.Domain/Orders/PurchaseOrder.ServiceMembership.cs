@@ -7,13 +7,18 @@ public sealed record PurchaseOrderServiceSelection(Guid ServiceOrderId, long Exp
 public sealed record PurchaseOrderServiceMembership(Guid CompanyId, Guid PurchaseOrderId, Guid SupplierPartyId,
     Guid CompanyAccountId, Guid CurrencyId, Guid ServiceOrderId, long PreparedVersion, IReadOnlyList<Guid> LineIds);
 
+public sealed record PurchaseOrderServiceMembershipBatch(long OrderVersionAfter, DateTimeOffset RecordedAtUtc,
+    IReadOnlyList<PurchaseOrderServiceMembership> Members);
+
 public sealed partial class PurchaseOrder
 {
     public const string ServiceMembershipUnavailable = "purchasing_mixed_order_participant_unavailable";
     private readonly List<PurchaseOrderServiceMembership> serviceMemberships = [];
+    private readonly List<PurchaseOrderServiceMembershipBatch> serviceMembershipBatches = [];
 
     // Server-only facts. No legacy order DTO, request hash or event is extended by this prerequisite.
     [JsonIgnore] public IReadOnlyList<PurchaseOrderServiceMembership> ServiceMemberships => serviceMemberships.AsReadOnly();
+    [JsonIgnore] public IReadOnlyList<PurchaseOrderServiceMembershipBatch> ServiceMembershipBatches => serviceMembershipBatches.AsReadOnly();
 
     /// <summary>The caller supplies the actual stored parent account and selected native child records.
     /// Persistence, authority and same-transaction membership uniqueness remain the owner's responsibility.</summary>
@@ -23,6 +28,17 @@ public sealed partial class PurchaseOrder
     {
         RequireVersion(expectedVersion);
         RequireStatus(PurchaseOrderStatus.Draft, PurchasingRuleCodes.OrderNotDraft, "Üyelik yalnız taslak siparişte bağlanabilir.");
+        var additions = PrepareServiceMemberships(companyAccountId, services, selections);
+        // Validate the whole set first; an invalid later child must not leave a partial binding.
+        _ = checked(Version + 1);
+        serviceMemberships.AddRange(additions);
+        Touch(now);
+        serviceMembershipBatches.Add(new(Version, UpdatedAtUtc, additions.AsReadOnly()));
+    }
+
+    private List<PurchaseOrderServiceMembership> PrepareServiceMemberships(Guid companyAccountId,
+        IReadOnlyList<PurchaseServiceOrderState> services, IReadOnlyList<PurchaseOrderServiceSelection> selections)
+    {
         Identity.Require(companyAccountId, nameof(companyAccountId));
         ArgumentNullException.ThrowIfNull(services); ArgumentNullException.ThrowIfNull(selections);
         if (Money is null || services.Count == 0 || services.Count != selections.Count
@@ -47,10 +63,27 @@ public sealed partial class PurchaseOrder
             additions.Add(new(CompanyId, Id, SupplierPartyId, companyAccountId, Money.CurrencyId, service.OrderId,
                 service.Version, Array.AsReadOnly(selection.LineIds.ToArray())));
         }
-        // Validate the whole set first; an invalid later child must not leave a partial binding.
-        _ = checked(Version + 1);
-        serviceMemberships.AddRange(additions);
-        Touch(now);
+        return additions;
+    }
+
+    /// <summary>Stored Draft timeline only. Restores the exact recorded slot, never calls Touch, Approve or a command.</summary>
+    internal void RestoreServiceMembershipBatch(PurchaseOrderServiceMembershipBatch batch, Guid companyAccountId,
+        IReadOnlyList<PurchaseServiceOrderState> preparedServices)
+    {
+        ArgumentNullException.ThrowIfNull(batch);
+        RequireStatus(PurchaseOrderStatus.Draft, PurchasingRuleCodes.OrderNotDraft, "Membership restore requires the recorded Draft timeline.");
+        if (batch.OrderVersionAfter != checked(Version + 1) || batch.RecordedAtUtc.Offset != TimeSpan.Zero
+            || batch.Members is not { Count: > 0 } || batch.Members.Any(x => x is null))
+            throw new InvalidOperationException("Stored membership batch version or shape is invalid.");
+        var selections = batch.Members.Select(x => new PurchaseOrderServiceSelection(x.ServiceOrderId, x.PreparedVersion, x.LineIds)).ToArray();
+        var restored = PrepareServiceMemberships(companyAccountId, preparedServices, selections);
+        for (var i = 0; i < restored.Count; i++)
+            if ((restored[i] with { LineIds = batch.Members[i].LineIds }) != batch.Members[i])
+                throw new InvalidOperationException("Stored membership differs from the actual parent/prepared child facts.");
+        serviceMemberships.AddRange(restored);
+        serviceMembershipBatches.Add(new(batch.OrderVersionAfter, batch.RecordedAtUtc, restored.AsReadOnly()));
+        Version = batch.OrderVersionAfter;
+        UpdatedAtUtc = batch.RecordedAtUtc;
     }
 
     /// <summary>Pure native transitions, NOT an authorized or durable command. A future owned participant must first

@@ -248,6 +248,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
         ConfigureIncomingInvoices(modelBuilder);
         ConfigureInvoiceImports(modelBuilder);
         ConfigureServiceOrders(modelBuilder);
+        ConfigureServiceMemberships(modelBuilder);
         ConfigureAdditionalCosts(modelBuilder);
         ConfigureUnorderedAcceptances(modelBuilder);
         modelBuilder.ConfigureAuditEvent(excludeFromMigrations: true);
@@ -919,6 +920,7 @@ public sealed partial class PurchasingDbContext(DbContextOptions<PurchasingDbCon
         GuardSupplierRevisionHistory();
         GuardIncomingInvoiceSnapshots();
         GuardServiceOrders();
+        GuardServiceMemberships();
         GuardAdditionalCosts();
         GuardUnorderedAcceptances();
         foreach (var entry in ChangeTracker.Entries<IPurchasingTenantRow>())

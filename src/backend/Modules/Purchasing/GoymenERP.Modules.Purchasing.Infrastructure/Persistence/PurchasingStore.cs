@@ -312,6 +312,7 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
         }
 
         if (order.Status != PurchaseOrderStatus.Draft || order.Lines.Count == 0 || order.Acceptances.Count > 0
+            || order.ServiceMemberships.Count != 0
             || order.Lines.Any(line => line.Kind != PurchaseOrderLineKind.General))
         {
             throw new ArgumentException("Yeni sipariş genel satırlı bir taslaktır; kabul payı ve teknik kırılımı olamaz.", nameof(build));
@@ -553,7 +554,10 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
         var adjustmentRows = await dbContext.ReceiptAdjustments.AsNoTracking().Where(item => item.OrderId == orderId).ToListAsync(cancellationToken);
         var cancellationRows = await dbContext.CancellationHistory.AsNoTracking().Where(item => item.OrderId == orderId).ToListAsync(cancellationToken);
         var batchRows = await dbContext.ReceiptAdjustmentBatches.AsNoTracking().Where(item => item.OrderId == orderId).ToListAsync(cancellationToken);
-        var order = RestoreOrder(row, lineRows, acceptanceRows, sliceRows, closureRows, rateRows, adjustmentRows, cancellationRows, batchRows);
+        var membership = await ReadServiceMembershipsAsync([orderId], cancellationToken);
+        var order = RestoreOrder(row, lineRows, acceptanceRows, sliceRows, closureRows, rateRows, adjustmentRows, cancellationRows, batchRows,
+            membership.Members, membership.Prepared);
+        var membershipCountBefore = order.ServiceMemberships.Count;
         var versionBefore = order.Version;
         var rateChangeBefore = order.LastExchangeRateChange;
         var before = Snapshot(order);
@@ -567,7 +571,7 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
         if (freshDecisionFence is not null) await freshDecisionFence(cancellationToken);
         mutate(order, now);
         if (order.Version != versionBefore + 1 || order.Id != row.Id || order.CompanyId != companyId || order.Lines.Count != lineRows.Count
-            || order.Acceptances.Count != acceptanceRows.Count)
+            || order.Acceptances.Count != acceptanceRows.Count || order.ServiceMemberships.Count != membershipCountBefore)
         {
             throw new InvalidOperationException("Bir komut tam olarak bir sürüm ilerletir; satır ve kabul payı eklemez.");
         }
@@ -1209,6 +1213,7 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
         }
 
         var ids = rows.Select(row => row.Id).ToArray();
+        var membership = await ReadServiceMembershipsAsync(ids, cancellationToken);
         var lines = await dbContext.OrderLines.AsNoTracking().Where(line => ids.Contains(line.OrderId)).ToListAsync(cancellationToken);
         var acceptances = await dbContext.Acceptances.AsNoTracking().Where(acceptance => ids.Contains(acceptance.OrderId)).ToListAsync(cancellationToken);
         var slices = await dbContext.DeliverySlices.AsNoTracking().Where(slice => ids.Contains(slice.OrderId)).ToListAsync(cancellationToken);
@@ -1227,7 +1232,10 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
             var ownRates = rates.Where(rate => rate.OrderId == row.Id).OrderBy(rate => rate.OrderVersionAfter).ToList();
             return new StoredPurchaseOrder(RestoreOrder(row, own, ownAcceptances, ownSlices, ownClosures, ownRates,
                 adjustments.Where(item => item.OrderId == row.Id).ToArray(), cancellations.Where(item => item.OrderId == row.Id).ToArray(),
-                batches.Where(item => item.OrderId == row.Id).ToArray()), row.CompanyAccountId, row.EffectiveOn,
+                batches.Where(item => item.OrderId == row.Id).ToArray(),
+                membership.Members.Where(item => item.OrderId == row.Id).ToArray(),
+                membership.Prepared.Where(item => membership.Members.Any(m => m.OrderId == row.Id && m.ServiceOrderId == item.OrderId
+                    && m.PreparedVersion == item.Version && m.CompanyId == item.CompanyId)).ToArray()), row.CompanyAccountId, row.EffectiveOn,
                 VersionsOf(own)) { DocumentNumber = row.DocumentNumber };
         })];
     }
@@ -1249,8 +1257,11 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
         IReadOnlyList<PurchaseOrderExchangeRateChangeRow>? exchangeRateChanges = null,
         IReadOnlyList<PurchaseReceiptAdjustmentRow>? receiptAdjustments = null,
         IReadOnlyList<PurchaseOrderCancellationHistoryRow>? cancellationHistory = null,
-        IReadOnlyList<PurchaseReceiptAdjustmentBatchRow>? receiptBatches = null)
+        IReadOnlyList<PurchaseReceiptAdjustmentBatchRow>? receiptBatches = null,
+        IReadOnlyList<PurchaseOrderServiceMembershipRow>? serviceMemberships = null,
+        IReadOnlyList<PurchaseServiceOrderRevisionRow>? preparedServices = null)
     {
+        var membershipTimeline = MembershipTimeline(row, serviceMemberships, preparedServices);
         var money = MoneyOf(row);
         var supplierHistory = PurchaseSupplierRevisionHistory.Read(row);
         var originalSupplier = supplierHistory?.Revisions[0].PreviousSupplierPartyId ?? row.SupplierPartyId;
@@ -1298,6 +1309,17 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
         while (true)
         {
             var draftVersionAfter = checked(order.Version + 1);
+            if (membershipTimeline.TryPeek(out var selectedMembership)
+                && ((revisions.TryPeek(out var competingSchedule) && competingSchedule[0].OrderVersionAfter == selectedMembership.Batch.OrderVersionAfter)
+                    || (rateChanges.TryPeek(out var competingRate) && competingRate.OrderVersionAfter == selectedMembership.Batch.OrderVersionAfter)
+                    || supplierActions?.ContainsKey(selectedMembership.Batch.OrderVersionAfter) == true))
+                throw new InvalidOperationException("A membership cannot share a recorded version with another native event.");
+            if (membershipTimeline.TryPeek(out var membershipBatch) && membershipBatch.Batch.OrderVersionAfter == draftVersionAfter)
+            {
+                membershipTimeline.Dequeue();
+                order.RestoreServiceMembershipBatch(membershipBatch.Batch, row.CompanyAccountId, membershipBatch.Prepared);
+                continue;
+            }
             if (revisions.TryPeek(out var draftRevision) && draftRevision[0].OrderVersionAfter == draftVersionAfter)
             {
                 ReplaySchedule(order, row, lines, revisions.Dequeue());
@@ -1319,6 +1341,8 @@ public sealed partial class PurchasingStore(PurchasingDbContext dbContext, IComp
 
             break;
         }
+
+        if (membershipTimeline.Count != 0) throw new InvalidOperationException("Stored membership has no exact Draft timeline slot.");
 
         if (supplierHistory is null && (row.Status == (int)PurchaseOrderStatus.Approved || row.Status == (int)PurchaseOrderStatus.Cancelled))
         {
