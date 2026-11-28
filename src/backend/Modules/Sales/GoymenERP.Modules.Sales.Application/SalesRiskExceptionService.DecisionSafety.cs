@@ -30,13 +30,21 @@ public sealed partial class SalesRiskExceptionService
         try
         {
             return await boundary.RunRiskExceptionDecisionAsync(envelope, hash, command, cleanBefore,
-                ct => DecideCoreAsync(id, no, request, command, permission, metadata, decide, audit, ct),
+                async ct => await Attach(await DecideCoreAsync(id, no, request, command, permission, metadata, decide, audit, ct), ct),
                 async ct =>
                 {
                     var replay = await FindReplayAsync(scope, permission, envelope, hash, command, ct);
-                    return replay is null ? null : Replayed(replay);
+                    return replay is null ? null : await Attach(Replayed(replay), ct);
                 }, async ct => { await RequireStillAsync(scope, permission, ct); ct.ThrowIfCancellationRequested(); }, token);
         }
         catch (SalesDraftStoreException refusal) { throw Store(refusal); }
+        async Task<SalesRiskExceptionCommandResult> Attach(SalesRiskExceptionCommandResult response, CancellationToken ct)
+        {
+            if (exceptions is not ISalesRiskExceptionDecisionReadStoreV1 reader) return response;
+            var receipt = await reader.ReadRiskExceptionDecisionReceiptAsync(envelope, hash, command, response,
+                async cancellation => { await RequireStillAsync(scope, permission, cancellation); cancellation.ThrowIfCancellationRequested(); }, ct);
+            ct.ThrowIfCancellationRequested();
+            return response with { OriginalDecisionReceipt = receipt };
+        }
     }
 }

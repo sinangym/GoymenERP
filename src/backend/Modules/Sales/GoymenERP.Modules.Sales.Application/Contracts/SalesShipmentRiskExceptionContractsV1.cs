@@ -100,7 +100,8 @@ public sealed record SalesRiskExceptionView(
 public sealed record SalesRiskExceptionListResponse(IReadOnlyList<SalesRiskExceptionView> Items);
 
 /// <summary>The command's answer to the route: the exception, whether it was replayed, and the first correlation (replay header).</summary>
-public sealed record SalesRiskExceptionCommandResult(SalesRiskExceptionView Exception, bool IsReplay, string OriginalCorrelationId);
+public sealed record SalesRiskExceptionCommandResult(SalesRiskExceptionView Exception, bool IsReplay, string OriginalCorrelationId)
+{ [System.Text.Json.Serialization.JsonIgnore] public SalesRiskExceptionOriginalDecisionReceiptV1? OriginalDecisionReceipt { get; init; } }
 
 /// <summary>The strict reader of the request body: unknown members, a null body or an empty id is a 400 (never repaired).</summary>
 public static class SalesRiskExceptionJson

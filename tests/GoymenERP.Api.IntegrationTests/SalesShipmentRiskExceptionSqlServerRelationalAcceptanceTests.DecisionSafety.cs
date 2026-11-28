@@ -53,8 +53,8 @@ public sealed partial class SalesShipmentRiskExceptionSqlServerRelationalAccepta
                 safe.Authority.AfterAwait = () =>
                 {
                     if (safe.Writer.HasPendingDrafts) pendingSeen = true;
-                    // Native Save post-fence1; whole-command post-execute2; final precommit3. No receipt read in this increment.
-                    var lateSave = save.Saved && ++savedFences == (phase == "precommit" ? 3 : 1);
+                    // Save post-fence1; receipt before/afterAttempt/afterAudit2..4; selected source pre/post5..6; outer source return7; post-execute8; precommit9; postcommit release10. Terminal refusal without attachment stays3.
+                    var lateSave = save.Saved && ++savedFences == (phase == "precommit" ? 9 : 1);
                     if (phase == "after-audit" ? pendingSeen && !safe.Writer.HasPendingDrafts && !save.Saved : lateSave)
                     { fired = true; safe.Authority.Granted = false; }
                     return Task.CompletedTask;

@@ -15,11 +15,12 @@ namespace GoymenERP.Modules.Sales.Infrastructure.WorkInbox;
 /// revision. The exception stores no risk snapshot (limit, exposure): the rule carries no numbers — the order's risk check is
 /// recomputed on the order screen by the owner's calculator.
 /// </summary>
-internal sealed class SalesRiskExceptionWorkInboxSourceV1(
+internal sealed partial class SalesRiskExceptionWorkInboxSourceV1(
     ISalesWorkInboxStoreV1 store,
     ICompanyContext companyContext,
     ICurrentUser currentUser,
-    IErpAuthorityRevalidationService authority)
+    IErpAuthorityRevalidationService authority,
+    ISalesRiskExceptionDecisionReadV1? owner = null)
     : SalesWorkInboxSourceBaseV1(companyContext, currentUser, authority)
 {
     public const string KindName = "sales.risk-exception.v1";

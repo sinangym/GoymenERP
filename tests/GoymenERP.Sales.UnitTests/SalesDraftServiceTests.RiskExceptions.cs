@@ -539,7 +539,7 @@ public sealed partial class SalesDraftServiceTests
     /// A SYNTHETIC risk exception store under a tenant filter on <see cref="Company"/>: the attempts are keyed by command and key,
     /// a different actor or content under a key is a mismatch, and other companies' rows are invisible.
     /// </summary>
-    private sealed class FakeRiskExceptionStore : ISalesRiskExceptionStore
+    private sealed partial class FakeRiskExceptionStore : ISalesRiskExceptionStore
     {
         private readonly List<SalesShipmentRiskException> _items = [];
         private readonly Dictionary<(string Command, string Key), (string Actor, string Hash, SalesShipmentRiskException? Item,
