@@ -124,6 +124,7 @@ public sealed partial class PurchasingStore
                 || attempt.IdempotencyKeyHash != key || attempt.RequestHash != hash
                 || string.IsNullOrWhiteSpace(attempt.CorrelationId)
                 || attempt.RecordedAtUtc.Offset != TimeSpan.Zero
+                || PurchasingRequestHash.Compute(PurchasingCommands.OrderApproveV1, orderId, request) != hash
                 || events is not { Count: 1 } || events[0] is null || request.MixedServices is not { Count: > 0 }
                 || request.MixedServices.Any(x => x is null || x.LineIds is null)) return null;
             var audit = events[0];
@@ -135,7 +136,7 @@ public sealed partial class PurchasingStore
                 || original.OriginalCorrelationId != attempt.CorrelationId || original.RecordedAtUtc != attempt.RecordedAtUtc
                 || !MixedJsonEqual(JsonSerializer.Serialize(original.FrozenRequest, PurchasingJson.Options), JsonSerializer.Serialize(request, PurchasingJson.Options))
                 || !long.TryParse(request.ExpectedVersion, NumberStyles.None, CultureInfo.InvariantCulture, out var before)
-                || before < 1 || before == long.MaxValue || audit.EntityVersionBefore != before || audit.EntityVersionAfter != before + 1
+                || before < 1 || before == long.MaxValue || before.ToString(CultureInfo.InvariantCulture) != request.ExpectedVersion || audit.EntityVersionBefore != before || audit.EntityVersionAfter != before + 1
                 || original.Visible?.Order is not { } header || original.Withheld?.Order is not { } hidden
                 || header.Id != orderId || hidden.Id != orderId || header.CompanyId != attempt.CompanyId || hidden.CompanyId != attempt.CompanyId
                 || header.Version != (before + 1).ToString(CultureInfo.InvariantCulture) || hidden.Version != header.Version
@@ -150,6 +151,7 @@ public sealed partial class PurchasingStore
                 || original.Withheld.Lines.Any(x => x is null || x.Price is not null || x.KgPrice is not null || x.Realization is not null)
                 || after.NativeOrder.GetProperty("preparedBy").GetString() is not { Length: > 0 } maker || maker == actor
                 || JsonSerializer.Deserialize<JsonElement>(audit.BeforeJson).GetProperty("version").GetInt64() != before
+                || JsonSerializer.Deserialize<JsonElement>(audit.BeforeJson).GetProperty("status").GetString() != "Draft"
                 || after.NativeOrder.GetProperty("lines").GetArrayLength() != header.LineCount
                 || after.NativeOrder.GetProperty("version").GetInt64() != before + 1
                 || after.NativeOrder.GetProperty("status").GetString() != "Approved"

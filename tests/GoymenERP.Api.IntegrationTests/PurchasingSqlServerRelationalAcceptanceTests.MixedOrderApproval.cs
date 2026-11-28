@@ -230,10 +230,10 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
         var revisions = await read.Database.ServiceOrderRevisions.AsNoTracking().Where(x => x.OrderId == f.Service.OrderId).OrderBy(x => x.Version).ToArrayAsync();
         var hash = PurchasingRequestHash.Compute(PurchasingCommands.OrderApproveV1, id, request);
         Assert.NotNull(PurchasingStore.RestoreMixedOrderReceipt(attempt, [parentAudit], revisions, [childAudit], id, request, envelope, hash));
-        foreach (var fault in new[] { "actor", "version", "unknown", "prepared", "frozen", "hidden", "headerCompany", "time", "membership", "childCorrelation", "revision", "key" })
+        foreach (var fault in new[] { "actor", "version", "unknown", "prepared", "frozen", "hidden", "headerCompany", "time", "membership", "childCorrelation", "revision", "key", "beforeStatus", "frozenCanonicalHash" })
         {
             var root = JsonNode.Parse(parentAudit.AfterJson)!.AsObject(); var parentEnvelope = parentAudit.ToIntegrityEnvelope();
-            var childEnvelope = childAudit.ToIntegrityEnvelope(); var copied = revisions.Select(x => new PurchaseServiceOrderRevisionRow {
+            var childEnvelope = childAudit.ToIntegrityEnvelope(); var requestRead = request; var copied = revisions.Select(x => new PurchaseServiceOrderRevisionRow {
                 CompanyId = x.CompanyId, OrderId = x.OrderId, Version = x.Version, SnapshotJson = x.SnapshotJson }).ToArray();
             if (fault == "actor") parentEnvelope = parentEnvelope with { ActorId = run.Actor };
             if (fault == "version") parentEnvelope = parentEnvelope with { EntityVersionAfter = 5 };
@@ -244,12 +244,22 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             if (fault == "headerCompany") root["mixedApproval"]!["visible"]!["order"]!["companyId"] = CompanyB.ToString("D");
             if (fault == "time") root["nativeOrder"]!["approval"]!["approvedAtUtc"] = DateTimeOffset.UtcNow.AddDays(1).ToString("O");
             if (fault == "membership") root["mixedApproval"]!["membership"] = new JsonArray();
+            if (fault == "beforeStatus")
+            {
+                var before = JsonNode.Parse(parentEnvelope.BeforeJson)!; before["status"] = "Approved";
+                parentEnvelope = parentEnvelope with { BeforeJson = before.ToJsonString() };
+            }
+            if (fault == "frozenCanonicalHash")
+            {
+                requestRead = request with { ExpectedVersion = "03" };
+                root["mixedApproval"]!["frozenRequest"]!["expectedVersion"] = "03";
+            }
             if (fault == "childCorrelation") childEnvelope = childEnvelope with { CorrelationId = "SENTETIK-other-command" };
             if (fault == "revision") copied[1].SnapshotJson = JsonSerializer.Serialize(f.Service with { Version = 2 }, PurchaseServiceOrderStoreV1.Json);
             parentEnvelope = parentEnvelope with { AfterJson = root.ToJsonString() };
             var changedParent = AuditEvent.Create(new(parentEnvelope, AuditEventIntegrity.Compute(parentEnvelope)));
             var changedChild = AuditEvent.Create(new(childEnvelope, AuditEventIntegrity.Compute(childEnvelope)));
-            Assert.Null(PurchasingStore.RestoreMixedOrderReceipt(attempt, [changedParent], copied, [changedChild], id, request,
+            Assert.Null(PurchasingStore.RestoreMixedOrderReceipt(attempt, [changedParent], copied, [changedChild], id, requestRead,
                 fault == "key" ? envelope with { IdempotencyKey = "SENTETIK-other-key" } : envelope, hash));
         }
         Assert.False(read.Writer.HasPendingDrafts); Assert.Empty(read.Database.ChangeTracker.Entries());
