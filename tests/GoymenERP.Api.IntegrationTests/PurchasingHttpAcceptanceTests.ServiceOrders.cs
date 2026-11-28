@@ -64,6 +64,7 @@ public sealed partial class PurchasingHttpAcceptanceTests
         public bool Replay { get; init; } public int? Refusal { get; init; }
         public ApprovePurchaseServiceOrderV1? Request { get; private set; } public PurchasingCommandMetadata? Metadata { get; private set; }
         public RevisePurchaseServiceOrderPricesV1? PriceRequest { get; private set; }
+        public RevisePurchaseServiceOrderPricesV1? SupplierRevisionPriceRequest { get; private set; }
         public RevisePurchaseServiceOrderTaxV1? TaxRequest { get; private set; }
         public Task<PurchaseServiceOrderResponseV1> ReviseTaxAsync(Guid id, RevisePurchaseServiceOrderTaxV1 request, PurchasingCommandMetadata metadata, CancellationToken token = default)
         { TaxRequest = request; Metadata = metadata; return Task.FromResult(new PurchaseServiceOrderResponseV1(View(), Replay, "SENTETIK-original")); }
@@ -78,6 +79,8 @@ public sealed partial class PurchasingHttpAcceptanceTests
         { Request = request; Metadata = metadata; return Task.FromResult(new PurchaseServiceOrderResponseV1(View(), Replay, "SENTETIK-original")); }
         public Task<PurchaseServiceOrderResponseV1> CreateAsync(CreatePurchaseServiceOrderV1 request, PurchasingCommandMetadata metadata, CancellationToken token = default) => throw new NotSupportedException();
         public Task<PurchaseServiceOrderResponseV1> AcceptAsync(Guid id, AcceptPurchaseServiceV1 request, PurchasingCommandMetadata metadata, CancellationToken token = default) => throw new NotSupportedException();
+        public Task<PurchaseServiceOrderResponseV1> SetSupplierRevisionPricesAsync(Guid id, RevisePurchaseServiceOrderPricesV1 request, PurchasingCommandMetadata metadata, CancellationToken token = default)
+        { SupplierRevisionPriceRequest = request; Metadata = metadata; return Task.FromResult(new PurchaseServiceOrderResponseV1(View(), false, "SENTETIK-original")); }
         public Task<PurchaseServiceOrderResponseV1> RevisePricesAsync(Guid id, RevisePurchaseServiceOrderPricesV1 request, PurchasingCommandMetadata metadata, CancellationToken token = default)
         { PriceRequest = request; return Task.FromResult(new PurchaseServiceOrderResponseV1(View(), false, "SENTETIK-original")); }
     }
