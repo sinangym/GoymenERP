@@ -55,7 +55,15 @@ it.each([{company:COMPANY_B,answer:id,capabilities:[AI_PANEL_CAPABILITY]},{compa
 it.each([503,403])('drops a pending feedback UI across a new authentication session after %i',async status=>{
  Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-feedback-old'})
  const calls=installFetch({capabilities:[AI_PANEL_CAPABILITY],respond:(url,init)=>url.includes(path)?init?.method==='POST'?problem(status):json(view):undefined})
- mount();await screen.findByLabelText(T.kind);fireEvent.change(screen.getByLabelText(T.kind),{target:{value:'Accepted'}});fireEvent.click(screen.getByRole('button',{name:T.save}));await screen.findByText(T.unknown)
+ mount();await screen.findByLabelText(T.kind);fireEvent.change(screen.getByLabelText(T.kind),{target:{value:'Accepted'}});fireEvent.click(screen.getByRole('button',{name:T.save}))
+ if(status===503)await screen.findByText(T.unknown)
+ else {
+  await waitFor(()=>expect(document.querySelector('[data-state="not-found"]')).not.toBeNull())
+  expect(screen.queryByRole('region',{name:T.heading})).toBeNull()
+  expect(screen.queryByRole('button',{name:T.retry})).toBeNull()
+ }
+ expect(calls.filter(call=>call.url.includes(path)&&call.method==='GET')).toHaveLength(1)
+ expect(calls.filter(call=>call.url.includes(path)&&call.method==='POST')).toHaveLength(1)
  cleanup();Object.assign(IDENTITY,{authenticationSessionBinding:'SENTETIK-feedback-new'});mount();await screen.findByLabelText(T.kind)
  expect(screen.queryByRole('button',{name:T.retry})).toBeNull();expect(calls.filter(call=>call.url.includes(path)&&call.method==='POST')).toHaveLength(1)
 })
