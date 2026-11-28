@@ -155,7 +155,7 @@ public sealed class CounterpartyCreationNeedHostV1Tests
         internal Rig()
         {
             correlation.Set(Original, Metadata.CausationId, "Web", null, null); Native = new(this); Tasks = DispatchProxy.Create<IWorkCollaborationServiceV1, TaskProxy>();
-            ((TaskProxy)(object)Tasks).Create = Native.Create; Host = Build(correlation);
+            ((TaskProxy)(object)Tasks).CreateTask = Native.Create; Host = Build(correlation);
         }
         internal CounterpartyCreationNeedHostV1 Build(ICorrelationContext trace) => new(Company, User, trace, Authority, Holders, Tasks);
         internal Task<WorkTaskResponseV1> Create(CounterpartyCreationNeedRequestV1 q, CancellationToken token = default) => Host.CreateAsync(q, Metadata, token);
@@ -167,9 +167,9 @@ public sealed class CounterpartyCreationNeedHostV1Tests
     }
     public class TaskProxy : DispatchProxy
     {
-        internal Func<CreateWorkTaskRequestV1, WorkCommandMetadataV1, CancellationToken, Task<WorkTaskResponseV1>> Create = (_, _, _) => throw new NotSupportedException();
+        internal Func<CreateWorkTaskRequestV1, WorkCommandMetadataV1, CancellationToken, Task<WorkTaskResponseV1>> CreateTask = (_, _, _) => throw new NotSupportedException();
         protected override object? Invoke(MethodInfo? targetMethod, object?[]? args) => targetMethod?.Name == nameof(IWorkCollaborationServiceV1.CreateTaskAsync)
-            ? Create((CreateWorkTaskRequestV1)args![0]!, (WorkCommandMetadataV1)args[1]!, (CancellationToken)args[2]!) : throw new NotSupportedException("No unrelated task/read/native Party command");
+            ? CreateTask((CreateWorkTaskRequestV1)args![0]!, (WorkCommandMetadataV1)args[1]!, (CancellationToken)args[2]!) : throw new NotSupportedException("No unrelated task/read/native Party command");
     }
     private sealed record Saved(CreateWorkTaskRequestV1 Body, WorkTaskResponseV1 Answer);
     private sealed class Protocol(Rig rig)
@@ -191,7 +191,7 @@ public sealed class CounterpartyCreationNeedHostV1Tests
             var answer = saved!.Answer with { IsReplay = replay }; return Task.FromResult(Change?.Invoke(answer) ?? answer);
         }
     }
-    private sealed class MutableCompany : ICompanyContext { internal Guid Id = Company; public bool IsResolved => Id != Guid.Empty; public Guid CompanyId => Id; }
+    private sealed class MutableCompany : ICompanyContext { internal Guid Id = Company; public bool IsResolved => Id != Guid.Empty; public Guid CompanyId => Id; public void Set(Guid companyId) => Id = companyId; }
     private sealed class MutableUser : ICurrentUser
     { internal Guid ActorId = Actor; internal bool Authenticated = true, Member = true; public bool IsAuthenticated => Authenticated; public string UserId => ActorId.ToString("D");
         public IReadOnlySet<Guid> AllowedCompanyIds { get; } = new HashSet<Guid>([Company]); public bool CanAccessCompany(Guid id) => Member && id == Company; }
