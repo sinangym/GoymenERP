@@ -20,7 +20,10 @@ public sealed partial class WorkDecisionHostV1
     private static bool ValidSourceVoucherProof(string kind, WorkApprovalDecisionSnapshotV1 snapshot) => kind != SourceVoucher
         ? snapshot.SourceVoucherProof is null
         : snapshot.SourceVoucherProof is { } p && p.CompanyId == snapshot.CompanyId && p.VoucherId == snapshot.Item.ItemId
-            && SourceVoucherVersion(snapshot.SourceVersion) && snapshot.Pending == (!p.SourceCancelled && p.Status is "AwaitingApproval" or "PeriodWaiting")
+            && SourceVoucherVersion(snapshot.SourceVersion)
+            && (p.Status is not ("AwaitingApproval" or "PeriodWaiting") || snapshot.SourceVersion == "1")
+            && (p.Status is not ("Posted" or "CancellationReversalPending" or "CancelledByReversal") || snapshot.SourceVersion != "1")
+            && snapshot.Pending == (!p.SourceCancelled && p.Status is "AwaitingApproval" or "PeriodWaiting")
             && AccountingSourceVoucherDecisionBindingV1.MatchesDecisionProof(snapshot.Item, p);
     private async Task SourceVoucherFenceAsync(WorkApprovalDecisionSnapshotV1 snapshot, string actor, CancellationToken token)
     {

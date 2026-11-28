@@ -119,6 +119,14 @@ public sealed class SourceVoucherWorkDecisionHostTests
         var foreign=new SalesSource(s.SourceVoucherProof!);Assert.Equal(503,(await Assert.ThrowsAsync<WorkDecisionException>(()=>r.WithSource(foreign).PreviewAsync(foreign.Kind,Id,default))).Status);
         foreign.Proof=null;Assert.Equal(foreign.Kind,(await r.WithSource(foreign).PreviewAsync(foreign.Kind,Id,default)).Kind);
     }
+    [Theory] [InlineData("2")] [InlineData("9223372036854775807")]
+    public async Task Pending_native_version_is_exactly_one_before_any_approval_effect(string version)
+    {
+        using var rig = new Rig();
+        rig.Source.Change = snapshot => snapshot with { SourceVersion = version };
+        Assert.Equal(503, (await Assert.ThrowsAsync<WorkDecisionException>(() => rig.Decide())).Status);
+        Assert.Equal(0, rig.Port.Calls); Assert.Equal(0, rig.Port.Effects); Assert.Empty(rig.Port.Commands);
+    }
     public static IEnumerable<object[]> ForeignCarriers => new object[][] {["ManufacturingPlanReapproval"],["InventoryTransferLoss"],["CounterpartyTaxIdentityChange"],["CounterpartyLegalNameChange"],["LogisticsPlanExcess"],["InventoryTransferLossProof"],["LogisticsPlanExcessProof"],["InventoryTransferOverageProof"],["LogisticsWeighingDifferenceProof"],["SupplierReturnCostExceptionProof"],["InventoryStockCountProof"],["BankAccountProof"],["InventoryStockScrapProof"],["LogisticsDispatchNoteProof"],["LogisticsCustomerReturnProof"],["BankAccountIbanChangeProof"],["ProductPackageStandardProof"],["ProductPriceListProof"],["PartyCreditLimitProof"],["OfficialInvoiceImportProof"],["OfficialSalesInvoiceProof"],["ManualBankPaymentReversalProof"],["ManualReceiptReversalProof"],["ExpensePaymentProof"],["BankCreditLimitProof"],["OpeningBalanceProof"],["CreditMovementProof"],["CashExchangeBookValueProof"],["NormalJournalDraftProof"],["AccountingPeriodOpeningProof"],["AccountingPeriodReopeningProof"],["JournalReversalProof"],["ApprovedSourceCatalogProof"],["PostingAccountMappingProof"],["ManufacturingCostDifferenceProof"],["InvoiceLineCogsProof"],["InventoryCostProof"],["InventoryCostCancellationProof"] };
     [Theory] [MemberData(nameof(ForeignCarriers))]
     public async Task Every_other_typed_carrier_is_rejected_before_native_dispatch(string name)
