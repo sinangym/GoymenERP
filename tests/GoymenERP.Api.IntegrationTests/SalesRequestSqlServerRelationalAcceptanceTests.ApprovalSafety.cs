@@ -53,7 +53,16 @@ public sealed partial class SalesRequestSqlServerRelationalAcceptanceTests
     public Task Actual_Sales_numbered_over_delivery_aliases_preserve_caller_work_and_refuse_without_SQL(string fault) =>
         VerifyGuardedNativeComposition(fault, discount: false, overDelivery: true);
 
-    private static async Task VerifyGuardedNativeComposition(string fault, bool discount, bool overDelivery = false)
+    [Theory]
+    [InlineData("caller-audit")]
+    [InlineData("caller-dirty")]
+    [InlineData("caller-audit-second-await")]
+    [InlineData("caller-dirty-second-await")]
+    [InlineData("missing-writer")]
+    public Task Actual_Sales_risk_exception_aliases_preserve_caller_work_and_refuse_without_SQL(string fault) =>
+        VerifyGuardedNativeComposition(fault, discount: false, risk: true);
+
+    private static async Task VerifyGuardedNativeComposition(string fault, bool discount, bool overDelivery = false, bool risk = false)
     {
         var config = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
@@ -82,10 +91,12 @@ public sealed partial class SalesRequestSqlServerRelationalAcceptanceTests
         Assert.Same(core, p.GetRequiredService<ISalesDiscountDecisionReadV1>());
         Assert.Same(core, p.GetRequiredService<ISalesOverDeliveryRequestDecisionReadV1>());
         var store = p.GetRequiredService<SalesStore>(); Assert.Same(store, p.GetRequiredService<ISalesRequestStore>());
+        Assert.Same(store, p.GetRequiredService<ISalesRiskExceptionStore>());
+        Assert.Same(store, p.GetRequiredService<ISalesOrderDraftStore>());
         var db = p.GetRequiredService<SalesDbContext>(); Assert.Same(db, p.GetRequiredService<SalesDbContext>());
         var collector = p.GetRequiredService<AuditEventCollector>(); Assert.Same(collector, p.GetRequiredService<IAuditEventCollector>());
         var writer = p.GetService<IAuditTransactionWriterV1>(); var authority = p.GetRequiredService<RequestSafetyAuthority>();
-        authority.ExpectedPermission = overDelivery ? SalesPermissionManifestV1.OrdersOverDeliveryApprove
+        authority.ExpectedPermission = risk ? SalesPermissionManifestV1.OrdersRiskExceptionApprove : overDelivery ? SalesPermissionManifestV1.OrdersOverDeliveryApprove
             : discount ? SalesPermissionManifestV1.OrdersDiscountExceptionApprove : SalesPermissionManifestV1.RequestsApprove;
         var callerPhase = fault.EndsWith("second-await", StringComparison.Ordinal) ? 2 : 1;
         var caller = new DocumentCounterRow { CompanyId = CompanyA, Series = "SR", Next = 1, Version = 1, UpdatedAtUtc = DateTimeOffset.UtcNow };
@@ -98,7 +109,8 @@ public sealed partial class SalesRequestSqlServerRelationalAcceptanceTests
         var failure = await Assert.ThrowsAsync<SalesDraftServiceException>(async () =>
         {
             var metadata = new SalesCommandMetadata("SENTETIK-composition-key", "SENTETIK-composition", null, DateTimeOffset.UtcNow);
-            if (overDelivery) await core.ApproveOverDeliveryRequestAsync(Guid.NewGuid(), 1, new("1"), metadata);
+            if (risk) await p.GetRequiredService<ISalesRiskExceptionService>().ApproveRiskExceptionAsync(Guid.NewGuid(), 1, new("1"), metadata);
+            else if (overDelivery) await core.ApproveOverDeliveryRequestAsync(Guid.NewGuid(), 1, new("1"), metadata);
             else if (discount) await core.ApproveDiscountExceptionsAsync(Guid.NewGuid(), new("1", []), metadata);
             else await core.ApproveRequestAsync(Guid.NewGuid(), new("1"), metadata);
         });

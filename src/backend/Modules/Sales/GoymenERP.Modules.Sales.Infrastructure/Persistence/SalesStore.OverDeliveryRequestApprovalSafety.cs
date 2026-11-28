@@ -9,7 +9,7 @@ namespace GoymenERP.Modules.Sales.Infrastructure.Persistence;
 public sealed partial class SalesStore : ISalesOverDeliveryRequestApprovalStoreV1
 {
     private OwnedOverDeliveryRequestApproval? ownedOverDeliveryRequestApproval;
-    public bool OverDeliveryRequestApprovalEntryIsClean => officialCancellationAuditWriter is not null && ownedOverDeliveryRequestApproval is null && overDeliveryRequestDecisionReadFence is null && ownedQuoteApproval is null && quoteDecisionReadFence is null
+    public bool OverDeliveryRequestApprovalEntryIsClean => officialCancellationAuditWriter is not null && ownedRiskExceptionDecision is null && ownedOverDeliveryRequestApproval is null && overDeliveryRequestDecisionReadFence is null && ownedQuoteApproval is null && quoteDecisionReadFence is null
         && ownedRequestApproval is null && ownedPriceFloorApproval is null && ownedDiscountApproval is null && dbContext.Database.IsRelational() && System.Transactions.Transaction.Current is null
         && dbContext.Database.CurrentTransaction is null && !dbContext.ChangeTracker.HasChanges() && !officialCancellationAuditWriter.HasPendingDrafts;
 

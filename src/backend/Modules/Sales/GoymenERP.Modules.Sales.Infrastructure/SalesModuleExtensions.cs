@@ -232,7 +232,7 @@ public static class SalesModuleExtensions
         serviceProvider.GetRequiredService<ISalesRiskExceptionStore>(),
         serviceProvider.GetRequiredService<ISalesOrderDraftStore>(),
         serviceProvider.GetRequiredService<TimeProvider>(),
-        serviceProvider.GetRequiredService<ISalesOrderRiskOutcomeSource>());
+        serviceProvider.GetRequiredService<ISalesOrderRiskOutcomeSource>()).WithRiskExceptionDecisionSafety();
 
     // Named for the same architecture guard as the factories below: the company context is resolved, never registered.
     // A missing Logistics port stays null: the overdue check answers Unavailable, never a silent zero.

@@ -11,7 +11,7 @@ public sealed partial class SalesStore : ISalesDiscountApprovalStoreV1
     private OwnedDiscountApproval? ownedDiscountApproval;
 
     public bool DiscountApprovalEntryIsClean => officialCancellationAuditWriter is not null
-        && ownedDiscountApproval is null && ownedOverDeliveryRequestApproval is null && overDeliveryRequestDecisionReadFence is null && ownedPriceFloorApproval is null && ownedRequestApproval is null && ownedQuoteApproval is null && quoteDecisionReadFence is null && dbContext.Database.IsRelational()
+        && ownedDiscountApproval is null && ownedOverDeliveryRequestApproval is null && ownedRiskExceptionDecision is null && overDeliveryRequestDecisionReadFence is null && ownedPriceFloorApproval is null && ownedRequestApproval is null && ownedQuoteApproval is null && quoteDecisionReadFence is null && dbContext.Database.IsRelational()
         && System.Transactions.Transaction.Current is null && dbContext.Database.CurrentTransaction is null
         && !dbContext.ChangeTracker.HasChanges() && !officialCancellationAuditWriter.HasPendingDrafts;
 
