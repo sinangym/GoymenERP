@@ -1,5 +1,8 @@
 using System.Globalization;
+using System.Data.Common;
 using System.Text.Json;
+using GoymenERP.BuildingBlocks.Multitenancy;
+using GoymenERP.Modules.Audit.Application.Contracts;
 using GoymenERP.Modules.Audit.Domain.Events;
 using GoymenERP.Modules.Purchasing.Application.Contracts;
 using GoymenERP.Modules.Purchasing.Domain;
@@ -9,11 +12,104 @@ using GoymenERP.Modules.Purchasing.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace GoymenERP.Api.IntegrationTests;
 
 public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
 {
+    [SqlServerFact]
+    public async Task Mixed_price_nonrace_refusal_rechecks_authority_and_cancellation_after_actual_rollback_and_disposal_before_release()
+    {
+        await using var run = await Run.StartAsync();
+        // Real provider transaction callbacks; authority/cancellation losses are controlled, not a simultaneous race.
+        foreach (var dispose in new[] { false, true })
+            foreach (var loss in new[] { "stable", "authority", "cancel" })
+            {
+                var f = await SupplierRevisionSourcesAsync(run); var bad = PriceRequest(f, "4", "2", "-1");
+                var envelope = AdmissionEnvelope(run, "mixed-price-cleanup-release-" + f.Parent.Order.Id.ToString("N"));
+                var audits = await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents");
+                var childAttempts = await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.ServiceOrderAttempts");
+                using var cancellation = new CancellationTokenSource(); var granted = true; var releaseFences = 0;
+                var probe = new MixedPriceCleanupReleaseProbe(dispose, () => {
+                    if (loss == "authority") granted = false;
+                    if (loss == "cancel") cancellation.Cancel();
+                });
+                await using (var scope = new MixedPriceCleanupReleaseScope(run, probe))
+                {
+                    Task Fence(CancellationToken ct)
+                    {
+                        if (probe.Fired)
+                        {
+                            releaseFences++;
+                            // This callback must run after BOTH provider cleanup awaits and local cleanup.
+                            Assert.Equal(1, probe.Rollbacks); Assert.Equal(1, probe.Disposals);
+                            Assert.Null(scope.Database.Database.CurrentTransaction);
+                            Assert.Empty(scope.Database.ChangeTracker.Entries()); Assert.False(scope.Writer.HasPendingDrafts);
+                        }
+                        ct.ThrowIfCancellationRequested();
+                        if (!granted) throw new PurchasingServiceException(403, "forbidden");
+                        return Task.CompletedTask;
+                    }
+                    var failure = await Record.ExceptionAsync(() => scope.Revise(f, bad, envelope, Fence, cancellation.Token));
+                    if (loss == "stable") Assert.IsType<ArgumentException>(failure); // Native Application still maps this exact refusal to422.
+                    else if (loss == "authority") Assert.Equal(403, Assert.IsType<PurchasingServiceException>(failure).Status);
+                    else Assert.IsAssignableFrom<OperationCanceledException>(failure);
+                    Assert.True(probe.Fired); Assert.Equal(1, probe.Rollbacks); Assert.Equal(1, probe.Disposals);
+                    Assert.Equal(loss == "cancel" ? 0 : 1, releaseFences); // The existing owned Fence checks a canceled token before the callback.
+                    Assert.Null(scope.Database.Database.CurrentTransaction);
+                    Assert.Empty(scope.Database.ChangeTracker.Entries()); Assert.False(scope.Writer.HasPendingDrafts);
+                }
+                Assert.Equal(4L, await run.ScalarAsync<long>("SELECT Version FROM purchasing.PurchaseOrders WHERE Id=@id", ("@id", f.Parent.Order.Id)));
+                Assert.Equal(2L, await run.ScalarAsync<long>("SELECT Version FROM purchasing.ServiceOrders WHERE OrderId=@id", ("@id", f.Service.OrderId)));
+                Assert.Equal(audits, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents"));
+                Assert.Equal(childAttempts, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.ServiceOrderAttempts"));
+                Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseAttempts WHERE CommandName=@cmd AND IdempotencyKeyHash=@key",
+                    ("@cmd", PurchaseMixedServicePriceIntentV1.Command), ("@key", PurchaseMixedOrderApprovalIntentV1.KeyHash(envelope.IdempotencyKey))));
+                // The invalid command did not retain its key. A corrected explicit request records once, then replays its genuine receipt.
+                var corrected = PriceRequest(f, "4", "2", "3");
+                await using (var retry = MixedApprovalScope(run)) Assert.False((await MixedPriceRevise(retry, f, corrected, envelope)).IsReplay);
+                await using (var replay = MixedApprovalScope(run))
+                {
+                    var result = await MixedPriceRevise(replay, f, corrected, envelope with { CorrelationId = "SENTETIK-cleanup-release-replay" });
+                    Assert.True(result.IsReplay); Assert.Equal(envelope.CorrelationId, result.Receipt!.OriginalCorrelationId);
+                    Assert.Equal((4L, 5L), (result.Receipt.ExpectedVersion, result.Receipt.ResultVersion));
+                }
+                Assert.Equal(audits + 2, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents"));
+                Assert.Equal(1, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseAttempts WHERE CommandName=@cmd AND IdempotencyKeyHash=@key",
+                    ("@cmd", PurchaseMixedServicePriceIntentV1.Command), ("@key", PurchaseMixedOrderApprovalIntentV1.KeyHash(envelope.IdempotencyKey))));
+            }
+    }
+
+    [SqlServerFact]
+    public async Task Mixed_price_cleanup_fault_keeps_original_nonrace_failure_aggregate_before_a_release_fence_or_retry()
+    {
+        await using var run = await Run.StartAsync();
+        foreach (var dispose in new[] { false, true })
+        {
+            var f = await SupplierRevisionSourcesAsync(run); var bad = PriceRequest(f, "4", "2", "-1");
+            var envelope = AdmissionEnvelope(run, "mixed-price-cleanup-fault-" + f.Parent.Order.Id.ToString("N"));
+            var audits = await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents"); var releaseFences = 0;
+            var probe = new MixedPriceCleanupReleaseProbe(dispose, () => throw new InvalidOperationException("SENTETIK-mixed-price-cleanup-fault"));
+            await using (var scope = new MixedPriceCleanupReleaseScope(run, probe))
+            {
+                var failure = await Assert.ThrowsAsync<AggregateException>(() => scope.Revise(f, bad, envelope, _ => {
+                    if (probe.Fired) { releaseFences++; throw new PurchasingServiceException(403, "forbidden"); }
+                    return Task.CompletedTask;
+                }, default));
+                Assert.Contains(failure.Flatten().InnerExceptions, x => x is ArgumentException);
+                Assert.Contains(failure.Flatten().InnerExceptions, x => x is InvalidOperationException && x.Message == "SENTETIK-mixed-price-cleanup-fault");
+                Assert.True(probe.Fired); Assert.Equal(0, releaseFences);
+                Assert.Empty(scope.Database.ChangeTracker.Entries()); Assert.False(scope.Writer.HasPendingDrafts);
+            }
+            Assert.Equal(4L, await run.ScalarAsync<long>("SELECT Version FROM purchasing.PurchaseOrders WHERE Id=@id", ("@id", f.Parent.Order.Id)));
+            Assert.Equal(2L, await run.ScalarAsync<long>("SELECT Version FROM purchasing.ServiceOrders WHERE OrderId=@id", ("@id", f.Service.OrderId)));
+            Assert.Equal(audits, await run.ScalarAsync<int>("SELECT COUNT(*) FROM audit.AuditEvents"));
+            Assert.Equal(0, await run.ScalarAsync<int>("SELECT COUNT(*) FROM purchasing.PurchaseAttempts WHERE CommandName=@cmd AND IdempotencyKeyHash=@key",
+                ("@cmd", PurchaseMixedServicePriceIntentV1.Command), ("@key", PurchaseMixedOrderApprovalIntentV1.KeyHash(envelope.IdempotencyKey))));
+        }
+    }
+
     // Actual relational owned TX/shared Audit writer/immutable native Attempt+revision sources.
     // Reference preparation/price disclosure callbacks below are controlled protocols, not HTTP or full first-use acceptance.
     [SqlServerFact]
@@ -245,5 +341,45 @@ public sealed partial class PurchasingSqlServerRelationalAcceptanceTests
             { Fired = true; AcceptedClean = !db.ChangeTracker.HasChanges(); throw new PurchasingRuleException("SENTETIK-price-accepted-save", "SENTETIK after actual accepted save"); }
             return ValueTask.FromResult(result);
         }
+    }
+
+    private sealed class MixedPriceCleanupReleaseProbe(bool dispose, Action after) : DbTransactionInterceptor
+    {
+        internal bool Fired;
+        internal int Rollbacks;
+        internal int Disposals;
+        internal void Configure(DbContextOptionsBuilder<PurchasingDbContext> options) => options.LogTo(
+            (id, _) => id == RelationalEventId.TransactionDisposed, _ => {
+                Disposals++;
+                if (dispose && !Fired) { Fired = true; after(); }
+            });
+        public override async Task TransactionRolledBackAsync(DbTransaction transaction, TransactionEndEventData data, CancellationToken token = default)
+        {
+            Rollbacks++;
+            if (!dispose && !Fired) { Fired = true; await Task.Yield(); after(); }
+        }
+    }
+    // Same actual request-scope collector/writer and SQL fixture as MixedSqlScope; only this leaf adds the provider disposal log callback.
+    private sealed class MixedPriceCleanupReleaseScope : IAsyncDisposable
+    {
+        private readonly AsyncServiceScope scope;
+        internal PurchasingDbContext Database { get; }
+        internal IAuditTransactionWriterV1 Writer { get; }
+        private readonly PurchasingStore store;
+        internal MixedPriceCleanupReleaseScope(Run run, MixedPriceCleanupReleaseProbe probe)
+        {
+            scope = run.Factory.Services.CreateAsyncScope(); var company = scope.ServiceProvider.GetRequiredService<ICompanyContext>(); company.Set(CompanyA);
+            Writer = scope.ServiceProvider.GetRequiredService<IAuditTransactionWriterV1>();
+            var collector = scope.ServiceProvider.GetRequiredService<IAuditEventCollector>();
+            var options = new DbContextOptionsBuilder<PurchasingDbContext>().UseSqlServer(run.Factory.DatabaseConnectionString,
+                sql => sql.MigrationsHistoryTable("__EFMigrationsHistory", PurchasingDbContext.Schema)).AddInterceptors(probe);
+            probe.Configure(options);
+            Database = new(options.Options, company); store = new(Database, company, collector, TimeProvider.System, decisionAuditWriter: Writer);
+        }
+        internal Task<PurchaseMixedServicePriceAnswerV1> Revise(MembershipSources f, RevisePurchaseMixedServicePricesRequest body,
+            PurchasingWriteEnvelope envelope, Func<CancellationToken, Task> fence, CancellationToken token) =>
+            store.ReviseMixedServicePricesAsync(f.Parent.Order.Id, body, envelope,
+                PurchasingRequestHash.Compute(PurchaseMixedServicePriceIntentV1.Command, f.Parent.Order.Id, body), true, MixedSqlProjection, fence, token);
+        public async ValueTask DisposeAsync() { await Database.DisposeAsync(); await scope.DisposeAsync(); }
     }
 }
