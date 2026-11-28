@@ -9,8 +9,14 @@ namespace GoymenERP.Modules.Identity.Infrastructure.Services;
 
 internal sealed partial class IdentityAccessAssignmentService : IIdentityAccessGrantDecisionV1
 {
-    public async Task<IdentityAccessGrantDecisionDetailV1?> ReadDecisionAsync(Guid requestId,
+    public Task<IdentityAccessGrantDecisionDetailV1?> ReadDecisionAsync(Guid requestId,
         IdentityAccessCommandMetadataV1 context, Func<CancellationToken, Task> consumerFence,
+        CancellationToken cancellationToken = default) => ReadDecisionAsync(requestId,
+            new IdentityAccessGrantDecisionReadContextV1(context.CompanyId, context.ActorId, context.CorrelationId, context.CausationId),
+            consumerFence, cancellationToken);
+
+    public async Task<IdentityAccessGrantDecisionDetailV1?> ReadDecisionAsync(Guid requestId,
+        IdentityAccessGrantDecisionReadContextV1 context, Func<CancellationToken, Task> consumerFence,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(consumerFence);
@@ -41,7 +47,15 @@ internal sealed partial class IdentityAccessAssignmentService : IIdentityAccessG
         return detail;
     }
 
-    private async Task DecisionReadFenceAsync(IdentityAccessCommandMetadataV1 context,
+    private Task DecisionReadFenceAsync(IdentityAccessCommandMetadataV1 context,
+        Func<CancellationToken, Task> consumer, CancellationToken token) => DecisionReadFenceAsync(
+            new IdentityAccessGrantDecisionReadContextV1(context.CompanyId, context.ActorId, context.CorrelationId, context.CausationId), consumer, token);
+
+    private bool SameAccessApprovalContext(IdentityAccessGrantDecisionReadContextV1 context) =>
+        currentUser.IsAuthenticated && string.Equals(currentUser.UserId, context.ActorId, StringComparison.Ordinal)
+        && companyContext.IsResolved && companyContext.CompanyId == context.CompanyId && currentUser.CanAccessCompany(context.CompanyId);
+
+    private async Task DecisionReadFenceAsync(IdentityAccessGrantDecisionReadContextV1 context,
         Func<CancellationToken, Task> consumer, CancellationToken token)
     {
         token.ThrowIfCancellationRequested();

@@ -6,6 +6,21 @@ namespace GoymenERP.Identity.UnitTests;
 public sealed partial class IdentityAccessAssignmentServiceTests
 {
     [Fact]
+    public async Task Readonly_context_uses_actual_four_fields_without_a_command_key_or_write_envelope()
+    {
+        var h = new Harness(); var seed = h.SeedQueue(); var metadata = h.Metadata();
+        var context = new IdentityAccessGrantDecisionReadContextV1(metadata.CompanyId, metadata.ActorId, metadata.CorrelationId, metadata.CausationId);
+        var result = await h.Service().ReadDecisionAsync(seed.Older, context, _ => Task.CompletedTask);
+        Assert.NotNull(result);
+        Assert.Equal(seed.Older, result.Request.RequestId);
+        Assert.All(h.Revalidation.Asked, x => Assert.Equal(IdentityPermissionManifestV1.AccessApprove, x.Permission));
+        Assert.Empty(h.Audits.Enqueued);
+        Assert.Empty(h.Database.CommandExecutions);
+        Assert.Empty(h.Database.RoleAssignments);
+        Assert.False(h.Database.ChangeTracker.HasChanges());
+    }
+
+    [Fact]
     public async Task Purpose_read_contains_current_sorted_impact_without_requesting_general_identity_read()
     {
         var h = new Harness(); var seed = h.SeedQueue();

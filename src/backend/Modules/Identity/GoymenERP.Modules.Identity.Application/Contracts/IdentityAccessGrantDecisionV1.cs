@@ -1,8 +1,13 @@
 namespace GoymenERP.Modules.Identity.Application.Contracts;
 
 /// <summary>Approval-purpose access only; it conveys neither role management nor a general Identity read grant.</summary>
+public sealed record IdentityAccessGrantDecisionReadContextV1(Guid CompanyId, string ActorId, string CorrelationId, string? CausationId);
+
 public interface IIdentityAccessGrantDecisionV1
 {
+    Task<IdentityAccessGrantDecisionDetailV1?> ReadDecisionAsync(Guid requestId,
+        IdentityAccessGrantDecisionReadContextV1 context, Func<CancellationToken, Task> consumerFence,
+        CancellationToken cancellationToken = default);
     Task<IdentityAccessGrantDecisionDetailV1?> ReadDecisionAsync(Guid requestId,
         IdentityAccessCommandMetadataV1 context, Func<CancellationToken, Task> consumerFence,
         CancellationToken cancellationToken = default);
