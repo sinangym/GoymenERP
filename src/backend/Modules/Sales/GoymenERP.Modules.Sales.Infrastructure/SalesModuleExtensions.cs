@@ -71,7 +71,7 @@ public static class SalesModuleExtensions
         // provider, the optional Product eligibility port and the central authority; the shell
         // capability provider is registered by the host once the Sales names are in the catalogue.
         services.TryAddSingleton(new SalesDraftServiceBindings());
-        services.AddScoped(sp => CreateDraftService(sp).WithRequestApprovalSafety().WithQuoteApprovalSafety().WithPriceFloorApprovalSafety().WithDiscountApprovalSafety().WithOverDeliveryRequestApprovalSafety());
+        services.AddScoped(sp => CreateDraftService(sp).WithRequestApprovalSafety().WithQuoteApprovalSafety().WithPriceFloorApprovalSafety().WithDiscountApprovalSafety().WithOverDeliveryRequestApprovalSafety().WithRemainderDecisionSafety());
         services.AddScoped<ISalesDraftService>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
         // API-20 / API-21: the request use cases share the draft service's fence and owner reads (one scoped instance).
         services.AddScoped<ISalesRequestService>(serviceProvider => serviceProvider.GetRequiredService<SalesDraftService>());
