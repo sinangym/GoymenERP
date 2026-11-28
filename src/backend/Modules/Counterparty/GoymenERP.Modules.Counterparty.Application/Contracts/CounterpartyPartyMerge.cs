@@ -25,6 +25,11 @@ public static class CounterpartyPartyMergePermissionsV1
 /// </summary>
 public interface ICounterpartyPartyMergeService
 {
+    /// <summary>All selected-pair holding accounts, released only after both native permissions in every holding company.</summary>
+    Task<CounterpartyPartyMergePreviewResultV1> PreviewMergeAsync(Guid survivorPartyId,
+        PreviewCounterpartyPartyMergeV1 command, CancellationToken cancellationToken) =>
+        Task.FromResult(new CounterpartyPartyMergePreviewResultV1(CounterpartyPartyMergePreviewStatusV1.Unavailable, null));
+
     /// <summary>
     /// The party's merge state, its same-number duplicate candidates in the active company and whether this reader may
     /// approve a merge here; null when the active company holds no account for the party.

@@ -25,7 +25,7 @@ namespace GoymenERP.Api.IntegrationTests;
 /// duplicate becomes passive and points at the survivor for good; there is no unmerge (#77) and the database refuses a
 /// second merge record for the same duplicate.
 /// </summary>
-public sealed class CounterpartyPartyMergeSqlServerRelationalAcceptanceTests
+public sealed partial class CounterpartyPartyMergeSqlServerRelationalAcceptanceTests
 {
     private const string PreviousMigration = "20261115132003_AddCounterpartyOutbox";
     private const string CommandName = "counterparty.party.merge.approve.v1";

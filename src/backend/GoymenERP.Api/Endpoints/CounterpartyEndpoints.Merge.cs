@@ -56,6 +56,40 @@ public static partial class CounterpartyEndpoints
             .ProducesErpConflict(CounterpartyClientContract.RequiredCode, CounterpartyClientContract.UnsupportedCode)
             .ProducesErpAuthenticatedProblems();
 
+        group.MapPost("/{partyId:guid}/merge/preview", async (
+            Guid partyId, PreviewCounterpartyPartyMergeV1 command, ICounterpartyPartyMergeService service,
+            HttpContext context, CancellationToken token) =>
+        {
+            SetPrivateNoStore(context.Response.Headers);
+            if (context.Request.Query.Count != 0)
+                return ValidationProblem("Birleştirme önizlemesi geçersiz.", "Sorgu parametresi kabul edilmez.");
+            try
+            {
+                var answer = await service.PreviewMergeAsync(partyId, command, token);
+                return answer switch
+                {
+                    { Status: CounterpartyPartyMergePreviewStatusV1.Found, Preview: { } preview } => Results.Ok(preview),
+                    { Status: CounterpartyPartyMergePreviewStatusV1.NotFound, Preview: null } => NotFound(),
+                    { Status: CounterpartyPartyMergePreviewStatusV1.Changed, Preview: null } => Results.Problem(statusCode: 409, title: "Birleştirme önizlemesi değişti."),
+                    _ => Results.Problem(statusCode: 503, title: "Birleştirme önizlemesi kullanılamıyor."),
+                };
+            }
+            catch (UnauthorizedAccessException) { return Results.Problem(statusCode: 403); }
+            catch (ArgumentException error) { return ValidationProblem("Birleştirme önizlemesi geçersiz.", error.Message); }
+        })
+            .RequireCompanyContext()
+            .RequireAuthorization(ErpPermissions.CounterpartyPartiesRead)
+            .RequireAuthorization(ErpPermissions.CounterpartyPartiesMergeApprove)
+            .RequiresNonEmptyGuidPathParameter("partyId")
+            .WithName("PreviewCounterpartyPartyMergeV1")
+            .Accepts<PreviewCounterpartyPartyMergeV1>("application/json")
+            .Produces<CounterpartyPartyMergeImpactPreviewV1>(StatusCodes.Status200OK)
+            .ProducesErpBadRequest(CounterpartyProblemCodesV1.ValidationFailed)
+            .ProducesErpNotFound(CounterpartyProblemCodesV1.NotFound)
+            .ProducesProblem(StatusCodes.Status409Conflict)
+            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
+            .ProducesErpAuthenticatedProblems();
+
         group.MapPut("/{partyId:guid}/merge", async (
             Guid partyId, ApproveCounterpartyPartyMerge command,
             ICounterpartyPartyMergeService service, ICurrentUser user,
